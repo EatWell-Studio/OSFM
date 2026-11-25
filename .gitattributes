@@ -1,0 +1,21 @@
+# Line ends are LF in the repository and in every checkout: shell scripts run in Linux containers from a checkout made
+# on any system.
+* text=auto eol=lf
+
+# Not text: never converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.svgz binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.gz binary
+*.pmtiles binary
+*.mbtiles binary
+*.pbf binary
+*.sqlite binary
+*.db binary

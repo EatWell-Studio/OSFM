@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Rejects a commit whose index holds private paths, secrets, instance data or symbolic links.
+# Installed by bin/install-hooks.sh; do not bypass it with --no-verify.
+repo="$(git rev-parse --show-toplevel)" || exit 2
+exec "$repo/bin/check-private-paths.sh"

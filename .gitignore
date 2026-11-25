@@ -1,0 +1,114 @@
+# ---------------------------------------------------------------------------------------------------------------------
+# Private material: never tracked in this public repository.
+#
+# It lives in a separate private repository and appears here only as symbolic links. Every entry is written WITHOUT a
+# trailing slash on purpose: a pattern ending in "/" matches directories only, and git sees a symlink to a directory as
+# a link, not a directory, so "/docs/internal/" would NOT ignore the link. The slash form is listed as well so a real
+# directory of the same name is ignored too. `git add -f` overrides all of this; bin/check-private-paths.sh (CI and the
+# pre-commit hook) rejects such paths whatever .gitignore says.
+# ---------------------------------------------------------------------------------------------------------------------
+
+# Claude Code: project instructions, settings, commands, agents, skills, hooks, MCP servers, local memory
+/CLAUDE.md
+/CLAUDE.local.md
+CLAUDE.md
+CLAUDE.local.md
+.claude
+.claude/
+.mcp.json
+.claudeignore
+
+# Other AI coding assistants' instructions and settings (same rule: they describe internal workflow)
+AGENTS.md
+AGENTS.override.md
+GEMINI.md
+.gemini/
+.codex/
+.cursor/
+.cursorrules
+.cursorignore
+.windsurf/
+.windsurfrules
+.aider*
+.continue/
+.clinerules
+.roo/
+.github/copilot-instructions.md
+.github/instructions/
+.github/prompts/
+
+# Internal documents (private repository, linked in locally)
+/docs/internal
+/docs/internal/
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Secrets and instance data
+# ---------------------------------------------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa*
+id_ed25519*
+secrets/
+credentials*.json
+service-account*.json
+
+# An instance's database and uploads hold members' names and recommendations: never commit real data.
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+/data/
+/uploads/
+/backups/
+*.litestream*
+
+# Map tile extracts are large binaries, downloaded at deploy time
+*.pmtiles
+*.mbtiles
+*.osm.pbf
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Build output, dependencies, tooling
+# ---------------------------------------------------------------------------------------------------------------------
+node_modules/
+vendor/
+dist/
+build/
+.output/
+.svelte-kit/
+.next/
+.nuxt/
+coverage/
+.cache/
+.turbo/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+target/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~

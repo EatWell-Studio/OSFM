@@ -1,0 +1,25 @@
+name: Guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  private-paths:
+    name: Private paths
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: No AI-assistant configuration, internal documents, secrets, instance data or symlinks are tracked
+        run: bash bin/check-private-paths.sh
