@@ -312,6 +312,18 @@ func TestArchiveReplaced(t *testing.T) {
 	}
 }
 
+func TestArchiveAdded(t *testing.T) {
+	h, dir := newTestHandler(t)
+	target := "/tiles/new-town.json"
+	if rec := get(h, target); rec.Code != http.StatusNotFound {
+		t.Fatalf("before adding the archive: status %d, want 404", rec.Code)
+	}
+	writeTestArchive(t, dir, "new-town.pmtiles")
+	if rec := get(h, target); rec.Code != http.StatusOK {
+		t.Errorf("after adding the archive: status %d, want 200", rec.Code)
+	}
+}
+
 func TestMethodNotAllowed(t *testing.T) {
 	h, _ := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodPost, "/tiles/"+testCity+".json", nil)

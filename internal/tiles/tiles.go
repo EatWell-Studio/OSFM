@@ -51,6 +51,9 @@ type Handler struct {
 	logger *slog.Logger
 
 	mu       sync.Mutex
+	listedAt time.Time               // the directory's modification time when files was read
+	readAt   time.Time               // when files was read
+	files    map[string]string       // the directory's *.pmtiles files: path by file name
 	archives map[string]archiveState // by city: the result of checkArchive for the file as it was last seen
 }
 
@@ -175,27 +178,59 @@ func notFound(w http.ResponseWriter) {
 	http.Error(w, "Not found", http.StatusNotFound)
 }
 
-// usable reports whether <city>.pmtiles exists and passes checkArchive. The check is repeated only when the file's
-// size or modification time changes.
+// usable reports whether the tiles directory holds <city>.pmtiles and the file passes checkArchive. The check is
+// repeated only when the file's size or modification time changes.
 func (h *Handler) usable(city string) bool {
-	name := city + ".pmtiles"
-	info, err := os.Stat(filepath.Join(h.dir, name)) //nolint:gosec // G703: city matched cityPattern, no path separators
-
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err != nil || !info.Mode().IsRegular() {
+	path, ok := h.archivePath(city + ".pmtiles")
+	var info os.FileInfo
+	var err error
+	if ok {
+		info, err = os.Stat(path)
+	}
+	if !ok || err != nil || !info.Mode().IsRegular() {
 		delete(h.archives, city)
 		return false
 	}
 	if state, ok := h.archives[city]; ok && state.size == info.Size() && state.modTime.Equal(info.ModTime()) {
 		return state.usable
 	}
-	err = checkArchive(filepath.Join(h.dir, name), info.Size())
+	err = checkArchive(path, info.Size())
 	if err != nil {
-		h.logger.Warn("tiles: archive not served", "file", name, "error", err)
+		h.logger.Warn("tiles: archive not served", "file", info.Name(), "error", err)
 	}
 	h.archives[city] = archiveState{modTime: info.ModTime(), size: info.Size(), usable: err == nil}
 	return err == nil
+}
+
+// archivePath looks name up in the listing of the tiles directory, read again whenever the directory changes (or, for a
+// name not found, at most once a second, for file systems with a coarse modification time). The path to a file is
+// thus never built from the request, only taken from the listing. h.mu must be held.
+func (h *Handler) archivePath(name string) (string, bool) {
+	info, err := os.Stat(h.dir)
+	if err != nil {
+		h.files = nil
+		return "", false
+	}
+	_, listed := h.files[name]
+	if h.files == nil || !info.ModTime().Equal(h.listedAt) || !listed && time.Since(h.readAt) > time.Second {
+		entries, err := os.ReadDir(h.dir)
+		if err != nil {
+			h.files = nil
+			return "", false
+		}
+		h.files = make(map[string]string)
+		for _, entry := range entries {
+			if strings.HasSuffix(entry.Name(), ".pmtiles") {
+				h.files[entry.Name()] = filepath.Join(h.dir, entry.Name())
+			}
+		}
+		h.listedAt = info.ModTime()
+		h.readAt = time.Now()
+	}
+	path, ok := h.files[name]
+	return path, ok
 }
 
 // checkArchive verifies what go-pmtiles takes for granted when it reads an archive's header and root directory: a
@@ -206,7 +241,7 @@ func checkArchive(path string, size int64) (err error) {
 		return errors.New("negative file size")
 	}
 	limit := uint64(size)
-	file, err := os.Open(path) //nolint:gosec // G304: the file name is built from a city name that matched cityPattern
+	file, err := os.Open(path) //nolint:gosec // G304: path comes from the listing of the tiles directory
 	if err != nil {
 		return err
 	}
