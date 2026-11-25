@@ -62,6 +62,7 @@ flowchart LR
     root --- deploy["deploy/<br/>Dockerfile、Caddy 配置示例、瓦片裁剪脚本"]
     root --- tools["bin/<br/>仓库维护脚本"]
     root --- docs["docs/<br/>公开文档"]
+    internal --- p_config["config/<br/>环境变量配置、数据目录准备、实例密钥的生成与加载"]
     internal --- p_api["api/<br/>HTTP 处理函数与请求/响应结构（对外的投影）"]
     internal --- p_auth["auth/<br/>注册、登录、passkey、TOTP、恢复码、重置、会话"]
     internal --- p_domain["domain/<br/>地点、推荐、成员、邀请、举报等业务规则（不依赖 HTTP）"]
@@ -294,7 +295,7 @@ flowchart LR
 
 | 来源 | 内容 |
 | --- | --- |
-| 环境变量 `OSFM_*` | 监听地址、对外 URL、数据目录、是否开启 PocketBase 管理后台 |
+| 环境变量 `OSFM_*` | 监听地址 `OSFM_LISTEN`（默认 `127.0.0.1:8090`，`serve --http` 优先）、对外 URL `OSFM_PUBLIC_URL`、数据目录 `OSFM_DATA_DIR`（默认 `./data`，镜像中为 `/data`）、是否开启 PocketBase 管理后台 `OSFM_ADMIN_UI`（默认关闭）；由 `internal/config` 读取和校验，启动时打印生效的配置 |
 | 首次启动向导（`G3`） | 第一个维护者（同样强制两步验证）、实例名称、关心的城市（名称、范围、对应的瓦片文件） |
 | 维护者设置页 | 举报阈值、冷静期天数、搜索服务的联系方式 |
 
