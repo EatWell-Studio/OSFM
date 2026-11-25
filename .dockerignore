@@ -1,0 +1,26 @@
+# Build context of deploy/Dockerfile: only what the web app and the Go binary are built from. Everything else, including
+# local data, secrets, dependencies and earlier build output, stays out of the image build.
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!migrations/
+!web/
+
+# Built inside the image (web/dist/placeholder stays: the Go code embeds it)
+web/node_modules
+web/dist/app
+
+# Never sent to the builder, even inside the directories above
+**/.env
+**/.env.*
+**/pb_data
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.pmtiles
+**/*.mbtiles
+**/*.pem
+**/*.key
+**/.DS_Store

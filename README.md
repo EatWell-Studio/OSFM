@@ -42,6 +42,23 @@ For frontend work, run `./osfm serve` and `pnpm --dir web dev` side by side; the
 
 Before opening a pull request, run `bin/gate.sh` (lint, type checks, tests and builds for both halves; see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
+## Container image
+
+Each release publishes a multi-arch image (linux/amd64, linux/arm64) to the GitHub Container Registry, and the `osfm` binaries for Linux and macOS on the [releases page](../../releases). Nothing is published before the first release.
+
+```bash
+docker run -d --name osfm -p 127.0.0.1:8090:8090 -v osfm-data:/data ghcr.io/eatwell-studio/osfm:latest
+```
+
+The instance then answers on http://127.0.0.1:8090; put a reverse proxy with HTTPS in front of it to reach it from elsewhere. All data lives in the `/data` volume (`pb_data/`, later also `tiles/` and `secrets/`). The container runs as user 65532; a named volume as above gets the right owner automatically, a host directory mounted instead must be writable by that user. To build the image yourself: `docker buildx build -f deploy/Dockerfile .`. Every image and binary carries a signed build provenance attestation:
+
+```bash
+gh attestation verify oci://ghcr.io/eatwell-studio/osfm:latest --repo EatWell-Studio/OSFM
+gh attestation verify osfm-linux-amd64 --repo EatWell-Studio/OSFM
+```
+
+Self-hosting (HTTPS, backups, upgrades) will be documented separately.
+
 ## License
 
 The software is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). If you run a modified version as a network service, you must offer its source code to its users; running it unmodified for your own circle carries no extra obligation.
