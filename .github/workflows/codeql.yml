@@ -1,0 +1,61 @@
+# CodeQL as a workflow ("advanced setup") instead of the repository's default setup: default setup does not analyse
+# pull requests opened by Dependabot, so the required "Analyze (…)" and "CodeQL" checks never reported on them and
+# blocked every dependency update. This workflow runs on every pull request, Dependabot's included.
+# The job names match the required checks ("Analyze (actions)", "Analyze (go)", "Analyze (javascript-typescript)").
+# Default setup must stay disabled: GitHub rejects workflow uploads while it is enabled.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload the results to code scanning
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: go
+            build-mode: manual
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - if: matrix.language == 'go'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      # The tracked placeholder page (web/dist/placeholder) lets the Go code build without the web app.
+      - if: matrix.build-mode == 'manual'
+        name: Build
+        run: go build ./...
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
