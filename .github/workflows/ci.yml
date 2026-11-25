@@ -56,6 +56,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run format:check
       - run: pnpm run lint
+      - run: pnpm run check:i18n
       - run: pnpm run typecheck
       - run: pnpm run test
       - run: pnpm run build
@@ -103,6 +104,13 @@ jobs:
           curl -fsS http://127.0.0.1:8090/ | grep -q '/assets/index-'
           # Client-side routes fall back to index.html.
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8090/some/client/route)" = 200
+          # The PWA files: the manifest, the service worker and its registration script, the icons.
+          curl -fsS http://127.0.0.1:8090/manifest.webmanifest | grep -q '"start_url":"/"'
+          curl -fsS http://127.0.0.1:8090/sw.js | grep -q 'precacheAndRoute'
+          curl -fsS http://127.0.0.1:8090/ | grep -q 'src="/registerSW.js"'
+          for icon in pwa-192x192.png pwa-512x512.png maskable-icon-512x512.png apple-touch-icon-180x180.png; do
+            curl -fsS -o /dev/null "http://127.0.0.1:8090/$icon"
+          done
           echo "The binary serves the embedded web app."
 
   docker:

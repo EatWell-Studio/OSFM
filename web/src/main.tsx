@@ -1,6 +1,10 @@
+import './index.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { createBrowserRouter } from 'react-router'
 import { App } from './App'
+import { createQueryClient } from './lib/queryClient'
+import { routes } from './routes'
 
 const root = document.getElementById('root')
 if (!root) {
@@ -9,6 +13,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <App router={createBrowserRouter(routes)} queryClient={createQueryClient()} />
   </StrictMode>,
 )

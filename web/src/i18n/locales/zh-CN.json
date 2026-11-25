@@ -1,0 +1,25 @@
+{
+  "app": {
+    "instanceNamePlaceholder": "OSFM",
+    "loading": "加载中…"
+  },
+  "nav": {
+    "label": "主导航",
+    "map": "地图",
+    "list": "列表",
+    "me": "我的"
+  },
+  "pages": {
+    "map": { "title": "地图" },
+    "list": { "title": "列表" },
+    "me": { "title": "我的" },
+    "admin": { "title": "管理" },
+    "login": { "title": "登录" },
+    "register": { "title": "注册" },
+    "notFound": { "title": "页面不存在" }
+  },
+  "session": {
+    "error": "无法确认登录状态，请检查网络后重试。",
+    "retry": "重试"
+  }
+}
