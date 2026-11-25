@@ -33,8 +33,10 @@ Requirements: Go (version in `go.mod`), Node.js 22+ and pnpm (version in `web/pa
 pnpm --dir web install
 pnpm --dir web build          # builds the web app into web/dist/app
 go build -o osfm ./cmd/osfm   # one binary with the web app embedded
-./osfm serve                  # http://127.0.0.1:8090, data in ./pb_data
+./osfm serve                  # http://127.0.0.1:8090, data in ./data
 ```
+
+`./data` holds `pb_data/` (database), `tiles/` (map tiles) and `secrets/` (instance keys, generated on first start; keep them in your backups). Settings come from environment variables: `OSFM_DATA_DIR` (default `./data`), `OSFM_LISTEN` (default `127.0.0.1:8090`; `serve --http` overrides it), `OSFM_PUBLIC_URL` and `OSFM_ADMIN_UI` (default `false`). The effective configuration is printed at startup.
 
 For frontend work, run `./osfm serve` and `pnpm --dir web dev` side by side; the Vite dev server proxies `/api` and `/tiles` to the binary. Without a frontend build the binary still compiles and serves a placeholder page.
 
