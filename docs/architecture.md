@@ -6,23 +6,34 @@
 
 一个 OSFM 实例是**一个进程、一个数据目录**：
 
-```
-                 浏览器（PWA，React）
-                        │  HTTPS（同一域名，无第三方请求）
-                        ▼
-┌───────────────────── osfm（单个 Go 可执行文件）─────────────────────┐
-│  静态前端（go:embed）   /                                            │
-│  OSFM 接口             /api/osfm/*   认证、授权、业务规则、导入导出   │
-│  瓦片服务              /tiles/{city}/{z}/{x}/{y}.mvt                 │
-│  实例元数据            /.well-known/osfm.json                        │
-│  ───────────────────────────────────────────────────────────────── │
-│  PocketBase 内核：SQLite（WAL）、数据集合与迁移、令牌、备份、定时任务 │
-└──────────────────────────────────────────────────────────────────────┘
-                        │
-              数据目录 /data（一个卷）
-              ├── pb_data/        SQLite 数据库、PocketBase 备份
-              ├── tiles/          各城市的 PMTiles 文件
-              └── secrets/        实例主密钥、实例签名密钥
+```mermaid
+flowchart TB
+    browser["浏览器（PWA，React）"]
+
+    subgraph bin["osfm：单个 Go 可执行文件"]
+        direction TB
+        static["静态前端（go:embed）<br/>/"]
+        api["OSFM 接口<br/>/api/osfm/*<br/>认证、授权、业务规则、导入导出"]
+        tiles["瓦片服务<br/>/tiles/{city}/{z}/{x}/{y}.mvt"]
+        meta["实例元数据<br/>/.well-known/osfm.json"]
+        pb["PocketBase 内核<br/>SQLite（WAL）、数据集合与迁移、令牌、备份、定时任务"]
+        api --> pb
+    end
+
+    subgraph data["数据目录 /data（一个卷）"]
+        pbdata[("pb_data/<br/>SQLite 数据库、PocketBase 备份")]
+        tilefiles[("tiles/<br/>各城市的 PMTiles 文件")]
+        secrets[("secrets/<br/>实例主密钥、实例签名密钥")]
+    end
+
+    geocoder["地名搜索服务<br/>Photon / Nominatim"]
+
+    browser -->|"HTTPS（同一域名，无第三方请求）"| bin
+    pb --> pbdata
+    tiles --> tilefiles
+    api --> secrets
+    meta --> secrets
+    api -.->|"服务器代理：缓存、限速"| geocoder
 ```
 
 外部请求只有一类：服务器代理的地名搜索（Photon / Nominatim，`B7`），由服务器发出、缓存、限速，浏览器不直接访问任何第三方。
@@ -41,27 +52,35 @@
 
 ## 2. 代码仓库结构
 
-```
-OSFM/
-├── cmd/osfm/            main：组装 PocketBase 内核与各业务模块，命令行入口
-├── internal/
-│   ├── api/             HTTP 处理函数与请求/响应结构（对外的投影）
-│   ├── auth/            注册、登录、passkey、TOTP、恢复码、重置、会话
-│   ├── domain/          地点、推荐、成员、邀请、举报等业务规则（不依赖 HTTP）
-│   ├── store/           数据访问层：封装 PocketBase 的记录操作（替换 PocketBase 时只改这一层）
-│   ├── tiles/           PMTiles 读取与瓦片服务
-│   ├── geocode/         搜索代理、缓存、限速
-│   ├── geo/             坐标系转换（WGS-84 / GCJ-02 / BD-09）
-│   ├── export/          GeoJSON / JSON 导出、备份
-│   └── federation/      实例密钥、/.well-known/osfm.json（只预留）
-├── migrations/          数据库迁移（Go 代码，随程序注册、启动时自动执行）
-├── web/                 前端（React + Vite），构建产物 web/dist 由 web/embed.go 嵌入
-├── deploy/              Dockerfile、Caddy 配置示例、瓦片裁剪脚本
-├── bin/                 仓库维护脚本
-└── docs/                公开文档
+```mermaid
+flowchart LR
+    root["OSFM/"]
+    root --- cmd["cmd/osfm/<br/>main：组装 PocketBase 内核与各业务模块，命令行入口"]
+    root --- internal["internal/"]
+    root --- migrations["migrations/<br/>数据库迁移（Go 代码，随程序注册、启动时自动执行）"]
+    root --- web["web/<br/>前端（React + Vite），构建产物 web/dist 由 web/embed.go 嵌入"]
+    root --- deploy["deploy/<br/>Dockerfile、Caddy 配置示例、瓦片裁剪脚本"]
+    root --- tools["bin/<br/>仓库维护脚本"]
+    root --- docs["docs/<br/>公开文档"]
+    internal --- p_api["api/<br/>HTTP 处理函数与请求/响应结构（对外的投影）"]
+    internal --- p_auth["auth/<br/>注册、登录、passkey、TOTP、恢复码、重置、会话"]
+    internal --- p_domain["domain/<br/>地点、推荐、成员、邀请、举报等业务规则（不依赖 HTTP）"]
+    internal --- p_store["store/<br/>数据访问层：封装 PocketBase 的记录操作"]
+    internal --- p_tiles["tiles/<br/>PMTiles 读取与瓦片服务"]
+    internal --- p_geocode["geocode/<br/>搜索代理、缓存、限速"]
+    internal --- p_geo["geo/<br/>坐标系转换（WGS-84 / GCJ-02 / BD-09）"]
+    internal --- p_export["export/<br/>GeoJSON / JSON 导出、备份"]
+    internal --- p_fed["federation/<br/>实例密钥、/.well-known/osfm.json（只预留）"]
 ```
 
-依赖方向：`api → domain → store → PocketBase`。`domain` 不导入 PocketBase 的类型，业务规则可以脱离数据库做单元测试。
+依赖方向（箭头表示"调用 / 依赖"）：
+
+```mermaid
+flowchart LR
+    api["api"] --> domain["domain"] --> store["store"] --> pb[("PocketBase")]
+```
+
+`domain` 不导入 PocketBase 的类型，业务规则可以脱离数据库做单元测试；替换 PocketBase 时只改 `store`。
 
 ## 3. 后端
 
@@ -96,17 +115,46 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 
 **流程**：
 
+**注册（`D3`）**
+
+```mermaid
+flowchart TD
+    r1["打开邀请链接"] --> r2["选登录名"]
+    r2 --> r3{"认证方式"}
+    r3 -->|"passkey"| r4["注册 passkey<br/>（WebAuthn 注册仪式）"]
+    r3 -->|"密码 + TOTP"| r5["设置密码"]
+    r5 --> r6["扫码绑定 TOTP"]
+    r6 --> r7["输入一次验证码确认"]
+    r4 --> r8["生成 10 个恢复码<br/>要求确认已保存"]
+    r7 --> r8
+    r8 --> r9(["签发会话"])
 ```
-注册（D3）  邀请码 → 选登录名 → ┬ 注册 passkey（WebAuthn 注册仪式）
-                                └ 设置密码 → 扫码绑定 TOTP → 输入一次验证码确认
-            → 生成 10 个恢复码，要求确认已保存 → 签发会话
 
-登录（D4）  ┬ passkey（可发现凭据，免输登录名）
-            ├ 登录名 + 密码 → TOTP 验证码
-            └ 登录名 + 密码 → 恢复码（用后作废）
-            任何分支都要两个因素都通过才签发会话；密码正确但第二步未完成时不签发任何令牌
+**登录（`D4`）**
 
-重置（D5）  维护者生成一次性重置链接（24 小时）→ 成员重新设置凭据 → 旧凭据与恢复码全部作废 → 写审计记录
+```mermaid
+flowchart TD
+    l0{"登录方式"}
+    l0 -->|"passkey"| l1["passkey 认证<br/>（可发现凭据，免输登录名）"]
+    l0 -->|"密码"| l2["登录名 + 密码"]
+    l2 --> l3{"第二步"}
+    l3 -->|"TOTP"| l4["TOTP 验证码"]
+    l3 -->|"恢复码"| l5["恢复码（用后作废）"]
+    l1 --> ok(["签发会话"])
+    l4 --> ok
+    l5 --> ok
+    l2 -.->|"第二步未完成"| no["不签发任何令牌"]
+```
+
+任何分支都要两个因素都通过才签发会话；密码正确但第二步未完成时不签发任何令牌。
+
+**重置（`D5`）**
+
+```mermaid
+flowchart LR
+    s1["维护者生成一次性重置链接<br/>（24 小时有效）"] --> s2["成员重新设置凭据"]
+    s2 --> s3["旧凭据与恢复码全部作废<br/>所有会话失效"]
+    s3 --> s4["写审计记录"]
 ```
 
 **会话**：两步验证通过后签发 PocketBase 认证令牌，放在 `HttpOnly; Secure; SameSite=Lax` 的 cookie 中，前端不接触令牌。服务器中间件从 cookie 取令牌、校验并加载成员。会话有效期默认 30 天，成员被移出（`D7`）或重置凭据时，通过轮换该成员的令牌密钥使所有会话立即失效。
