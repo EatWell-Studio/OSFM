@@ -2,7 +2,6 @@ package tiles
 
 import (
 	"bytes"
-	"compress/gzip"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
-
-	"github.com/protomaps/go-pmtiles/pmtiles"
 )
 
 // A made-up archive: two tiles at z10 and z11 (the zoom range of the archive) around 0°, 0°.
@@ -20,12 +17,6 @@ const (
 	testMinZoom uint8 = 10
 	testMaxZoom uint8 = 11
 )
-
-type testTile struct {
-	z       uint8
-	x, y    uint32
-	content []byte // before gzip, as a client sees it after decoding
-}
 
 var testTiles = []testTile{
 	{10, 512, 511, []byte("tile 10/512/511")},
@@ -45,91 +36,10 @@ func writeFile(t *testing.T, dir, name string, content []byte) {
 	}
 }
 
-// testArchive returns a minimal valid PMTiles v3 archive holding testTiles.
+// testArchive returns a minimal valid archive holding testTiles.
 func testArchive(t *testing.T) []byte {
 	t.Helper()
-	var tileData []byte
-	var entries []pmtiles.EntryV3
-	for _, tile := range testTiles {
-		compressed := gzipBytes(t, tile.content)
-		entries = append(entries, pmtiles.EntryV3{
-			TileID:    pmtiles.ZxyToID(tile.z, tile.x, tile.y),
-			Offset:    uint64(len(tileData)),
-			Length:    uint32(len(compressed)), //nolint:gosec // G115: a few bytes
-			RunLength: 1,
-		})
-		tileData = append(tileData, compressed...)
-	}
-	if entries[0].TileID > entries[1].TileID {
-		entries[0], entries[1] = entries[1], entries[0]
-	}
-	root := pmtiles.SerializeEntries(entries, pmtiles.Gzip)
-	metadata, err := pmtiles.SerializeMetadata(map[string]any{
-		"name":          "test",
-		"attribution":   "© OpenStreetMap contributors",
-		"vector_layers": []any{map[string]any{"id": "roads", "fields": map[string]any{}}},
-	}, pmtiles.Gzip)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	header := pmtiles.HeaderV3{
-		SpecVersion:         3,
-		RootOffset:          pmtiles.HeaderV3LenBytes,
-		RootLength:          uint64(len(root)),
-		AddressedTilesCount: uint64(len(entries)),
-		TileEntriesCount:    uint64(len(entries)),
-		TileContentsCount:   uint64(len(entries)),
-		Clustered:           true,
-		InternalCompression: pmtiles.Gzip,
-		TileCompression:     pmtiles.Gzip,
-		TileType:            pmtiles.Mvt,
-		MinZoom:             testMinZoom,
-		MaxZoom:             testMaxZoom,
-		MinLonE7:            -1_000_000,
-		MinLatE7:            -1_000_000,
-		MaxLonE7:            1_000_000,
-		MaxLatE7:            1_000_000,
-		CenterZoom:          testMinZoom,
-	}
-	header.MetadataOffset = header.RootOffset + header.RootLength
-	header.MetadataLength = uint64(len(metadata))
-	header.LeafDirectoryOffset = header.MetadataOffset + header.MetadataLength
-	header.TileDataOffset = header.LeafDirectoryOffset
-	header.TileDataLength = uint64(len(tileData))
-
-	var archive bytes.Buffer
-	archive.Write(pmtiles.SerializeHeader(header))
-	archive.Write(root)
-	archive.Write(metadata)
-	archive.Write(tileData)
-	return archive.Bytes()
-}
-
-func gzipBytes(t *testing.T, b []byte) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
-	if _, err := zw.Write(b); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return buf.Bytes()
-}
-
-func gunzip(t *testing.T, b []byte) []byte {
-	t.Helper()
-	zr, err := gzip.NewReader(bytes.NewReader(b))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if _, err := out.ReadFrom(zr); err != nil {
-		t.Fatal(err)
-	}
-	return out.Bytes()
+	return buildArchive(t, archiveSpec{tiles: testTiles, minZoom: testMinZoom, maxZoom: testMaxZoom})
 }
 
 func newTestHandler(t *testing.T) (*Handler, string) {
@@ -242,7 +152,7 @@ func TestNotFound(t *testing.T) {
 	for _, name := range []string{"A.pmtiles", "x.y.pmtiles", "x_y.pmtiles"} {
 		writeTestArchive(t, dir, name)
 	}
-	// Archives that would crash or hang go-pmtiles.
+	// Archives that are not usable.
 	writeFile(t, dir, "short.pmtiles", []byte("PMTiles"))
 	writeFile(t, dir, "garbage.pmtiles", bytes.Repeat([]byte{0xff}, 4096))
 	valid := testArchive(t)

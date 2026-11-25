@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
+	"hash/fnv"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,53 +14,45 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/protomaps/go-pmtiles/pmtiles"
 )
 
 // RoutePrefix is the path prefix of every request the [Handler] answers; register it as RoutePrefix + "{path...}".
 const RoutePrefix = "/tiles/"
 
 const (
-	// directoryCacheMB is the size of go-pmtiles' in-memory cache of archive directories, in MB (10^6 bytes). The
-	// directories of a z10–z15 city extract take a few kB, so this holds many cities.
-	directoryCacheMB = 4
+	// directoryCacheBytes is the budget of the cache of decoded leaf directories. The leaf directories of a z10–z15
+	// city extract take a few kB, so this holds many cities.
+	directoryCacheBytes = 4 << 20
 
-	// maxZoom bounds the zoom levels a request may name, so that x and y fit the tile grid's integer types. The
-	// archives themselves stop at z15; anything above their maximum is answered with 404 anyway.
+	// maxZoom bounds the zoom levels a request or an archive may name, so that tile IDs and the tile grid fit their
+	// integer types. The archives themselves stop at z15.
 	maxZoom = 30
-
-	// rootDirectoryBytes is how far into an archive the header and the root directory may reach (PMTiles v3).
-	rootDirectoryBytes = 16384
 
 	// Tiles change only when an archive is extracted again; a day of freshness, then revalidation by ETag. They are
 	// "private" because they will be served only to signed-in members (T007), so shared caches must not keep them.
 	tileCacheControl = "private, max-age=86400"
 	// The TileJSON follows the archive (zoom levels, bounds), so it is revalidated on every use.
 	tileJSONCacheControl = "private, no-cache"
+
+	// tileContentType is the media type of Mapbox Vector Tiles that MapLibre and most tile servers use.
+	tileContentType = "application/x-protobuf"
 )
 
-// cityPattern is what a city name may look like. It doubles as the guard against path traversal: the name becomes a
-// file name in the tiles directory.
+// cityPattern is what a city name may look like.
 var cityPattern = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
 
 // Handler serves the PMTiles archives of one directory as z/x/y tiles and TileJSON; see the package documentation.
 type Handler struct {
-	dir    string
-	server *pmtiles.Server
-	logger *slog.Logger
+	dir       string
+	publicURL string
+	logger    *slog.Logger
+	dirs      *dirCache
 
 	mu       sync.Mutex
-	listedAt time.Time               // the directory's modification time when files was read
-	readAt   time.Time               // when files was read
-	files    map[string]string       // the directory's *.pmtiles files: path by file name
-	archives map[string]archiveState // by city: the result of checkArchive for the file as it was last seen
-}
-
-type archiveState struct {
-	modTime time.Time
-	size    int64
-	usable  bool
+	listedAt time.Time           // the directory's modification time when files was read
+	readAt   time.Time           // when files was read
+	files    map[string]string   // the directory's *.pmtiles files: path by file name
+	archives map[string]*archive // by city: the file as it was last loaded
 }
 
 // NewHandler returns a handler for the archives <dir>/<city>.pmtiles. The directory need not exist yet; cities are
@@ -68,25 +60,23 @@ type archiveState struct {
 // a complete one over it, as deploy/tiles.sh does).
 //
 // publicURL is the absolute URL the instance is reached at, without a trailing slash (OSFM_PUBLIC_URL); the TileJSON
-// gives tile URLs below it. Empty means root-relative tile URLs ("/tiles/..."). logger receives warnings about unusable
-// archives and, at debug level, go-pmtiles' own log; nil discards both.
+// gives tile URLs below it. Empty means root-relative tile URLs ("/tiles/..."). logger receives one warning for each
+// archive file that is not served, and why; nil discards them.
 func NewHandler(dir, publicURL string, logger *slog.Logger) (*Handler, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	publicURL = strings.TrimSuffix(publicURL, "/") + strings.TrimSuffix(RoutePrefix, "/")
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, fmt.Errorf("tiles: directory %q: %w", dir, err)
 	}
-	// go-pmtiles logs every directory it fetches; that is debug output.
-	libraryLog := slog.NewLogLogger(logger.Handler(), slog.LevelDebug)
-	server, err := pmtiles.NewServerWithBucket(pmtiles.NewFileBucket(abs), "", libraryLog, directoryCacheMB, publicURL)
-	if err != nil {
-		return nil, fmt.Errorf("tiles: %w", err)
-	}
-	server.Start()
-	return &Handler{dir: abs, server: server, logger: logger, archives: make(map[string]archiveState)}, nil
+	return &Handler{
+		dir:       abs,
+		publicURL: strings.TrimSuffix(publicURL, "/"),
+		logger:    logger,
+		dirs:      newDirCache(directoryCacheBytes),
+		archives:  make(map[string]*archive),
+	}, nil
 }
 
 // ServeHTTP answers GET and HEAD requests for RoutePrefix + "<city>/<z>/<x>/<y>.mvt" and RoutePrefix + "<city>.json".
@@ -102,20 +92,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if city, ok := strings.CutSuffix(rest, ".json"); ok && cityPattern.MatchString(city) {
-		h.serve(w, r, city, "/"+city+".json", tileJSONCacheControl)
+		h.serveTileJSON(w, r, city)
 		return
 	}
 	if city, z, x, y, ok := parseTilePath(rest); ok {
-		h.serve(w, r, city, fmt.Sprintf("/%s/%d/%d/%d.mvt", city, z, x, y), tileCacheControl)
+		h.serveTile(w, r, city, z, x, y)
 		return
 	}
 	notFound(w)
 }
 
 // parseTilePath splits "<city>/<z>/<x>/<y>.mvt" and accepts it only when the city name is valid and the tile exists in
-// the grid of its zoom level. go-pmtiles does not check the latter: it would map an x or y beyond the grid onto
-// another tile.
-func parseTilePath(path string) (city string, z, x, y uint32, ok bool) {
+// the grid of its zoom level; a tile ID is defined only for those.
+func parseTilePath(path string) (city string, z uint8, x, y uint32, ok bool) {
 	parts := strings.Split(path, "/")
 	if len(parts) != 4 || !cityPattern.MatchString(parts[0]) {
 		return "", 0, 0, 0, false
@@ -124,13 +113,13 @@ func parseTilePath(path string) (city string, z, x, y uint32, ok bool) {
 	if !ok {
 		return "", 0, 0, 0, false
 	}
-	z, okZ := parseCoordinate(parts[1])
+	zoom, okZ := parseCoordinate(parts[1])
 	x, okX := parseCoordinate(parts[2])
 	y, okY := parseCoordinate(last)
-	if !okZ || !okX || !okY || z > maxZoom || x >= 1<<z || y >= 1<<z {
+	if !okZ || !okX || !okY || zoom > maxZoom || x >= 1<<zoom || y >= 1<<zoom {
 		return "", 0, 0, 0, false
 	}
-	return parts[0], z, x, y, true
+	return parts[0], uint8(zoom), x, y, true
 }
 
 // parseCoordinate accepts a decimal number in its canonical form only (no sign, no leading zeros), so that each tile
@@ -143,31 +132,51 @@ func parseCoordinate(s string) (uint32, bool) {
 	return uint32(n), true
 }
 
-// serve answers from go-pmtiles for an archive that passed checkArchive. A tile the archive does not hold (go-pmtiles
-// answers 204) is a 404 like every other miss.
-func (h *Handler) serve(w http.ResponseWriter, r *http.Request, city, path, cacheControl string) {
-	if !h.usable(city) {
+func (h *Handler) serveTileJSON(w http.ResponseWriter, r *http.Request, city string) {
+	f, a, ok := h.open(city)
+	if !ok {
 		notFound(w)
 		return
 	}
-	status, headers, body := h.server.Get(r.Context(), path)
-	switch {
-	case status == http.StatusOK:
-	case status == 499: // the client went away
-		return
-	case status >= http.StatusInternalServerError:
-		h.logger.Warn("tiles: archive could not be read", "city", city, "status", status, "detail", string(body))
-		http.Error(w, "Tile archive could not be read", http.StatusInternalServerError)
-		return
-	default:
+	_ = f.Close()
+	writeBody(w, r, a.tileJSON, "application/json", "", tileJSONCacheControl)
+}
+
+// serveTile answers with the tile as stored in the archive; a tile outside the archive's zoom levels or not in it is a
+// 404 like every other miss.
+func (h *Handler) serveTile(w http.ResponseWriter, r *http.Request, city string, z uint8, x, y uint32) {
+	f, a, ok := h.open(city)
+	if !ok {
 		notFound(w)
 		return
 	}
-	for name, value := range headers { // Content-Type, Content-Encoding for tiles, ETag
-		w.Header().Set(name, value)
+	defer func() { _ = f.Close() }()
+	if z < a.header.minZoom || z > a.header.maxZoom {
+		notFound(w)
+		return
 	}
-	w.Header().Set("Cache-Control", cacheControl)
-	w.Header().Set("X-Content-Type-Options", "nosniff")
+	tile, err := a.readTile(f, z, x, y, h.dirs)
+	if err != nil {
+		if !errors.Is(err, errNoTile) {
+			h.markBroken(city, a, err)
+		}
+		notFound(w)
+		return
+	}
+	writeBody(w, r, tile, tileContentType, a.header.tileCompression.contentEncoding(), tileCacheControl)
+}
+
+func writeBody(w http.ResponseWriter, r *http.Request, body []byte, contentType, contentEncoding, cacheControl string) {
+	hash := fnv.New64a()
+	_, _ = hash.Write(body)
+	header := w.Header()
+	header.Set("Content-Type", contentType)
+	if contentEncoding != "" {
+		header.Set("Content-Encoding", contentEncoding)
+	}
+	header.Set("ETag", fmt.Sprintf(`"%016x"`, hash.Sum64()))
+	header.Set("Cache-Control", cacheControl)
+	header.Set("X-Content-Type-Options", "nosniff")
 	// ServeContent answers If-None-Match with 304 and HEAD without a body.
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(body))
 }
@@ -176,30 +185,53 @@ func notFound(w http.ResponseWriter) {
 	http.Error(w, "Not found", http.StatusNotFound)
 }
 
-// usable reports whether the tiles directory holds <city>.pmtiles and the file passes checkArchive. The check is
-// repeated only when the file's size or modification time changes.
-func (h *Handler) usable(city string) bool {
+// open opens the archive of city and returns it with what is known about it, loading that again when the file has
+// changed. ok is false when there is no such archive or it is not served; the caller closes f otherwise. All reads
+// for one request go through the same open file, so a file replaced meanwhile cannot mix two archives.
+func (h *Handler) open(city string) (f *os.File, a *archive, ok bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	path, ok := h.archivePath(city + ".pmtiles")
-	var info os.FileInfo
-	var err error
-	if ok {
-		info, err = os.Stat(path)
-	}
-	if !ok || err != nil || !info.Mode().IsRegular() {
+	if !ok {
 		delete(h.archives, city)
-		return false
+		return nil, nil, false
 	}
-	if state, ok := h.archives[city]; ok && state.size == info.Size() && state.modTime.Equal(info.ModTime()) {
-		return state.usable
-	}
-	err = checkArchive(path, info.Size())
+	f, err := os.Open(path) //nolint:gosec // G304: path comes from the listing of the tiles directory
 	if err != nil {
-		h.logger.Warn("tiles: archive not served", "file", info.Name(), "error", err)
+		delete(h.archives, city)
+		return nil, nil, false
 	}
-	h.archives[city] = archiveState{modTime: info.ModTime(), size: info.Size(), usable: err == nil}
-	return err == nil
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		_ = f.Close()
+		delete(h.archives, city)
+		return nil, nil, false
+	}
+	a = h.archives[city]
+	if a == nil || a.size != info.Size() || !a.modTime.Equal(info.ModTime()) {
+		a, err = loadArchive(f, info.Size(), h.publicURL+RoutePrefix+city)
+		if err != nil {
+			h.logger.Warn("tiles: archive not served", "file", info.Name(), "error", err)
+			a = &archive{size: info.Size(), err: err}
+		}
+		a.modTime = info.ModTime()
+		h.archives[city] = a
+	}
+	if a.err != nil {
+		_ = f.Close()
+		return nil, nil, false
+	}
+	return f, a, true
+}
+
+// markBroken stops serving an archive in which a lookup failed, until the file changes, and logs why once.
+func (h *Handler) markBroken(city string, a *archive, err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if a.err == nil {
+		a.err = err
+		h.logger.Warn("tiles: archive not served", "file", city+".pmtiles", "error", err)
+	}
 }
 
 // archivePath looks name up in the listing of the tiles directory, read again whenever the directory changes (or, for a
@@ -229,63 +261,4 @@ func (h *Handler) archivePath(name string) (string, bool) {
 	}
 	path, ok := h.files[name]
 	return path, ok
-}
-
-// checkArchive verifies what go-pmtiles takes for granted when it reads an archive's header and root directory: a
-// file that is too short, not PMTiles v3 or truncated would otherwise crash the process or leave requests hanging in
-// its directory cache.
-func checkArchive(path string, size int64) (err error) {
-	if size < 0 {
-		return errors.New("negative file size")
-	}
-	limit := uint64(size)
-	file, err := os.Open(path) //nolint:gosec // G304: path comes from the listing of the tiles directory
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	head := make([]byte, min(size, rootDirectoryBytes))
-	if _, err := io.ReadFull(file, head); err != nil {
-		return err
-	}
-	if len(head) < pmtiles.HeaderV3LenBytes {
-		return errors.New("too short for a PMTiles header")
-	}
-	header, err := pmtiles.DeserializeHeader(head)
-	if err != nil {
-		return err
-	}
-	switch {
-	case header.SpecVersion != 3:
-		return fmt.Errorf("PMTiles spec version %d, want 3", header.SpecVersion)
-	case header.TileType != pmtiles.Mvt:
-		return fmt.Errorf("tile type %d, want MVT", header.TileType)
-	case header.InternalCompression != pmtiles.NoCompression && header.InternalCompression != pmtiles.Gzip:
-		return fmt.Errorf("unsupported directory compression %d", header.InternalCompression)
-	case !within(header.RootOffset, header.RootLength, uint64(len(head))):
-		return errors.New("root directory outside the first 16 KiB")
-	case !within(header.MetadataOffset, header.MetadataLength, limit),
-		!within(header.LeafDirectoryOffset, header.LeafDirectoryLength, limit),
-		!within(header.TileDataOffset, header.TileDataLength, limit):
-		return errors.New("truncated: a section ends beyond the end of the file")
-	}
-
-	// DeserializeEntries panics on a corrupt directory.
-	defer func() {
-		if p := recover(); p != nil {
-			err = fmt.Errorf("unreadable root directory: %v", p)
-		}
-	}()
-	root := head[header.RootOffset : header.RootOffset+header.RootLength]
-	if entries := pmtiles.DeserializeEntries(bytes.NewBuffer(root), header.InternalCompression); len(entries) == 0 {
-		return errors.New("empty root directory")
-	}
-	return nil
-}
-
-// within reports whether the section [offset, offset+length) lies inside [0, limit).
-func within(offset, length, limit uint64) bool {
-	end := offset + length
-	return end >= offset && end <= limit
 }
