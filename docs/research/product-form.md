@@ -97,7 +97,7 @@
 ## 5. 数据模型草案（供 PRD 讨论）
 
 ```
-Place（地点）
+Place（地点）                              —— 地点层：ODbL 1.0，不含任何成员信息
   id            UUID（全局稳定，联邦时用）
   name          店名（可多语言 / 别名）
   location      WGS-84 点；precision（exact | street | area）
@@ -108,7 +108,7 @@ Place（地点）
                 菜系沿用 OSM cuisine 取值；不允许自由类型（合规原因见 geodata-and-compliance.md §0）
   status        营业中 / 疑似关门 / 已关门（带最后确认时间）
 
-Recommendation（推荐）
+Recommendation（推荐）                     —— 推荐层：内容许可另定（建议 CC BY-SA 4.0）
   id            UUID
   place_id
   author_id     成员；display_as（主名 | 化名 id）
@@ -120,10 +120,29 @@ Recommendation（推荐）
   visited_at    最近一次到店（可选）
   created_at / updated_at
 
-Member（成员）
+Member（成员）                             —— 成员层：个人数据，只在实例内使用，不随数据层导出
   id, display_name, pseudonyms[], external_links[]（如 X 账号，可选）
   invited_by, role（member | maintainer）, can_invite
 ```
+
+### 5.1 数据层与许可
+
+许可按**数据层**划分，而不是按每条数据的来源划分：同一层里混在一起的数据，只能整体适用一个许可。
+
+| 层 | 内容 | 许可 | 理由 |
+| --- | --- | --- | --- |
+| 地点层 | `Place` 的全部字段：坐标、店名、类别、精度、原话位置描述、`osm_ref`、营业状态 | **ODbL 1.0（整层）** | 吸附到 OSM 节点的点带有 OSM 的坐标与名称，成员自己打的点是对照 OSM 底图补充同一类要素（餐饮）；两者在同一区域混合，按 OSMF 的 [Collective Database](https://osmfoundation.org/wiki/Licence/Community_Guidelines/Collective_Database_Guideline_Guideline) 与 [Horizontal Map Layers](https://osmfoundation.org/wiki/Licence/Community_Guidelines/Horizontal_Map_Layers_-_Guideline) 指南属于衍生数据库，触发共享相同方式 |
+| 推荐层 | `Recommendation` 的全部字段：推荐语、菜品、时段、来源、推荐人引用 | **另定，建议 CC BY-SA 4.0**（或由实例选择） | 只通过 `place_id` 引用地点、本身不含 OSM 数据；按 Collective Database 指南（"为 OSM 餐馆补充电话号码"一例）与地点层相互独立，不受 ODbL 约束 |
+| 成员层 | `Member`、邀请关系、化名映射 | 不对外授权 | 个人数据，只在实例内使用 |
+
+由此带来的设计约束：
+
+1. **地点层不放任何成员信息。** 谁添加了地点、谁确认了营业状态，记在推荐层或单独的审计表里；否则按 ODbL 导出地点层时会带出成员身份，与化名设计冲突。
+2. **ODbL 的"公开使用"包括邀请制圈子**（ODbL 1.0 §1："Publicly" 指本人以外的任何人）。义务对象是拿到数据的人，即实例成员：实例为成员提供地点层的 ODbL 导出即可满足，不需要向圈外发布。
+3. **署名**：地图上与地点层导出里都保留 "© OpenStreetMap contributors"。
+4. **不依赖"少于 100 个要素"的豁免**：[Substantial 指南](https://osmfoundation.org/wiki/Licence/Community_Guidelines/Substantial_-_Guideline)把同一项目的多次小量提取合并计算，持续运行的实例很快会超过。
+5. **来源里的第三方原文不随推荐层的许可**：`sources[]` 的原文摘录（笔记、帖子）仍属原作者，只保留必要的短摘录与链接，导出时标明出处。
+6. 推荐层与地点层分表存放、分别导出；联邦同步时也按层传输，各自带许可声明。
 
 关于讨论里提到的 **source-of-truth 字段**（平台展示的不一定是实际情况，以原始来源为准）：落在 `sources[]` 上，每条推荐保留它的出处与原文；当平台信息（营业时间、地址）与成员亲见不一致时，以成员到店的记录为准，并标注确认时间。
 
@@ -189,4 +208,4 @@ Member（成员）
 3. "到店现场问群友"做成什么：分享卡片、群机器人，还是实例内的讨论串？
 4. 营业状态由谁维护、多久失效？
 5. 第一个城市 / 第一批种子数据如何录入（谁打点、谁核对）？
-6. License 选择（见 [open-source-landscape.md](open-source-landscape.md) 的建议）。
+6. 软件 license 与推荐层的内容许可（见 [open-source-landscape.md](open-source-landscape.md) 的建议与上面 §5.1；地点层随 OSM 用 ODbL 已无选择余地）。

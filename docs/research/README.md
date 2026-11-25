@@ -30,7 +30,8 @@
 
 | 主题 | 建议 | 依据 |
 | --- | --- | --- |
-| License | 服务端代码 **AGPL-3.0-or-later**（防止闭源 SaaS 分叉，且与 uMap / FacilMap 兼容，可借用其代码）；导出格式规范与将来的客户端 SDK 可用 Apache-2.0；**店铺位置图层按 ODbL 处理**；**推荐文本建议 CC BY-SA 4.0**，或由实例自行选择 | open-source-landscape §结论；geodata-and-compliance §4 |
+| 软件 license | 服务端代码 **AGPL-3.0-or-later**（防止闭源 SaaS 分叉，且与 uMap / FacilMap 兼容，可借用其代码）；导出格式规范与将来的客户端 SDK 可用 Apache-2.0 | open-source-landscape §结论 |
+| 数据许可（按数据层） | **地点层**（坐标、店名、类别、精度、原话位置描述、OSM 引用）整层 **ODbL 1.0**：OSM 数据与成员补充的同类店铺在同一区域混合，属于衍生数据库，无法按来源分开授权；地点层不含任何成员信息。**推荐层**（推荐语、菜品、时段、来源、推荐人引用）只按 ID 引用地点，与地点层相互独立，许可另定，建议 **CC BY-SA 4.0**。**成员层**不对外授权。ODbL 义务对象是实例成员：为成员提供地点层的 ODbL 导出即可 | product-form §5.1；geodata-and-compliance §4 |
 | 地图显示范围 | 默认 `minZoom` 设在城市级（约 10），用 `maxBounds` 限定在实例关心的城市，不渲染国界级视图；不提供任何边界或自定义类型图层 | geodata-and-compliance §0 |
 | 地点类别 | 类别固定为餐饮白名单（沿用 OSM `amenity=restaurant / fast_food / cafe` 等与 `cuisine=*`），不允许自由类型 | geodata-and-compliance §0；product-form §5 |
 | 位置精度 | 存储保留约 5 位小数；每个点带精度级别（门口 / 街道 / 片区）与原话位置描述；界面不暗示高于约 10 m 的精度 | product-form §4；geodata-and-compliance §0 |
@@ -42,13 +43,13 @@
 
 | # | 决策 | 调研给出的倾向 |
 | --- | --- | --- |
-| R1 | 项目 license | AGPL-3.0-or-later（服务端）+ 数据层按上表 |
+| R1 | 软件 license | AGPL-3.0-or-later（服务端） |
 | R2 | 后端：PocketBase（快、单一维护者、0.x）还是自写 Node / Go 服务 | 原型先用 PocketBase，数据访问封装一层以便替换 |
 | R3 | 底图：自托管 PMTiles 的覆盖范围（全球低缩放 + 哪些城市） | 按圈子常去城市配置，原型阶段实测文件大小 |
 | R4 | 登录方式 | 邀请码 + 邮件验证码；passkey 第二步 |
 | R5 | 化名的语义与上限 | 见 product-form §11 |
 | R6 | 是否支持在中国大陆托管实例 | 只支持私用、不公开；文档写明风险 |
-| R7 | 推荐文本的内容许可 | CC BY-SA 4.0 或实例可选 |
+| R7 | 推荐层的内容许可（地点层随 OSM 固定为 ODbL） | CC BY-SA 4.0 或实例可选 |
 | R8 | 过渡期是否先开一个 uMap 实例收集种子数据 | 建议是，成本低 |
 
 ## 尚未核实、需要原型或实测的事项
