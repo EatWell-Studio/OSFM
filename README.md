@@ -38,6 +38,8 @@ go build -o osfm ./cmd/osfm   # one binary with the web app embedded
 
 For frontend work, run `./osfm serve` and `pnpm --dir web dev` side by side; the Vite dev server proxies `/api` and `/tiles` to the binary. Without a frontend build the binary still compiles and serves a placeholder page.
 
+Before opening a pull request, run `bin/gate.sh` (lint, type checks, tests and builds for both halves; see [CONTRIBUTING.md](CONTRIBUTING.md)).
+
 ## License
 
 The software is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). If you run a modified version as a network service, you must offer its source code to its users; running it unmodified for your own circle carries no extra obligation.

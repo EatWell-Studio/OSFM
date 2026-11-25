@@ -1,0 +1,31 @@
+# golangci-lint v2 configuration. Run: golangci-lint run ./...
+version: "2"
+
+linters:
+  # standard = errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - bodyclose # HTTP response bodies are closed (the search proxy and tile code make outgoing requests)
+    - errorlint # errors are compared with errors.Is / errors.As, wrapping keeps the chain
+    - gosec # security: weak crypto, unchecked file paths, timing-unsafe comparisons
+    - misspell
+    - nilerr # a nil error is not returned where an error was checked
+    - unconvert
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # struct layout is chosen for readability, not padding
+        - shadow # `err` shadowing is idiomatic in handler code
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/EatWell-Studio/OSFM
+
+run:
+  timeout: 5m
