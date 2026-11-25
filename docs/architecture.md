@@ -188,8 +188,9 @@ flowchart LR
 
 ### 3.6 地图瓦片
 
-- 底图数据来自 Protomaps 的 OSM 构建，部署时用 `pmtiles extract` 按每个城市的范围裁剪出 **z10–z15** 的切片（更高的缩放由客户端放大显示），每个城市一个文件：`tiles/{city}.pmtiles`。`deploy/` 提供裁剪脚本；各城市文件的体积在 M1 实测后写进部署文档。
-- **服务器把 PMTiles 解包成普通的 `z/x/y` 瓦片**（`/tiles/{city}/{z}/{x}/{y}.mvt`，用 `github.com/protomaps/go-pmtiles`），而不是让浏览器对大文件发范围请求。这样每块瓦片都是一个普通的可缓存请求，离线缓存（`A9`）可以直接用 Service Worker 的常规缓存策略。
+- 底图数据来自 Protomaps 的 OSM 构建，部署时用 `pmtiles extract` 按每个城市的范围裁剪出 **z10–z15** 的切片（更高的缩放由客户端放大显示），每个城市一个文件：`tiles/{city}.pmtiles`。`deploy/tiles.sh` 是裁剪脚本（`--dry-run` 只估算体积）；实测一个城市约 10–30 MB（T014）。
+- **服务器把 PMTiles 解包成普通的 `z/x/y` 瓦片**（`/tiles/{city}/{z}/{x}/{y}.mvt`，另有 `/tiles/{city}.json` 的 TileJSON），而不是让浏览器对大文件发范围请求。这样每块瓦片都是一个普通的可缓存请求，离线缓存（`A9`）可以直接用 Service Worker 的常规缓存策略。
+- 解包用**自带的本地 PMTiles v3 读取器**（`internal/tiles`，按规范实现），不用 `github.com/protomaps/go-pmtiles`：后者为远程存储链接了 AWS、Azure、Google Cloud 的 SDK 和 Prometheus，使可执行文件体积翻倍，且遇到损坏或截断的文件会 panic 导致整个进程退出。自带读取器只读本地文件，读取前检查每个偏移和长度，解压有上限，目录缓存有大小上限；损坏的文件返回 404 并记录一次警告。
 - 样式基于 Protomaps basemaps 的样式，字形（只需要拉丁字符区段）和图标精灵图由实例提供；**中日韩文字由浏览器用本机字体渲染**（MapLibre 的本地表意文字渲染），不需要下载中文字形。
 - 不使用影像图层，不加载任何边界或行政区图层（`H2` `H4`）。
 - 地图署名 "© OpenStreetMap contributors" 写在样式的 attribution 中，始终显示（`A1`）。
@@ -333,7 +334,7 @@ CI 在 GitHub Actions 上运行，顶层权限只读。代码进入仓库后，�
 | AD4 | 对外 ID 只用 UUIDv7 | 联邦预留（`F5`）；不暴露内部 ID |
 | AD5 | 两步验证自行实现：go-webauthn、pquerna/otp、argon2id；TOTP 密钥用实例主密钥加密 | PocketBase 不支持 passkey 与 TOTP |
 | AD6 | 会话令牌放在 HttpOnly cookie，前端不接触令牌；状态变更请求要求自定义请求头 | 防止脚本窃取令牌；防 CSRF |
-| AD7 | 底图为每个城市一个 PMTiles 文件（z10–z15），服务器解包为 z/x/y 瓦片 | 最小缩放限制在城市级（`H2`），不需要全球低缩放；普通瓦片请求便于离线缓存 |
+| AD7 | 底图为每个城市一个 PMTiles 文件（z10–z15），服务器用自带的本地 PMTiles v3 读取器解包为 z/x/y 瓦片 | 最小缩放限制在城市级（`H2`），不需要全球低缩放；普通瓦片请求便于离线缓存；不用 go-pmtiles 是因为它的依赖使可执行文件翻倍（`G1` `G2`），且遇到损坏文件会 panic |
 | AD8 | 中日韩文字用浏览器本机字体渲染，只提供拉丁字形 | 中文字形体积巨大；不能用 CDN |
 | AD9 | 前端：React + TypeScript + Vite，React Router、TanStack Query、Tailwind CSS + shadcn/ui、react-i18next | 生态与 AI 辅助开发的可靠性；地图有官方维护的 React 封装 |
 | AD10 | PocketBase 管理后台生产环境默认关闭 | 它能读到化名对应关系等全部原始数据 |
@@ -343,7 +344,7 @@ CI 在 GitHub Actions 上运行，顶层权限只读。代码进入仓库后，�
 
 1. PocketBase：关闭内置登录方式后，自行签发令牌的接口与令牌失效方式；限速设置能否覆盖自定义路由；请求日志不记录 IP 的配置。
 2. `@vis.gl/react-maplibre` 与 MapLibre v6 的兼容性；MapLibre 在严格 CSP 下的 Worker 加载方式。
-3. 每个城市 z10–z15 切片的文件体积；go-pmtiles 解包瓦片的内存占用。
+3. 每个城市 z10–z15 切片的文件体积：已在 T014 完成（约 10–30 MB）。
 4. passkey 与密码 + TOTP 在 iOS、带谷歌服务的 Android、不带谷歌服务的国产 Android 上的表现（`N6`）。
 5. Apple 地图与 Google 地图在中国大陆境内跳转时需要的坐标系（§4.6）。
 6. 空闲内存占用是否满足 `G2`。

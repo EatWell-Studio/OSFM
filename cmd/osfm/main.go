@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/EatWell-Studio/OSFM/internal/config"
+	"github.com/EatWell-Studio/OSFM/internal/tiles"
 	"github.com/EatWell-Studio/OSFM/web"
 )
 
@@ -40,6 +41,14 @@ func main() {
 	})
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+		// Basemap tiles from <data>/tiles; with OSFM_PUBLIC_URL set, the TileJSON gives absolute tile URLs. Not behind
+		// authentication yet: member sessions arrive with T007.
+		tileHandler, err := tiles.NewHandler(cfg.TilesDir(), cfg.PublicURL, se.App.Logger())
+		if err != nil {
+			return err
+		}
+		se.Router.GET(tiles.RoutePrefix+"{path...}", apis.WrapStdHandler(tileHandler))
+
 		// The single-page app answers every path the API does not; unknown paths fall back to index.html so that
 		// client-side routes work on reload.
 		if !se.Router.HasRoute(http.MethodGet, "/{path...}") {
