@@ -33,6 +33,17 @@ Install the hook once after cloning:
 bin/install-hooks.sh
 ```
 
+## Before opening a pull request
+
+Run all checks locally; CI runs the same ones and every pull request has to pass them:
+
+```bash
+pnpm --dir web install
+bin/gate.sh
+```
+
+`bin/gate.sh` needs Go (version in `go.mod`), golangci-lint v2, Node.js 22+ and pnpm. It stops at the first failing step and shows its last lines; the full output of every step is in `../osfm-gate-output/`.
+
 ## Branches, commits and pull requests
 
 - `main` is protected: no direct pushes, no force pushes; every change arrives through a pull request and is squash-merged.

@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (lint, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+
+      - name: Test
+        run: go test -race ./...
+
+  web:
+    name: Web (format, lint, typecheck, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run format:check
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run test
+      - run: pnpm run build
+
+  binary:
+    name: Binary (embedded web app)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build the web app and the binary
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web run build
+          go build -o osfm ./cmd/osfm
+
+      - name: Start the binary and check what it serves
+        run: |
+          data="$(mktemp -d)"
+          ./osfm serve --dir "$data" --http 127.0.0.1:8090 >"$data/log.txt" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8090/api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          set -e
+          curl -fsS http://127.0.0.1:8090/api/health
+          echo
+          # The built app, not the placeholder page: Vite's output references its assets directory.
+          curl -fsS http://127.0.0.1:8090/ | grep -q '/assets/index-'
+          # Client-side routes fall back to index.html.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8090/some/client/route)" = 200
+          echo "The binary serves the embedded web app."
