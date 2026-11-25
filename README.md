@@ -2,7 +2,7 @@
 
 A food map for a circle of friends, on top of OpenStreetMap. **The map is only the display; the recommendations of people you know are the data.**
 
-> 🚧 Research phase — there is no code yet. See [docs/research](docs/research/README.md).
+> 🚧 Early development — not usable yet. Design: [docs/architecture.md](docs/architecture.md); research: [docs/research](docs/research/README.md).
 
 一个建立在 OpenStreetMap 之上、只属于一个熟人圈的美食地图：地图只是展示层，群友署名的推荐才是数据层。
 
@@ -15,7 +15,7 @@ A food map for a circle of friends, on top of OpenStreetMap. **The map is only t
 
 ## Documentation
 
-Public project documentation lives in [`docs/`](docs/README.md). The first part is the initial product research in [`docs/research/`](docs/research/README.md): product form, technology stack, open-source landscape, map data and compliance.
+Public project documentation lives in [`docs/`](docs/README.md): the [architecture](docs/architecture.md) and the initial product research in [`docs/research/`](docs/research/README.md) (product form, technology stack, open-source landscape, map data and compliance).
 
 ## Contributing
 
@@ -25,8 +25,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. All commit
 
 Please report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
 
+## Development
+
+Requirements: Go (version in `go.mod`), Node.js 22+ and pnpm (version in `web/package.json`).
+
+```bash
+pnpm --dir web install
+pnpm --dir web build          # builds the web app into web/dist/app
+go build -o osfm ./cmd/osfm   # one binary with the web app embedded
+./osfm serve                  # http://127.0.0.1:8090, data in ./pb_data
+```
+
+For frontend work, run `./osfm serve` and `pnpm --dir web dev` side by side; the Vite dev server proxies `/api` and `/tiles` to the binary. Without a frontend build the binary still compiles and serves a placeholder page.
+
 ## License
 
-Not chosen yet; the options are discussed in the research documents. Until a license is added, no rights are granted to use, copy or distribute the contents of this repository.
+The software is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). If you run a modified version as a network service, you must offer its source code to its users; running it unmodified for your own circle carries no extra obligation.
+
+The data an instance holds is licensed by layer:
+
+- **Places** (positions, names, categories, position notes, OpenStreetMap references) are mixed with OpenStreetMap data and are therefore under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/).
+- **Recommendations** (what members write about a place) are under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- **Member data** is not licensed to anyone and never leaves the instance except in a member's own data export.
 
 Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the Open Database License.
