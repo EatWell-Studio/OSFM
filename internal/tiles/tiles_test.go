@@ -220,7 +220,7 @@ func TestTileJSON(t *testing.T) {
 func TestTileJSONPublicURL(t *testing.T) {
 	dir := t.TempDir()
 	writeTestArchive(t, dir, testCity+".pmtiles")
-	h, err := NewHandler(dir, "https://food.example/tiles/", nil)
+	h, err := NewHandler(dir, "https://food.example", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

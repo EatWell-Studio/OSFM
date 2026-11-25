@@ -67,23 +67,21 @@ type archiveState struct {
 // looked up on each request, so archives can be added or replaced while the server runs (replace a file by renaming
 // a complete one over it, as deploy/tiles.sh does).
 //
-// publicURL is the URL prefix of the tile URLs written into the TileJSON, without a trailing slash; empty means
-// "/tiles", a path relative to the server's own origin. logger receives warnings about unusable archives and, at
-// debug level, go-pmtiles' own log; nil discards both.
+// publicURL is the absolute URL the instance is reached at, without a trailing slash (OSFM_PUBLIC_URL); the TileJSON
+// gives tile URLs below it. Empty means root-relative tile URLs ("/tiles/..."). logger receives warnings about unusable
+// archives and, at debug level, go-pmtiles' own log; nil discards both.
 func NewHandler(dir, publicURL string, logger *slog.Logger) (*Handler, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	if publicURL == "" {
-		publicURL = strings.TrimSuffix(RoutePrefix, "/")
-	}
+	publicURL = strings.TrimSuffix(publicURL, "/") + strings.TrimSuffix(RoutePrefix, "/")
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, fmt.Errorf("tiles: directory %q: %w", dir, err)
 	}
 	// go-pmtiles logs every directory it fetches; that is debug output.
 	libraryLog := slog.NewLogLogger(logger.Handler(), slog.LevelDebug)
-	server, err := pmtiles.NewServerWithBucket(pmtiles.NewFileBucket(abs), "", libraryLog, directoryCacheMB, strings.TrimSuffix(publicURL, "/"))
+	server, err := pmtiles.NewServerWithBucket(pmtiles.NewFileBucket(abs), "", libraryLog, directoryCacheMB, publicURL)
 	if err != nil {
 		return nil, fmt.Errorf("tiles: %w", err)
 	}
