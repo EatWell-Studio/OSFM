@@ -104,3 +104,98 @@ jobs:
           # Client-side routes fall back to index.html.
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8090/some/client/route)" = 200
           echo "The binary serves the embedded web app."
+
+  docker:
+    name: Docker (amd64, arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Compiling never needs emulation (deploy/Dockerfile cross-compiles); QEMU is for running the arm64 image below.
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v4
+
+      # The same build as the release workflow, without pushing.
+      - name: Build for both platforms
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: false
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Docker's image store cannot load a multi-platform build in one go; load each platform from the builder's cache.
+      - name: Load the amd64 image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64
+          load: true
+          provenance: false
+          tags: osfm:ci-amd64
+
+      - name: Load the arm64 image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/arm64
+          load: true
+          provenance: false
+          tags: osfm:ci-arm64
+
+      - name: Image sizes
+        run: |
+          for arch in amd64 arm64; do
+            size="$(docker image inspect --format '{{.Size}}' "osfm:ci-$arch")"
+            line="osfm:ci-$arch ($(docker image inspect --format '{{.Os}}/{{.Architecture}}' "osfm:ci-$arch")): $((size / 1024 / 1024)) MiB ($size bytes)"
+            echo "$line"
+            echo "- $line" >>"$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Run each image and check what it serves
+        run: |
+          set -eu
+          check() {
+            arch="$1" port="$2"
+            name="osfm-ci-$arch"
+            # A named volume, as in the README: it starts with the image's /data, owned by the non-root user.
+            docker volume create "$name" >/dev/null
+            docker run -d --name "$name" --platform "linux/$arch" -p "127.0.0.1:$port:8090" -v "$name:/data" "osfm:ci-$arch"
+            # PocketBase starts slowly under emulation.
+            ok=0
+            for _ in $(seq 1 90); do
+              if curl -fsS "http://127.0.0.1:$port/api/health" >/dev/null 2>&1; then ok=1; break; fi
+              sleep 1
+            done
+            if [ "$ok" -ne 1 ]; then
+              echo "linux/$arch: /api/health did not answer" >&2
+              docker logs "$name" >&2 || true
+              return 1
+            fi
+            curl -fsS "http://127.0.0.1:$port/api/health"
+            echo
+            # The built app, not the placeholder page: Vite's output references its assets directory.
+            page="$(curl -fsS "http://127.0.0.1:$port/")"
+            case "$page" in *'/assets/index-'*) ;; *) echo "linux/$arch: / does not serve the built web app" >&2; return 1 ;; esac
+            # Client-side routes fall back to index.html.
+            test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/some/client/route")" = 200
+            # It runs as the non-root user and keeps its database in the volume.
+            test "$(docker inspect --format '{{.Config.User}}' "$name")" = 65532:65532
+            files="$(docker cp "$name:/data/pb_data" - | tar -t)"
+            printf '%s\n' "$files" | grep -qx 'pb_data/data.db'
+            docker rm -f "$name" >/dev/null
+            docker volume rm "$name" >/dev/null
+            echo "linux/$arch: the image serves the embedded web app."
+          }
+          check amd64 8090
+          check arm64 8091

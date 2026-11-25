@@ -21,6 +21,19 @@ updates:
       - dependency-name: typescript
         update-types: [version-update:semver-major, version-update:semver-minor]
 
+  # Base images of deploy/Dockerfile. The golang image must stay at least at the Go version in go.mod.
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: weekly
+    groups:
+      docker-images:
+        patterns: ["*"]
+    ignore:
+      # Node.js follows CI (node-version in ci.yml); move both together.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
