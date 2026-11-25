@@ -193,6 +193,16 @@ jobs:
             test "$(docker inspect --format '{{.Config.User}}' "$name")" = 65532:65532
             files="$(docker cp "$name:/data/pb_data" - | tar -t)"
             printf '%s\n' "$files" | grep -qx 'pb_data/data.db'
+            # The instance keys are generated in the volume on first start, readable by their owner only.
+            listing="$(docker cp "$name:/data/secrets" - | tar -tv)"
+            for key in master.key instance_ed25519; do
+              if ! printf '%s\n' "$listing" | grep -Eq "^-rw------- .* secrets/$key\$"; then
+                echo "linux/$arch: secrets/$key is missing or not mode 0600:" >&2
+                printf '%s\n' "$listing" >&2
+                docker logs "$name" >&2 || true
+                return 1
+              fi
+            done
             docker rm -f "$name" >/dev/null
             docker volume rm "$name" >/dev/null
             echo "linux/$arch: the image serves the embedded web app."
