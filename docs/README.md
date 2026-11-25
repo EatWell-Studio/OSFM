@@ -4,9 +4,10 @@ Public documentation of OSFM. Documents are written in Chinese for now; English 
 
 | Directory | Content |
 | --- | --- |
+| [architecture.md](architecture.md) | Architecture: process and repository layout, backend (PocketBase usage, API, two-factor authentication, authorisation, tiles, search proxy, export), frontend stack, deployment, testing, decision records |
 | [research/](research/README.md) | Initial product research (2026-11): product form, technology stack, open-source landscape, map data and compliance |
 
-Architecture, data model, import/export format and self-hosting guides will be added here as the code is written.
+Data model details, the import/export format and self-hosting guides will be added here as the code is written.
 
 ## What is not here
 
