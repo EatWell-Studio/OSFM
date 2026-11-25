@@ -38,6 +38,17 @@ go build -o osfm ./cmd/osfm   # one binary with the web app embedded
 
 For frontend work, run `./osfm serve` and `pnpm --dir web dev` side by side; the Vite dev server proxies `/api` and `/tiles` to the binary. Without a frontend build the binary still compiles and serves a placeholder page.
 
+### Basemap tiles
+
+The map's basemap is one PMTiles file per city in `<data>/tiles/` (`OSFM_DATA_DIR`, default `./data`), served as `/tiles/<city>/{z}/{x}/{y}.mvt` and `/tiles/<city>.json`. To get one for local development, install the [`pmtiles` CLI](https://github.com/protomaps/go-pmtiles/releases) and extract your city's bounding box from the latest [Protomaps](https://protomaps.com/) OpenStreetMap build; only the needed parts are downloaded, typically 10–30 MB per city:
+
+```bash
+deploy/tiles.sh --dry-run example-town 6.68,0.30,6.76,0.36   # estimate the size
+deploy/tiles.sh example-town 6.68,0.30,6.76,0.36             # writes ./data/tiles/example-town.pmtiles
+```
+
+City names are lowercase letters, digits and `-`. Tile files are never committed.
+
 Before opening a pull request, run `bin/gate.sh` (lint, type checks, tests and builds for both halves; see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## License
