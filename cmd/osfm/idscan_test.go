@@ -33,6 +33,12 @@ var osfmProbes = map[string][]idscan.Request{
 		{Path: "/tiles/testcity/12/3370/1665.mvt", Status: http.StatusNotFound},
 		{Path: "/tiles/bad..name/1/1/1.mvt", Status: http.StatusNotFound},
 	},
+	// Registered by internal/boundary so that the admin UI's root goes through the middleware (404 on the main
+	// listener) instead of net/http's own redirect.
+	"GET /_": {
+		{Path: "/_", Status: http.StatusNotFound},
+		{Path: "/_/", Status: http.StatusNotFound},
+	},
 	"GET /{path...}": {
 		{Path: "/", Status: http.StatusOK},
 		{Path: "/index.html"},

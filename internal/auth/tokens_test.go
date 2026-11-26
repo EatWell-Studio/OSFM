@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
@@ -135,9 +136,10 @@ func TestMemberByTokenRejectsOtherTokens(t *testing.T) {
 		}
 	}
 
-	// A token signed for a member that no longer exists.
+	// A token signed for a member that no longer exists. Members are only soft-deleted, so the row is removed in SQL,
+	// past the record hooks.
 	token := issue(t, member)
-	if err := app.Delete(member); err != nil {
+	if _, err := app.DB().Delete(member.Collection().Name, dbx.HashExp{"id": member.Id}).Execute(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := auth.MemberByToken(app, token); err == nil {
