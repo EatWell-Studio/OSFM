@@ -131,6 +131,14 @@ func Parse(lookup func(string) (string, bool)) (*Config, error) {
 	return cfg, nil
 }
 
+// PublicHTTPS reports whether PublicURL is an https:// URL whose host is not the local machine: the instance is
+// served over HTTPS at a real host name. Settings that would break plain-HTTP local development, or that browsers would
+// pin to localhost, depend on it: HSTS and the __Host- prefix of the session cookie.
+func (c *Config) PublicHTTPS() bool {
+	u, err := url.Parse(c.PublicURL)
+	return err == nil && u.Scheme == "https" && !isLoopbackHost(u.Hostname())
+}
+
 // PBDataDir returns the PocketBase data directory, <data>/pb_data.
 func (c *Config) PBDataDir() string { return filepath.Join(c.DataDir, PBDataDirName) }
 

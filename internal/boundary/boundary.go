@@ -204,7 +204,7 @@ func middleware() *hook.Handler[*core.RequestEvent] {
 		Func: func(e *core.RequestEvent) error {
 			var err error
 			switch {
-			case onAdminListener(e.Request):
+			case OnAdminListener(e.Request):
 				err = e.Next()
 			case !publicAllowed(e.Request.URL.Path, e.Request.Pattern):
 				err = e.NotFoundError("", nil)
@@ -218,7 +218,9 @@ func middleware() *hook.Handler[*core.RequestEvent] {
 	}
 }
 
-func onAdminListener(r *http.Request) bool {
+// OnAdminListener reports whether r arrived on the admin listener. Only the admin server marks its requests, so a client
+// cannot make a request on the main listener look like one.
+func OnAdminListener(r *http.Request) bool {
 	v, _ := r.Context().Value(adminConnKey{}).(bool)
 	return v
 }

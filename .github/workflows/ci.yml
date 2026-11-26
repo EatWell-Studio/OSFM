@@ -60,6 +60,17 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run test
       - run: pnpm run build
+      # No URL of another origin in the built app (§4.7); and the check does fail on one, added to a copy of the build.
+      - run: pnpm run check:urls
+      - name: The URL check fails on an external URL
+        run: |
+          bad="$RUNNER_TEMP/bad-build"
+          cp -R dist/app "$bad"
+          echo 'import("https://cdn.example.com/lib.js")' >>"$(ls "$bad"/assets/index-*.js)"
+          if node scripts/check-external-urls.ts "$bad"; then
+            echo "check:urls accepted a build with an external URL" >&2
+            exit 1
+          fi
 
   binary:
     name: Binary (embedded web app)
@@ -129,6 +140,41 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{content_type}' http://127.0.0.1:8090/.well-known/osfm.json)" = application/json
           curl -fsS http://127.0.0.1:8090/.well-known/osfm.json | tee /dev/stderr | grep -Fq "\"softwareVersion\":\"$version\""
           curl -fsS http://127.0.0.1:8090/.well-known/osfm.json | grep -q '"publicKey":{"kty":"OKP","crv":"Ed25519","x":"[A-Za-z0-9_-]\{43\}"}'
+          # Security headers on every response of the main listener (§4.7): pages, assets, API errors, 404s.
+          asset="$(cd web/dist/app && ls assets/index-*.js)"
+          for path in / /list "$asset" api/osfm/me api/collections/members/records assets/missing.js; do
+            headers="$(curl -s -D - -o /dev/null -H 'Origin: https://elsewhere.example' "http://127.0.0.1:8090/${path#/}" | tr -d '\r')"
+            for h in \
+              "Content-Security-Policy: default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'" \
+              'Referrer-Policy: no-referrer' \
+              'X-Content-Type-Options: nosniff' \
+              'X-Frame-Options: DENY' \
+              'Cross-Origin-Opener-Policy: same-origin' \
+              'Cross-Origin-Resource-Policy: same-origin'; do
+              printf '%s\n' "$headers" | grep -qiFx "$h" || { echo "$path lacks: $h" >&2; printf '%s\n' "$headers" >&2; exit 1; }
+            done
+            printf '%s\n' "$headers" | grep -qi '^Permissions-Policy: geolocation=(self),' || { echo "$path: Permissions-Policy" >&2; exit 1; }
+            # No CORS on the main listener; no HSTS without an https OSFM_PUBLIC_URL.
+            if printf '%s\n' "$headers" | grep -qiE '^(Access-Control-|Strict-Transport-Security)'; then
+              echo "$path has CORS or HSTS headers:" >&2; printf '%s\n' "$headers" >&2; exit 1
+            fi
+          done
+          # Content types and caching: hashed assets immutable; the page, the service worker and the manifest revalidated.
+          ct() { curl -s -o /dev/null -w '%{content_type}' "http://127.0.0.1:8090/$1"; }
+          cc() { curl -sI "http://127.0.0.1:8090/$1" | tr -d '\r' | sed -n 's/^[Cc]ache-[Cc]ontrol: //p'; }
+          test "$(ct manifest.webmanifest)" = application/manifest+json
+          test "$(ct "$asset")" = 'text/javascript; charset=utf-8'
+          test "$(cc "$asset")" = 'public, max-age=31536000, immutable'
+          for path in '' list index.html sw.js registerSW.js manifest.webmanifest; do
+            test "$(cc "$path")" = no-cache || { echo "/$path: Cache-Control $(cc "$path")" >&2; exit 1; }
+          done
+          # Paths that look like files get 404, not the app's index.html; client-side routes still get it.
+          for path in assets/missing.js map/ 'map/fonts/Noto%20Sans%20Regular/256-511.pbf' favicon.ico; do
+            test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8090/$path")" = 404 || { echo "/$path is not 404" >&2; exit 1; }
+          done
+          for path in list me admin login register some/client/route; do
+            curl -fsS "http://127.0.0.1:8090/$path" | grep -q '/assets/index-'
+          done
           echo "The binary serves the embedded web app."
 
   docker:

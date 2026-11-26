@@ -30,8 +30,9 @@ if [ "$#" -eq 0 ]; then
 		'pnpm --dir web run typecheck' \
 		'pnpm --dir web run test' \
 		'pnpm --dir web run build' \
+		'pnpm --dir web run check:urls' \
 		'golangci-lint run ./...' \
-		'go test ./...' \
+		'go test -race ./...' \
 		'go build -o "$OSFM_GATE_BIN" ./cmd/osfm'
 fi
 OSFM_GATE_BIN="$OUT/osfm"

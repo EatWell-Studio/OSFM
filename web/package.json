@@ -13,6 +13,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "check:i18n": "node scripts/check-hardcoded-cjk.ts",
+    "check:urls": "node scripts/check-external-urls.ts",
     "icons:placeholder": "node scripts/generate-placeholder-icons.ts"
   },
   "dependencies": {

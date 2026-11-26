@@ -31,8 +31,30 @@ import (
 //
 // Sessions last [SessionLifetime] from sign-in; they are not extended by use.
 
-// CookieName is the name of the session cookie.
-const CookieName = "osfm_session"
+// Names of the session cookie. An instance served over HTTPS at a public host name uses [HostCookieName]
+// ([Options].HostPrefix); otherwise, local development included, [CookieName].
+//
+// The __Host- prefix makes browsers accept the cookie only with Secure, Path=/ and no Domain, and refuse any cookie of
+// that name that a sibling subdomain tries to set for the parent domain (cookie tossing: planting a session of the
+// attacker's own, or shadowing the member's). It is not used for local development because WebKit (Safari) refuses
+// __Host- cookies over plain http://localhost and http://127.0.0.1, while it accepts the same cookie without the
+// prefix; Chromium accepts both there.
+const (
+	CookieName     = "osfm_session"
+	HostCookieName = "__Host-" + CookieName
+)
+
+// cookieNameKey is the app store key of the session cookie's name, set by [Bind].
+const cookieNameKey = "osfmSessionCookieName"
+
+// SessionCookieName returns the name of the session cookie on app: [HostCookieName] when [Bind] was given
+// [Options].HostPrefix, else [CookieName].
+func SessionCookieName(app core.App) string {
+	if name, ok := app.Store().Get(cookieNameKey).(string); ok {
+		return name
+	}
+	return CookieName
+}
 
 // SessionLifetime is how long a session lasts from sign-in.
 const SessionLifetime = 30 * 24 * time.Hour
@@ -226,13 +248,13 @@ func writeAudit(app core.App, actor *core.Record, action string, target *core.Re
 	return app.Save(r)
 }
 
-// sessionCookie returns the session cookie for token, valid until expires. HttpOnly keeps it from scripts; Secure
-// keeps it off plain HTTP (browsers accept Secure cookies from http://localhost and http://127.0.0.1, so local
-// development works); SameSite=Lax keeps it off cross-site subrequests and form posts. Path=/ and no Domain: the
-// cookie goes to this host only, the tile requests included.
-func sessionCookie(token string, expires time.Time) *http.Cookie {
+// sessionCookie returns the session cookie called name for token, valid until expires. HttpOnly keeps it from
+// scripts; Secure keeps it off plain HTTP (browsers accept Secure cookies from http://localhost and http://127.0.0.1,
+// so local development works); SameSite=Lax keeps it off cross-site subrequests and form posts. Path=/ and no Domain:
+// the cookie goes to this host only, the tile requests included (and the __Host- prefix requires both).
+func sessionCookie(name, token string, expires time.Time) *http.Cookie {
 	return &http.Cookie{
-		Name:     CookieName,
+		Name:     name,
 		Value:    token,
 		Path:     "/",
 		Expires:  expires.UTC(),
@@ -243,10 +265,10 @@ func sessionCookie(token string, expires time.Time) *http.Cookie {
 	}
 }
 
-// clearedCookie returns a cookie that makes the browser drop the session cookie.
-func clearedCookie() *http.Cookie {
+// clearedCookie returns a cookie that makes the browser drop the session cookie called name.
+func clearedCookie(name string) *http.Cookie {
 	return &http.Cookie{
-		Name:     CookieName,
+		Name:     name,
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,

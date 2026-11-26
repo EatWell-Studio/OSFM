@@ -36,7 +36,7 @@ go build -o osfm ./cmd/osfm   # one binary with the web app embedded
 ./osfm serve                  # http://127.0.0.1:8090, data in ./data
 ```
 
-`./data` holds `pb_data/` (database), `tiles/` (map tiles) and `secrets/` (instance keys, generated on first start; keep them in your backups). Settings come from environment variables: `OSFM_DATA_DIR` (default `./data`), `OSFM_LISTEN` (default `127.0.0.1:8090`; `serve --http` overrides it), `OSFM_PUBLIC_URL` (must be `https://`, except for `localhost` or a loopback address: the session cookie is `Secure`), `OSFM_ADMIN_UI` (default `false`) and `OSFM_ADMIN_LISTEN` (default `127.0.0.1:8091`). The effective configuration is printed at startup.
+`./data` holds `pb_data/` (database), `tiles/` (map tiles) and `secrets/` (instance keys, generated on first start; keep them in your backups). Settings come from environment variables: `OSFM_DATA_DIR` (default `./data`), `OSFM_LISTEN` (default `127.0.0.1:8090`; `serve --http` overrides it), `OSFM_PUBLIC_URL` (must be `https://`, except for `localhost` or a loopback address: the session cookie is `Secure`; set it in production: with an `https://` URL on a real host name, OSFM also sends HSTS and names the session cookie `__Host-osfm_session`), `OSFM_ADMIN_UI` (default `false`) and `OSFM_ADMIN_LISTEN` (default `127.0.0.1:8091`). The effective configuration is printed at startup.
 
 Without a session, only the sign-in pages, `/api/health` and `/.well-known/osfm.json` answer; the rest of `/api/osfm/*` and the tiles return 401. Clients only use `/api/osfm/*`: PocketBase's own APIs and its admin UI are never served on the main listener (every other `/api/` path answers with a JSON 404). With `OSFM_ADMIN_UI=true`, the admin UI and PocketBase's APIs are served on a separate listener at `OSFM_ADMIN_LISTEN`, which your reverse proxy should not forward; reach it through an SSH tunnel (`ssh -L 8091:127.0.0.1:8091 your-server`, then open `http://127.0.0.1:8091/_/`). In a container, set `OSFM_ADMIN_LISTEN=0.0.0.0:8091` and publish the port on the host's loopback only (`-p 127.0.0.1:8091:8091`). Superusers are created with `osfm superuser upsert EMAIL PASS`.
 
@@ -53,7 +53,7 @@ deploy/tiles.sh example-town 6.68,0.30,6.76,0.36             # writes ./data/til
 
 City names are lowercase letters, digits and `-`; until the instance settings give cities their display names, the map shows the file name (`example-town` as "Example Town"). A file added or removed while the server runs shows up on the next page load. Tile files are never committed.
 
-Before opening a pull request, run `bin/gate.sh` (lint, type checks, tests and builds for both halves; see [CONTRIBUTING.md](CONTRIBUTING.md)).
+Before opening a pull request, run `bin/gate.sh` (lint, type checks, tests and builds for both halves, and `pnpm --dir web run check:urls`, which fails when the built web app contains a URL of another origin; see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Container image
 
@@ -63,7 +63,7 @@ Each release publishes a multi-arch image (linux/amd64, linux/arm64) to the GitH
 docker run -d --name osfm -p 127.0.0.1:8090:8090 -v osfm-data:/data ghcr.io/eatwell-studio/osfm:latest
 ```
 
-The instance then answers on http://127.0.0.1:8090; put a reverse proxy with HTTPS in front of it to reach it from elsewhere. All data lives in the `/data` volume (`pb_data/`, later also `tiles/` and `secrets/`). The container runs as user 65532; a named volume as above gets the right owner automatically, a host directory mounted instead must be writable by that user. To build the image yourself: `docker buildx build -f deploy/Dockerfile .` (add `--build-arg VERSION=v1.2.3` to set the version that `osfm --version` reports; it is `dev` otherwise). Every image and binary carries a signed build provenance attestation:
+The instance then answers on http://127.0.0.1:8090; put a reverse proxy with HTTPS in front of it to reach it from elsewhere, and set `OSFM_PUBLIC_URL` (`-e OSFM_PUBLIC_URL=https://food.example.org`). OSFM sends its own security headers (content security policy, `Referrer-Policy`, `Permissions-Policy` and others; see [docs/architecture.md](docs/architecture.md) §4.7), and `Strict-Transport-Security` for this host only when `OSFM_PUBLIC_URL` is `https://`: the proxy should pass them through unchanged and add no CORS headers. Add `includeSubDomains` or `preload` to HSTS at the proxy only if the whole domain is served over HTTPS. All data lives in the `/data` volume (`pb_data/`, later also `tiles/` and `secrets/`). The container runs as user 65532; a named volume as above gets the right owner automatically, a host directory mounted instead must be writable by that user. To build the image yourself: `docker buildx build -f deploy/Dockerfile .` (add `--build-arg VERSION=v1.2.3` to set the version that `osfm --version` reports; it is `dev` otherwise). Every image and binary carries a signed build provenance attestation:
 
 ```bash
 gh attestation verify oci://ghcr.io/eatwell-studio/osfm:latest --repo EatWell-Studio/OSFM

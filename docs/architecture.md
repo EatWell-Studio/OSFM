@@ -64,6 +64,7 @@ flowchart LR
     root --- docs["docs/<br/>公开文档"]
     internal --- p_config["config/<br/>环境变量配置、数据目录准备、实例密钥的生成与加载"]
     internal --- p_boundary["boundary/<br/>PocketBase 边界：主监听端口只提供 /api/osfm/* 等，管理后台单独监听，日志设置"]
+    internal --- p_webapp["webapp/<br/>主监听端口的前端文件服务（缓存、404）与安全响应头"]
     internal --- p_api["api/<br/>HTTP 处理函数与请求/响应结构（对外的投影）"]
     internal --- p_auth["auth/<br/>注册、登录、passkey、TOTP、恢复码、重置、会话"]
     internal --- p_domain["domain/<br/>地点、推荐、成员、邀请、举报等业务规则（不依赖 HTTP）"]
@@ -106,6 +107,7 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 - 主监听端口（反向代理转发的端口）只提供三类路径：已注册的 `/api/osfm/*` 路由、`/api/health`（容器与反向代理的健康检查），以及 `/api/`、`/_/` 以外的路径（前端、瓦片等）。其余 `/api/*`——记录增删改查、集合、各种登录与令牌刷新、找回密码、邮箱验证、OAuth2、模拟登录、实时订阅、文件、批量、设置、日志、备份、定时任务、SQL 接口，以及不存在的路径——和管理后台 `/_/` 一律返回 JSON 404，不论请求带的是成员令牌、超级用户令牌还是没有令牌。不存在的 `/api/*` 路径因此不再落到前端的 index.html。
 - 实现是 `internal/boundary` 的全局中间件，排在 PocketBase 的请求日志与异常恢复之后、读取令牌与限速之前（被拒绝的请求照常记日志，但不读令牌、不占限额）。它同时检查请求路径和路由匹配到的模式，转义过的路径（如 `/api%2Fcollections…`）也拦得住。
 - 放行的请求在进入后续处理前去掉 `Authorization` 请求头：主监听端口上唯一的凭据是会话 cookie（AD6），PocketBase 令牌（包括超级用户的）在这里不起作用，也就不能借超级用户身份绕过限速。
+- 主监听端口不发送任何 CORS 响应头、也不应答跨源预检（T018）：前端与接口同源，用不到 CORS。PocketBase 默认对任何来源返回 `Access-Control-Allow-Origin: *`（`serve --origins` 的默认值），`internal/webapp` 让它的 CORS 中间件只在管理后台的监听地址上起作用，`--origins` 因此只影响那里。主监听端口的安全响应头同样由 `internal/webapp` 设置，替换 PocketBase 自己的默认值（§4.7）。
 - 第二层在数据上：所有集合的访问规则为 `nil`（§3.5）；`members` 的密码、邮箱验证码、OAuth2、MFA 全部关闭，没有 OAuth2 提供方，新设备提醒关闭（它会保存由 IP 派生的指纹），认证规则（`authRule`）设为 `nil`——这样即使某个登录方式被重新打开，PocketBase 也不会为成员返回它自己的登录或刷新响应（只有超级用户的模拟登录例外）。迁移是 `1795600200_boundary`。
 
 **限速**（T006 已验证）：PocketBase 的限速是挂在根路由上的全局中间件，自定义路由同样经过它，除非路由显式解除（PocketBase 自己的记录接口就解除了它，改用按集合的限速）。规则的标签与 `"方法 路径"` 或 `路径` 精确匹配，以 `/` 结尾的标签按前缀匹配；第一条匹配的规则生效，按客户端地址在固定窗口内计数，计数在内存中、修改设置时清零，超级用户不受限。PocketBase 默认关闭限速；迁移 `1795600200_boundary` 把它打开，沿用 PocketBase 的默认规则，其中 `/api/`（每个地址每 10 秒 300 次）覆盖 `/api/osfm/*`。维护者可以在管理后台调整规则，迁移只设初始值。局限：
@@ -174,7 +176,7 @@ flowchart LR
 
 **会话**（AD6，T007，`internal/auth`）：两步验证通过后，服务器建一条会话，把一个随机令牌放在 cookie 里交给浏览器。
 
-- **cookie 里只有一个不透明的随机值**：`osfm_session`，256 位随机数（`crypto/rand`）的 base64url 编码（43 个字符），不含成员 ID、PocketBase 记录 ID、有效期或任何可解码的内容。属性为 `HttpOnly; Secure; SameSite=Lax; Path=/`，不设 `Domain`（只发给本主机，瓦片请求也带上）；`Max-Age` 到会话过期为止。前端脚本读不到它。
+- **cookie 里只有一个不透明的随机值**：`osfm_session`（实例以 https 在公网主机名上提供时为 `__Host-osfm_session`，见下），256 位随机数（`crypto/rand`）的 base64url 编码（43 个字符），不含成员 ID、PocketBase 记录 ID、有效期或任何可解码的内容。属性为 `HttpOnly; Secure; SameSite=Lax; Path=/`，不设 `Domain`（只发给本主机，瓦片请求也带上）；`Max-Age` 到会话过期为止。前端脚本读不到它。
 - **服务器只存令牌的哈希**：`sessions` 集合（§3.5）每条会话一行：成员、令牌的 SHA-256（十六进制，唯一索引）、过期时间、最近一次使用的日期（只记 UTC 日期，不记时刻，每天最多写一次）、创建时间；不记 IP、不记 User-Agent。令牌本身有 256 位随机性，不需要加盐或慢哈希；只拿到数据库文件的人得不到可用的 cookie。
 - **有效期**：从登录起 30 天，使用不延长；到期后需要重新登录。过期的行在下次出现时删除，另有每日定时任务清理。
 - **校验**：每个需要登录的请求按 cookie 令牌的哈希查一次 `sessions`（唯一索引），再经 `store.Query` 查一次成员（自动排除已软删除的）。会话有效的条件是：行存在、未过期、成员存在且可以登录——`left_at` 为空（离开或被维护者移出，`D7` `D9`）且未被软删除。不满足时删除这行会话，并在响应里让浏览器删掉 cookie。不加缓存：两次走索引的 SQLite 查询远小于一次请求的其他开销，而缓存会让撤销不再立即生效。
@@ -198,8 +200,9 @@ flowchart LR
 - **公开路由**：登录、注册、重置相关的接口注册后用 `auth.Public(route)` 标记（从该路由上解除"要求登录"中间件，这是 PocketBase 按路由排除全局中间件的机制）。CSRF 检查和会话读取不受影响，所以公开接口里也能拿到当前成员。其余路由默认要求登录；内部 ID 扫描的测试另有一份公开路由清单，两者不一致时失败（§6）。
 - 没有会话也能访问的只有：前端的静态文件、`/api/health`、`/.well-known/osfm.json`（§3.8）和标为公开的接口。
 - **登录接口**（T009、T010）在两个因素都通过后调用 `auth.SignIn(e, member)`：建会话、设置 cookie，并结束这个请求原来带着的会话（换号登录时不留下旧会话）；已离开或已删除的成员返回 `auth.ErrCannotSignIn`。
-- **CSRF**：跨站的表单加不了自定义请求头；跨源脚本要带 cookie 并加自定义请求头必须先通过预检，而 PocketBase 的 CORS 中间件不允许携带凭据（`AllowCredentials` 为 false），预检失败、请求不会发出。`SameSite=Lax` 另外挡住跨站的子请求与表单 POST。
-- **Secure 与本地开发**：cookie 始终带 `Secure`。浏览器把 `localhost`、`127.0.0.1` 当作安全上下文，接受它们通过 http 设置的 Secure cookie（Chromium、Firefox；T007 没有在浏览器里实测，登录接口出现后由 T009 确认），所以 `http://127.0.0.1:8090` 和 Vite 开发服务器（`http://localhost:5173`，代理到后端）都能登录。其他主机名通过 http 访问时浏览器不保存这个 cookie、谁也登录不了，所以 `OSFM_PUBLIC_URL` 只接受 `https://`，或主机为 `localhost`、`*.localhost`、回环地址的 `http://`，否则拒绝启动（§5.2）。
+- **CSRF**：跨站的表单加不了自定义请求头；跨源脚本要带 cookie 并加自定义请求头必须先通过预检，而主监听端口对预检不返回任何 CORS 响应头（§3.1），预检失败、请求不会发出。`SameSite=Lax` 另外挡住跨站的子请求与表单 POST。
+- **`__Host-` 前缀**（T018）：`OSFM_PUBLIC_URL` 是 `https://` 且主机不是 localhost 或回环地址时（`config.PublicHTTPS`），会话 cookie 叫 `__Host-osfm_session`。带这个前缀的 cookie 浏览器只在 `Secure`、`Path=/`、没有 `Domain` 时接受，同级子域名（例如同一个上级域名下别人的站点）也就无法为上级域名写入同名 cookie，把成员带进攻击者的会话或遮住成员自己的会话（cookie tossing）。本地开发不用前缀：WebKit（Safari）在 `http://localhost`、`http://127.0.0.1` 上拒绝 `__Host-` cookie，却接受同样属性、不带前缀的 `Secure` cookie（T018 用 Playwright 的 WebKit 27.2 与 Chrome 158 实测；Chrome 两种都接受；Firefox 未能在测试环境中启动，未测）。前缀开启时只读带前缀的 cookie，不带前缀的同名 cookie 不被当作会话。
+- **Secure 与本地开发**：cookie 始终带 `Secure`。浏览器把 `localhost`、`127.0.0.1` 当作安全上下文，接受它们通过 http 设置的 Secure cookie（T018 实测 Chrome 158 与 WebKit 27.2 都接受；Firefox 未测，登录接口出现后由 T009 在真浏览器中确认），所以 `http://127.0.0.1:8090` 和 Vite 开发服务器（`http://localhost:5173`，代理到后端）都能登录。其他主机名通过 http 访问时浏览器不保存这个 cookie、谁也登录不了，所以 `OSFM_PUBLIC_URL` 只接受 `https://`，或主机为 `localhost`、`*.localhost`、回环地址的 `http://`，否则拒绝启动（§5.2）。
 - **接口**：`GET /api/osfm/me` 返回当前成员 `{"uuid", "displayName", "role"}`（`displayName` 为主名，`role` 为 `member` 或 `maintainer`），`Cache-Control: no-store`；没有会话时 401。`POST /api/osfm/logout` 删除当前会话、让浏览器删掉 cookie，返回 204；会话已失效时同样是 401 并清掉 cookie。
 
 **防护**：所有改变状态的请求要求自定义请求头（`X-OSFM: 1`），配合 SameSite cookie 防 CSRF；登录、TOTP、恢复码、重置链接按 IP 和登录名分别限速；登录失败的提示不区分"登录名不存在"和"密码错误"。
@@ -386,6 +389,8 @@ erDiagram
 - 目前（T015）地图代码块与图标精灵图（PNG）随应用外壳预缓存；MapLibre 的 Worker（`.mjs`）、字形与瓦片尚未缓存，始终走网络，随离线功能（`A9`）一起处理。
 - 离线时只读（`A9` 为 P1）；新建与编辑需要联网，离线时给出提示。
 - iOS 需要"添加到主屏幕"才能持久保存数据，首次使用时给出引导。
+- **服务器端的缓存与类型**（T018，`internal/webapp`）：Vite 按内容命名的 `/assets/*` 文件 `Cache-Control: public, max-age=31536000, immutable`；其余文件——`index.html`（以及所有前端路由）、`sw.js`、`registerSW.js`、`manifest.webmanifest`、图标、`/map/` 下的字形与图标精灵图——`no-cache`，配合按内容计算的 `ETag` 每次向服务器确认（未变时 304），新版本前端在下次加载时就能被发现。Content-Type 按扩展名显式设置，不依赖系统的 MIME 表（distroless 镜像里没有）：清单为 `application/manifest+json`，JS 与 Worker 为 `text/javascript`，字形为 `application/x-protobuf`。T018 在无头 Chrome 中验证了更新流程：换一版前端重启后，`registration.update()` 找到新的 Service Worker 并进入等待；关闭所有页面再打开，新版本生效。
+- **不存在的文件返回 404**：路径命中前端的某个目录（`/assets/`、`/map/` 及其子目录，目录本身也算）或最后一段带点（`favicon.ico`、缺失的字形区段）而文件不存在时返回 404，不再回退成 `index.html`；其余路径（`/`、`/list`、`/me`、`/admin`、`/login`、`/register` 以及未知的前端路径）返回 `index.html`。因此**前端路由的最后一段不能带点，也不能落在这些目录下**（例如 `/map` 是静态目录）。MapLibre 对 404 的字形区段只给一条警告并改用本机字体绘制这些字符（T018 实测：测试瓦片里一个带 `ğ` 的地名请求了 256–511 区段，得到 404 后正常显示）。
 
 ### 4.6 导航跳转与坐标转换
 
@@ -401,9 +406,25 @@ erDiagram
 
 ### 4.7 安全相关的前端约束
 
-- 内容安全策略：`default-src 'self'`；不允许内联脚本。MapLibre v6 不再有单独的 CSP 构建，它的 Worker 是独立的模块文件，同源时直接用 `new Worker(url, {type: 'module'})` 加载，不需要 `blob:`；前端用 `setWorkerUrl` 指向构建产物中的 Worker 文件。T015 在无头 Chrome 中验证：只有 `default-src 'self'` 时地图、Worker、字形、图标精灵图与城市切换都正常，没有 CSP 违规（MapLibre 自带控件的 `data:` 图标除外，已不使用，见 §4.3）。所以不需要 `worker-src blob:`，也不需要 `img-src data:`。
-- 不使用任何 CDN 或外部字体；构建时检查产物中不含外部 URL。
-- 用户输入的文本一律按纯文本显示，不渲染 HTML 或 Markdown。
+主监听端口的每个响应（页面、静态文件、接口、错误与 404）都带同一组安全响应头，由 `internal/webapp` 的全局中间件在所有其他中间件之前设置（T018）。管理后台的监听地址不加这些头：PocketBase 的管理后台自带一份内容安全策略（需要内联样式、OpenStreetMap 瓦片等），保持原样。
+
+| 响应头 | 值 | 理由 |
+| --- | --- | --- |
+| `Content-Security-Policy` | `default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'` | 一切资源只来自实例本身；不允许内联脚本与样式属性；不回退到 `default-src` 的几项单独写明：`<base>` 不能指向别处，表单只提交给本实例，不能被任何页面嵌入（点击劫持），不加载插件 |
+| `Referrer-Policy` | `no-referrer` | 成员点开外部链接（OSM 署名、导航应用）时不带出实例地址与当前路径 |
+| `X-Content-Type-Options` | `nosniff` | 浏览器按声明的类型处理响应；脚本、模块 Worker 与样式必须是正确的类型（§4.5） |
+| `X-Frame-Options` | `DENY` | 与 `frame-ancestors 'none'` 相同，给不支持后者的旧浏览器；替换 PocketBase 默认的 `SAMEORIGIN` |
+| `Permissions-Policy` | `geolocation=(self), camera=(), microphone=(), display-capture=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), browsing-topics=()` | 只有"定位到我"需要的定位对本站开放；用不到的能力全部关闭。只列 Chromium 认识的特性（不认识的会在控制台报错）；passkey（WebAuthn）与剪贴板保持默认（只允许本站） |
+| `Cross-Origin-Opener-Policy` | `same-origin` | 应用打开的其他来源页面拿不到它的窗口句柄，反之亦然 |
+| `Cross-Origin-Resource-Policy` | `same-origin` | 其他来源（包括同一上级域名下的别人的子域名）不能把实例的响应当作子资源加载，即使浏览器带上了成员的 cookie |
+| `Strict-Transport-Security` | `max-age=31536000`（只在 `OSFM_PUBLIC_URL` 为 https 且主机不是本机时） | 见下 |
+
+- PocketBase 默认的 `X-XSS-Protection: 1; mode=block` 在主监听端口上去掉：现在的浏览器忽略它，旧浏览器里它反而可被利用。
+- **HSTS**：只在实例以 https 在公网主机名上提供时（`OSFM_PUBLIC_URL`，`config.PublicHTTPS`）发送，一年，不带 `includeSubDomains` 与 `preload`——实例常在别人的上级域名下，其他子域名不该被它钉成 https。浏览器只认 https 响应里的 HSTS，所以经由反向代理（TLS 在代理上）时生效，直接用 http 访问监听端口时不起作用，本地开发与 `localhost` 不受影响。反向代理也设置 HSTS 时浏览器只处理第一个；需要 `includeSubDomains` 或 `preload` 的部署者在代理上设置（Caddy 默认不发 HSTS）。
+- **CORS**：主监听端口不发送任何 CORS 响应头（§3.1）。
+- 内容安全策略的依据：MapLibre v6 不再有单独的 CSP 构建，它的 Worker 是独立的模块文件，同源时直接用 `new Worker(url, {type: 'module'})` 加载，不需要 `blob:`；前端用 `setWorkerUrl` 指向构建产物中的 Worker 文件。地图的缩放与定位按钮是自己的组件（MapLibre 自带控件的图标是 `data:` 地址，§4.3），所以也不需要 `img-src data:`。T018 在无头 Chrome（Playwright，系统 Chrome 158）中用真实的响应头、真实的会话验证：地图（含"定位到我"与放大）、列表、我的、管理、未知路径，以及未登录时的登录、注册页，都没有 CSP 违规、没有对外请求，Service Worker 正常注册；管理后台的监听地址上 PocketBase 管理后台能打开并登录，没有 CSP 违规。
+- 不使用任何 CDN 或外部字体。**构建检查**（`pnpm run check:urls`，`web/scripts/check-external-urls.ts`，在 `bin/gate.sh` 与 CI 中构建之后运行）扫描 `web/dist/app` 的文本文件，找出 `http(s)://`、`ws(s)://` 的绝对地址，以及 HTML 属性与 CSS `url()` 里的协议相对地址（`//host/…`），出现非同源地址即失败。第三方库里有一些永远不会被请求的地址，逐条精确列在脚本的白名单里并写明理由：XML 命名空间名、解析用的基准地址（`http://localhost`、保留顶级域 `.invalid`）、报错信息里的文档链接、许可证横幅，以及只作为链接目标的 OSM 署名与 MapLibre 自带控件的链接；字形与图标精灵图附带的许可证与 NOTICE 文件不扫描。CI 另在构建产物的副本里加入一个外部地址，确认检查会失败。
+- 用户输入的文本一律按纯文本显示，不渲染 HTML 或 Markdown。ESLint 规则（`web/scripts/lint-plain-text.ts`）在 `web/src` 中禁止所有把字符串当作 HTML 写进页面的写法：`dangerouslySetInnerHTML`、`srcDoc`，对 `innerHTML`、`outerHTML`、`srcdoc` 赋值，`insertAdjacentHTML`、`createContextualFragment`、`setHTMLUnsafe`，以及 `document.write`。需要保留换行时用 CSS（`white-space: pre-line`），链接用元素构造。
 
 ## 5. 部署与运维
 
@@ -417,13 +438,13 @@ erDiagram
 
 | 来源 | 内容 |
 | --- | --- |
-| 环境变量 `OSFM_*` | 监听地址 `OSFM_LISTEN`（默认 `127.0.0.1:8090`，`serve --http` 优先）、对外 URL `OSFM_PUBLIC_URL`（必须是 `https://`，主机为 `localhost`、`*.localhost` 或回环地址时可以是 `http://`：会话 cookie 带 `Secure`，见 §3.3）、数据目录 `OSFM_DATA_DIR`（默认 `./data`，镜像中为 `/data`）、是否开启 PocketBase 管理后台 `OSFM_ADMIN_UI`（默认关闭）、管理后台的单独监听地址 `OSFM_ADMIN_LISTEN`（默认 `127.0.0.1:8091`，见 §5.4）；由 `internal/config` 读取和校验，启动时打印生效的配置 |
+| 环境变量 `OSFM_*` | 监听地址 `OSFM_LISTEN`（默认 `127.0.0.1:8090`，`serve --http` 优先）、对外 URL `OSFM_PUBLIC_URL`（必须是 `https://`，主机为 `localhost`、`*.localhost` 或回环地址时可以是 `http://`：会话 cookie 带 `Secure`，见 §3.3；是公网主机名的 `https://` 时，另外发送 HSTS、会话 cookie 加 `__Host-` 前缀，见 §3.3、§4.7。生产部署应当设置它）、数据目录 `OSFM_DATA_DIR`（默认 `./data`，镜像中为 `/data`）、是否开启 PocketBase 管理后台 `OSFM_ADMIN_UI`（默认关闭）、管理后台的单独监听地址 `OSFM_ADMIN_LISTEN`（默认 `127.0.0.1:8091`，见 §5.4）；由 `internal/config` 读取和校验，启动时打印生效的配置 |
 | 首次启动向导（`G3`） | 第一个维护者（同样强制两步验证）、实例名称、关心的城市（名称、范围、对应的瓦片文件） |
 | 维护者设置页 | 举报阈值、冷静期天数、搜索服务的联系方式 |
 
 ### 5.3 运行
 
-- 反向代理与 HTTPS 由 Caddy 负责（`deploy/` 提供示例）；推荐部署在境外 VPS。国内家宽封 80/443 时使用 DNS 验证申请证书 + 高位端口（`G7`）。
+- 反向代理与 HTTPS 由 Caddy 负责（`deploy/` 提供示例）；推荐部署在境外 VPS。安全响应头由 OSFM 自己发送（§4.7），代理不需要再加；代理不要改写或删除 `Content-Security-Policy`、`Set-Cookie` 等响应头，也不要另加 CORS 头。HSTS 在设置了 https 的 `OSFM_PUBLIC_URL` 时由 OSFM 发送（只覆盖本主机）；要 `includeSubDomains` 或 `preload` 时在代理上设置。国内家宽封 80/443 时使用 DNS 验证申请证书 + 高位端口（`G7`）。
 - 升级：替换镜像后启动，迁移自动执行（`G6`）；迁移前自动生成一份备份。
 - 资源目标：空闲常驻内存 ≤ 300 MB（`G2`），M1 在 2 核 ARM 设备上测量。
 
@@ -447,7 +468,7 @@ erDiagram
 | 前端单元测试 | Vitest + Testing Library |
 | 前端文案检查 | `pnpm run check:i18n`：语言文件以外的源码不含中日韩字符（§4.1） |
 | 端到端测试 | Playwright（移动端视口）：注册（passkey 用虚拟认证器、密码 + TOTP 用生成的验证码）、新建推荐、筛选、分享链接回跳 |
-| 构建检查 | 前端产物中不含外部 URL；镜像能在 amd64 与 arm64 上启动 |
+| 构建检查 | 前端产物中不含外部 URL（`pnpm run check:urls`，§4.7）；镜像能在 amd64 与 arm64 上启动；可执行文件实际提供的安全响应头、Content-Type、缓存头与 404（CI 的 Binary 作业） |
 
 CI 在 GitHub Actions 上运行，顶层权限只读。代码进入仓库后，上述检查加入 `main` 的必过检查。
 
