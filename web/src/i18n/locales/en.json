@@ -59,7 +59,8 @@
       "title": "Sign in",
       "method": "Sign-in method",
       "methods": {
-        "password": "Password"
+        "password": "Password",
+        "passkey": "Passkey"
       },
       "password": {
         "loginName": "Login name",
@@ -99,7 +100,8 @@
       "retry": "Try again",
       "method": "Registration method",
       "methods": {
-        "password": "Password + authenticator app"
+        "password": "Password + authenticator app",
+        "passkey": "Passkey"
       },
       "password": {
         "loginName": "Login name",
@@ -166,9 +168,41 @@
       "toggleAttribution": "Show or hide attribution"
     }
   },
+  "passkey": {
+    "errors": {
+      "cancelled": "The passkey prompt was cancelled or timed out. Try again.",
+      "address": "Passkeys do not work at this address. Open the app at the address the invite link uses (for local testing: localhost, not 127.0.0.1).",
+      "unsupported": "This browser or device cannot use passkeys. Use a password and an authenticator app instead.",
+      "unavailable": "Passkeys are not available on this instance. Use a password and an authenticator app instead.",
+      "failed": "Something went wrong. Check your connection and try again."
+    },
+    "register": {
+      "loginName": "Login name",
+      "loginNameHint": "3 to 32 characters: letters a–z, digits, _ and -. You cannot change it later.",
+      "displayName": "Display name",
+      "displayNameHint": "What other members see. You can leave it empty to use your login name.",
+      "submit": "Create passkey",
+      "busy": "Creating passkey…",
+      "errors": {
+        "invalidLoginName": "The login name must have 3 to 32 characters: letters a–z, digits, _ and -.",
+        "invalidDisplayName": "The display name can have at most 64 characters and no special control characters.",
+        "loginNameTaken": "This login name is taken. Choose another one.",
+        "invalidInvite": "This invite link is invalid or has expired. Ask the person who invited you for a new one.",
+        "verifyFailed": "The passkey could not be verified. Try again.",
+        "exists": "This device already has a passkey for this account."
+      }
+    },
+    "signIn": {
+      "button": "Sign in with a passkey",
+      "busy": "Signing in…",
+      "errors": {
+        "failed": "Sign-in failed. The passkey may not belong to this instance, or the account is no longer active."
+      }
+    }
+  },
   "recoveryCodes": {
     "title": "Save your recovery codes",
-    "explanation": "If you lose your phone or the authenticator app, sign in with a recovery code instead of a code from the app. Each code works once. Keep them in a password manager, or print them and keep them somewhere safe.",
+    "explanation": "If you lose your passkey, your phone or the authenticator app, sign in with a recovery code instead. Each code works once. Keep them in a password manager, or print them and keep them somewhere safe.",
     "copy": "Copy all",
     "copied": "Copied",
     "copyError": "Could not copy. Select the codes by hand or download them.",

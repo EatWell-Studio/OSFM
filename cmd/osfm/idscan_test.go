@@ -56,7 +56,7 @@ var osfmProbes = map[string][]idscan.Request{
 	},
 	// Public: the registration page checks the code before showing the form.
 	"POST " + auth.InviteCheckPath: {
-		{Method: http.MethodPost, Path: auth.InviteCheckPath, Body: `{"code":"` + idscan.InviteCode + `"}`,
+		{Method: http.MethodPost, Path: auth.InviteCheckPath, Body: `{"invite":"` + idscan.InviteCode + `"}`,
 			Header: csrfHeader, Status: http.StatusOK},
 		{Method: http.MethodPost, Path: auth.InviteCheckPath, Body: `{"code":"x"}`, Header: csrfHeader,
 			Status: http.StatusOK},
@@ -98,6 +98,35 @@ var osfmProbes = map[string][]idscan.Request{
 		{Method: http.MethodPost, Path: auth.SignInRecoveryPath, Header: csrfHeader,
 			Body: `{"ticket":"x","code":"0000-0000-0000-0000"}`, Status: http.StatusUnauthorized},
 	},
+	// Public: passkey registration and sign-in. The successful second steps need an authenticator; they are scanned
+	// by TestPasskeyResponsesHaveNoInternalIDs.
+	"POST " + auth.PasskeyRegisterOptionsPath: {
+		{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusOK,
+			Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_probe","displayName":"Test Probe"}`},
+		{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusConflict,
+			Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member"}`},
+		{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusForbidden,
+			Body: `{"invite":"x","loginName":"test_probe"}`},
+		{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{"invite":"` + idscan.InviteCode + `","loginName":"x"}`},
+		{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{`},
+	},
+	"POST " + auth.PasskeyRegisterPath: {
+		{Method: http.MethodPost, Path: auth.PasskeyRegisterPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{"invite":"` + idscan.InviteCode + `","state":"x","credential":{}}`},
+		{Method: http.MethodPost, Path: auth.PasskeyRegisterPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{`},
+	},
+	"POST " + auth.PasskeySignInOptionsPath: {
+		{Method: http.MethodPost, Path: auth.PasskeySignInOptionsPath, Header: csrfHeader, Status: http.StatusOK},
+	},
+	"POST " + auth.PasskeySignInPath: {
+		{Method: http.MethodPost, Path: auth.PasskeySignInPath, Header: csrfHeader, Status: http.StatusUnauthorized,
+			Body: `{"state":"x","credential":{"id":"dGVzdC1jcmVk","rawId":"dGVzdC1jcmVk","type":"public-key"}}`},
+		{Method: http.MethodPost, Path: auth.PasskeySignInPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{`},
+	},
 	// No tile archive in the test data directory: the tile handler reads only the tile files, never the database.
 	"GET /tiles/{path...}": {
 		{Path: "/tiles/", Status: http.StatusOK}, // the city index, empty here
@@ -132,6 +161,10 @@ var publicRoutes = map[string]bool{
 	"POST " + auth.SignInPasswordPath:          true,
 	"POST " + auth.SignInTOTPPath:              true,
 	"POST " + auth.SignInRecoveryPath:          true,
+	"POST " + auth.PasskeyRegisterOptionsPath:  true,
+	"POST " + auth.PasskeyRegisterPath:         true,
+	"POST " + auth.PasskeySignInOptionsPath:    true,
+	"POST " + auth.PasskeySignInPath:           true,
 }
 
 // maintainerRoutes are the OSFM routes only maintainers may use (auth.RequireMaintainer): the member identity's

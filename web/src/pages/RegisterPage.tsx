@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from 'react-router'
 import { PageHeading } from '@/components/PageHeading'
 import { Button } from '@/components/ui/button'
 import { checkInvite, inviteCodeFromHash, isWellFormedInviteCode } from '@/invites/invites'
+import { PasskeyRegistration } from '@/register/PasskeyRegistration'
 import { PasswordTotpRegistration } from '@/register/PasswordTotpRegistration'
 import { type Me, sessionQueryKey } from '@/session/session'
 
@@ -41,12 +42,25 @@ function forgetCode() {
 const methods: {
   id: string
   label: (t: TFunction) => string
-  form: (props: { invite: string; onRegistered: (me: Me) => void }) => ReactNode
+  // onRegistered gets the member when the method's response carries it; without, the session is fetched again.
+  form: (props: { invite: string; onRegistered: (me?: Me) => void }) => ReactNode
 }[] = [
   {
     id: 'password',
     label: (t) => t('pages.register.methods.password'),
     form: (props) => <PasswordTotpRegistration {...props} />,
+  },
+  {
+    id: 'passkey',
+    label: (t) => t('pages.register.methods.passkey'),
+    form: ({ invite, onRegistered }) => (
+      <PasskeyRegistration
+        code={invite}
+        onDone={() => {
+          onRegistered()
+        }}
+      />
+    ),
   },
 ]
 
@@ -87,9 +101,13 @@ export function RegisterPage() {
     retry: 1,
   })
 
-  const registered = (me: Me) => {
+  const registered = (me?: Me) => {
     forgetCode()
-    queryClient.setQueryData(sessionQueryKey, me)
+    if (me) {
+      queryClient.setQueryData(sessionQueryKey, me)
+    } else {
+      void queryClient.invalidateQueries({ queryKey: sessionQueryKey })
+    }
     void navigate('/', { replace: true })
   }
 

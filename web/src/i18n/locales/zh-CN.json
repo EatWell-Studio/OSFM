@@ -59,7 +59,8 @@
       "title": "登录",
       "method": "登录方式",
       "methods": {
-        "password": "密码"
+        "password": "密码",
+        "passkey": "passkey"
       },
       "password": {
         "loginName": "登录名",
@@ -99,7 +100,8 @@
       "retry": "重试",
       "method": "注册方式",
       "methods": {
-        "password": "密码 + 验证器 App"
+        "password": "密码 + 验证器 App",
+        "passkey": "passkey"
       },
       "password": {
         "loginName": "登录名",
@@ -166,9 +168,41 @@
       "toggleAttribution": "显示或隐藏署名"
     }
   },
+  "passkey": {
+    "errors": {
+      "cancelled": "passkey 操作已取消或超时，请重试。",
+      "address": "在这个地址上无法使用 passkey。请用邀请链接里的地址打开应用（本机测试时用 localhost，不要用 127.0.0.1）。",
+      "unsupported": "这个浏览器或设备不能使用 passkey，请改用\"密码 + 验证器 App\"。",
+      "unavailable": "这个实例暂时不能使用 passkey，请改用\"密码 + 验证器 App\"。",
+      "failed": "出错了，请检查网络后重试。"
+    },
+    "register": {
+      "loginName": "登录名",
+      "loginNameHint": "3–32 个字符：英文字母 a–z、数字、_ 和 -。之后不能修改。",
+      "displayName": "显示名",
+      "displayNameHint": "其他成员看到的名字。可以留空，留空时使用登录名。",
+      "submit": "创建 passkey",
+      "busy": "正在创建 passkey…",
+      "errors": {
+        "invalidLoginName": "登录名需要 3–32 个字符：英文字母 a–z、数字、_ 和 -。",
+        "invalidDisplayName": "显示名最多 64 个字符，且不能含特殊控制字符。",
+        "loginNameTaken": "这个登录名已被使用，请换一个。",
+        "invalidInvite": "邀请链接无效或已过期。请向邀请你的人要一个新链接。",
+        "verifyFailed": "无法验证这个 passkey，请重试。",
+        "exists": "这台设备上已有这个账号的 passkey。"
+      }
+    },
+    "signIn": {
+      "button": "用 passkey 登录",
+      "busy": "正在登录…",
+      "errors": {
+        "failed": "登录失败。这个 passkey 可能不属于本实例，或账号已停用。"
+      }
+    }
+  },
   "recoveryCodes": {
     "title": "保存恢复码",
-    "explanation": "手机丢了或验证器 App 不能用时，用恢复码代替验证码登录。每个恢复码只能用一次。请把它们存在密码管理器里，或打印出来放在安全的地方。",
+    "explanation": "手机丢了、passkey 或验证器 App 不能用时，用恢复码代替它登录。每个恢复码只能用一次。请把它们存在密码管理器里，或打印出来放在安全的地方。",
     "copy": "复制全部",
     "copied": "已复制",
     "copyError": "无法复制，请手动选中复制或下载。",

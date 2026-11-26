@@ -50,13 +50,15 @@ var wantCollections = map[string]collectionSpec{
 		"role": tSelect, "can_invite": tBool, "invite_allowed_from": tDate, "invited_by": tRelation,
 		"joined_at": tDate, "left_at": tDate, "deleted_at": tDate, "created": tAutodate, "updated": tAutodate,
 		"email": core.FieldTypeEmail, "password": core.FieldTypePassword, "tokenKey": tText,
-		"emailVisibility": tBool, "verified": tBool,
-	}), indexes: []string{"idx_members_uuid", "idx_members_login_name"}},
+		"emailVisibility": tBool, "verified": tBool, "passkey_user_handle": tText,
+	}), indexes: []string{"idx_members_uuid", "idx_members_login_name", "idx_members_passkey_user_handle"}},
 	store.Credentials: {fields: fields(map[string]string{
 		"member": tRelation, "kind": tSelect, "credential_id": tText, "public_key": tText, "sign_count": tNumber,
 		"device_name": tText, "password_hash": tText, "totp_secret_enc": tText, "totp_last_step": tNumber,
-		"created": tAutodate, "updated": tAutodate,
-	}), indexes: []string{"idx_credentials_member", "idx_credentials_credential_id"}},
+		"created": tAutodate, "updated": tAutodate, "uuid": tText, "aaguid": tText, "transports": tJSON,
+		"backup_eligible": tBool, "backup_state": tBool, "user_verified": tBool, "attestation_type": tText,
+		"attestation_format": tText,
+	}), indexes: []string{"idx_credentials_member", "idx_credentials_credential_id", "idx_credentials_uuid"}},
 	store.RecoveryCodes: {fields: fields(map[string]string{
 		"member": tRelation, "code_hash": tText, "used_at": tDate, "created": tAutodate, "updated": tAutodate,
 	}), indexes: []string{"idx_recovery_codes_member", "idx_recovery_codes_code_hash"}},
@@ -109,6 +111,7 @@ var uniqueIndexes = []string{
 	"idx_members_uuid", "idx_members_login_name", "idx_credentials_credential_id", "idx_recovery_codes_code_hash",
 	"idx_invites_uuid", "idx_invites_code_hash", "idx_reset_links_code_hash", "idx_places_uuid",
 	"idx_recommendations_uuid", "idx_reports_recommendation_reporter", "idx_sessions_uuid", "idx_sessions_token_hash",
+	"idx_members_passkey_user_handle", "idx_credentials_uuid",
 }
 
 func newApp(t *testing.T) *tests.TestApp {

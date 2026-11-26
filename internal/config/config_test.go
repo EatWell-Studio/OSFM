@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -211,6 +212,40 @@ func TestPublicHTTPS(t *testing.T) {
 		}
 		if got := cfg.PublicHTTPS(); got != want {
 			t.Errorf("%q: PublicHTTPS() = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+func TestPasskeyRP(t *testing.T) {
+	for _, tc := range []struct {
+		publicURL, listen string
+		id                string
+		origins           []string
+	}{
+		{"https://food.example.org", "", "food.example.org", []string{"https://food.example.org"}},
+		{"https://Food.Example.org:443/", "", "food.example.org", []string{"https://food.example.org"}},
+		{"https://food.example.org:8443", "", "food.example.org", []string{"https://food.example.org:8443"}},
+		{"http://localhost:8090", "", "localhost", []string{"http://localhost:8090", DevServerOrigin}},
+		{"http://127.0.0.1:8090", "", "localhost", []string{"http://localhost:8090", DevServerOrigin}},
+		{"http://[::1]:8090", "", "localhost", []string{"http://localhost:8090", DevServerOrigin}},
+		{"http://localhost:5173", "", "localhost", []string{DevServerOrigin}},
+		{"https://localhost", "", "localhost", []string{"https://localhost", DevServerOrigin}},
+		{"http://osfm.localhost:8090", "", "osfm.localhost", []string{"http://osfm.localhost:8090"}},
+		{"", "", "localhost", []string{"http://localhost:8090", DevServerOrigin}},
+		{"", "0.0.0.0:9000", "localhost", []string{"http://localhost:9000", DevServerOrigin}},
+	} {
+		vars := map[string]string{EnvPublicURL: tc.publicURL}
+		if tc.listen != "" {
+			vars[EnvListen] = tc.listen
+		}
+		cfg, err := Parse(env(vars))
+		if err != nil {
+			t.Fatalf("%q: %v", tc.publicURL, err)
+		}
+		id, origins := cfg.PasskeyRP()
+		if id != tc.id || !slices.Equal(origins, tc.origins) {
+			t.Errorf("%q, listen %q: PasskeyRP() = %q, %q; want %q, %q", tc.publicURL, tc.listen, id, origins, tc.id,
+				tc.origins)
 		}
 	}
 }

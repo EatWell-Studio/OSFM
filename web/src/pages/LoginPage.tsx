@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Navigate, useSearchParams } from 'react-router'
 import { PageHeading } from '@/components/PageHeading'
 import { Button } from '@/components/ui/button'
+import { PasskeySignIn } from '@/login/PasskeySignIn'
 import { PasswordSignIn } from '@/login/PasswordSignIn'
 import { sanitizeNext } from '@/lib/next'
 import { type Me, sessionQueryKey } from '@/session/session'
@@ -14,12 +15,24 @@ import { useSession } from '@/session/useSession'
 const methods: {
   id: string
   label: (t: TFunction) => string
-  form: (props: { onSignedIn: (me: Me) => void }) => ReactNode
+  // onSignedIn gets the member when the method's response carries it; without, the session is fetched again.
+  form: (props: { onSignedIn: (me?: Me) => void }) => ReactNode
 }[] = [
   {
     id: 'password',
     label: (t) => t('pages.login.methods.password'),
     form: (props) => <PasswordSignIn {...props} />,
+  },
+  {
+    id: 'passkey',
+    label: (t) => t('pages.login.methods.passkey'),
+    form: ({ onSignedIn }) => (
+      <PasskeySignIn
+        onSignedIn={() => {
+          onSignedIn()
+        }}
+      />
+    ),
   },
 ]
 
@@ -36,9 +49,13 @@ export function LoginPage() {
   if (session.status === 'signed-in') {
     return <Navigate to={sanitizeNext(searchParams.get('next'))} replace />
   }
-  const signedIn = (me: Me) => {
+  const signedIn = (me?: Me) => {
     // The page re-renders as signed in and navigates on.
-    queryClient.setQueryData(sessionQueryKey, me)
+    if (me) {
+      queryClient.setQueryData(sessionQueryKey, me)
+    } else {
+      void queryClient.invalidateQueries({ queryKey: sessionQueryKey })
+    }
   }
   return (
     <>

@@ -13,4 +13,9 @@
 // Password and TOTP (D3, D4): registration in two public steps under /api/osfm/register/password/ (start: invite,
 // login name, password; confirm: one TOTP code), sign-in in two under /api/osfm/signin/ (password, then a TOTP code or
 // a recovery code). See passwordtotp.go. Every new member gets one-time recovery codes ([NewRecoveryCodes]).
+//
+// Passkeys (D3, D4): the public routes under /api/osfm/passkey/ register a member with an invite and a passkey
+// ([BeginPasskeyRegistration], [FinishPasskeyRegistration]) and sign a member in with a discoverable passkey, without a
+// login name ([BeginPasskeySignIn], [VerifyPasskeySignIn]). Registration hands out the recovery codes
+// ([NewRecoveryCodes]).
 package auth

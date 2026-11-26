@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -72,6 +73,12 @@ type Options struct {
 	// HostPrefix names the session cookie [HostCookieName] instead of [CookieName]. Set it when the instance is served
 	// over HTTPS at a public host name (config.Config.PublicHTTPS).
 	HostPrefix bool
+
+	// PasskeyRPID is the WebAuthn relying party ID and PasskeyOrigins the origins passkey ceremonies are accepted
+	// from (config.Config.PasskeyRP). When PasskeyRPID is empty, "localhost" with http://localhost:8090 is used.
+	PasskeyRPID    string
+	PasskeyOrigins []string
+
 	// MasterKey returns the instance master key (config.Keys.Master): TOTP secrets are stored encrypted with it, and
 	// the pending registrations and sign-in tickets are sealed with it. It is called when needed, not by Bind, so it
 	// may return a key that is only loaded when the app bootstraps. Without it the password and TOTP routes answer
@@ -84,6 +91,7 @@ type Options struct {
 //   - the middlewares (session cookie, default deny, CSRF header) and the routes GET [MePath] and POST [LogoutPath],
 //     when serving;
 //   - the invite routes ([bindInviteRoutes]) and the password and TOTP routes ([bindPasswordTOTPRoutes]);
+//   - the passkey registration and sign-in routes ([bindPasskeyRoutes]) for the relying party in opts;
 //   - a hook that deletes a member's sessions and revokes their open invites as soon as they leave, are removed or
 //     are soft-deleted;
 //   - a daily job that deletes expired sessions.
@@ -95,6 +103,20 @@ func Bind(app core.App, opts Options) {
 	app.Store().Set(cookieNameKey, name)
 	if opts.MasterKey != nil {
 		app.Store().Set(masterKeyStoreKey, opts.MasterKey)
+	}
+
+	rpID, origins := opts.PasskeyRPID, opts.PasskeyOrigins
+	if rpID == "" {
+		rpID, origins = "localhost", []string{"http://localhost:8090"}
+	}
+	p, err := newPasskeys(rpID, origins)
+	if err != nil {
+		panic(fmt.Sprintf("auth: passkey setup: %v", err)) // only if the system's random source fails
+	}
+	app.Store().Set(passkeysKey, p)
+	if p.err != nil {
+		app.Logger().Warn("passkeys are not available: the relying party configuration is not valid",
+			"rp_id", rpID, "error", p.err)
 	}
 
 	app.OnRecordUpdate(store.Members).BindFunc(func(e *core.RecordEvent) error {
@@ -133,6 +155,7 @@ func Bind(app core.App, opts Options) {
 		se.Router.POST(LogoutPath, handleLogout)
 		bindInviteRoutes(se)
 		bindPasswordTOTPRoutes(se)
+		bindPasskeyRoutes(se)
 		// The first sign-in attempt with an unknown login name would otherwise also pay for the dummy hash.
 		go func() { _ = verifyDummy(context.Background(), "") }()
 		return se.Next()
