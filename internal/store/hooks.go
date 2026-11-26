@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"slices"
 
 	"github.com/google/uuid"
@@ -21,13 +22,25 @@ var ErrAppendOnly = errors.New("store: append-only record cannot be changed")
 // ErrUUIDChanged is returned when an existing record's uuid is about to be changed.
 var ErrUUIDChanged = errors.New("store: uuid cannot be changed")
 
-// NewUUID returns a new UUIDv7 in its canonical lowercase form.
+// UUIDPattern matches a UUIDv7 in canonical lowercase form, as [NewUUID] produces it; the uuid fields accept nothing
+// else.
+const UUIDPattern = `^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`
+
+var uuidRegexp = regexp.MustCompile(UUIDPattern)
+
+// NewUUID returns a new UUIDv7 in its canonical lowercase form. External identifiers are always made with it (AD4).
 func NewUUID() (string, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
 		return "", fmt.Errorf("store: generate uuid: %w", err)
 	}
 	return id.String(), nil
+}
+
+// IsUUID reports whether s is a UUIDv7 in canonical lowercase form, the only form of an external identifier: a
+// request naming an object by anything else cannot match one.
+func IsUUID(s string) bool {
+	return uuidRegexp.MatchString(s)
 }
 
 // RoundCoord rounds a latitude or longitude to [CoordDecimals] decimal places.
@@ -41,7 +54,8 @@ func RoundCoord(v float64) float64 {
 //   - a record of any collection with a uuid field gets a new UUIDv7 when it is created without one, and its uuid
 //     never changes afterwards (AD4);
 //   - a place's lat and lon are rounded to [CoordDecimals] decimal places on every create and update (B12);
-//   - records of the [AppendOnly] collections cannot be updated.
+//   - records of the [AppendOnly] collections cannot be updated;
+//   - records of the [SoftDeleted] collections cannot be removed: they are deleted with [SoftDelete].
 //
 // The hooks run before PocketBase validates and writes the record, so the collections' field rules (the uuid
 // pattern, the coordinate ranges) apply to the values set here.
@@ -66,6 +80,13 @@ func BindHooks(app core.App) {
 		}
 		if name == Places {
 			roundPlaceCoords(e.Record)
+		}
+		return e.Next()
+	})
+
+	app.OnRecordDelete().BindFunc(func(e *core.RecordEvent) error {
+		if name := e.Record.Collection().Name; HasSoftDelete(name) {
+			return fmt.Errorf("%w: %s %s", ErrHardDelete, name, e.Record.Id)
 		}
 		return e.Next()
 	})

@@ -63,6 +63,7 @@ flowchart LR
     root --- tools["bin/<br/>仓库维护脚本"]
     root --- docs["docs/<br/>公开文档"]
     internal --- p_config["config/<br/>环境变量配置、数据目录准备、实例密钥的生成与加载"]
+    internal --- p_boundary["boundary/<br/>PocketBase 边界：主监听端口只提供 /api/osfm/* 等，管理后台单独监听，日志设置"]
     internal --- p_api["api/<br/>HTTP 处理函数与请求/响应结构（对外的投影）"]
     internal --- p_auth["auth/<br/>注册、登录、passkey、TOTP、恢复码、重置、会话"]
     internal --- p_domain["domain/<br/>地点、推荐、成员、邀请、举报等业务规则（不依赖 HTTP）"]
@@ -71,7 +72,8 @@ flowchart LR
     internal --- p_geocode["geocode/<br/>搜索代理、缓存、限速"]
     internal --- p_geo["geo/<br/>坐标系转换（WGS-84 / GCJ-02 / BD-09）"]
     internal --- p_export["export/<br/>GeoJSON / JSON 导出、备份"]
-    internal --- p_fed["federation/<br/>实例密钥、/.well-known/osfm.json（只预留）"]
+    internal --- p_fed["federation/<br/>/.well-known/osfm.json（联邦只预留）"]
+    internal --- p_version["version/<br/>软件版本（发布时由标签写入）"]
 ```
 
 依赖方向（箭头表示"调用 / 依赖"）：
@@ -92,17 +94,29 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 | 用 | 不用 |
 | --- | --- |
 | SQLite 连接、事务、数据集合定义与 Go 迁移 | 自动生成的数据接口（`/api/collections/*`）：所有集合的访问规则都设为仅超级用户，客户端不可读写 |
-| 认证集合与令牌签发（会话令牌由我们在两步验证通过后调用其接口签发） | 内置登录方式：密码、邮箱验证码、OAuth2、MFA 全部关闭（§3.3） |
+| 认证集合与令牌签发（会话令牌由我们在两步验证通过后调用 `record.NewAuthToken()` 签发，见 §3.3） | 内置登录方式：密码、邮箱验证码、OAuth2、MFA 全部关闭，对应接口不提供（见下） |
 | 备份（`app.CreateBackup`）、定时任务（清理过期邀请、营业状态提示） | 实时订阅（不需要） |
-| 限速设置（覆盖自定义路由，M1 验证） | 管理后台 `/_/`：生产环境默认关闭，见 §5.4 |
-| 请求日志（保留期缩短、不记录 IP，见 §3.9；M1 验证配置项） | 文件存储（照片是 `C10`，P2） |
+| 限速设置：全局中间件，覆盖 `/api/osfm/*`，默认开启（见下） | 管理后台 `/_/` 与 PocketBase 自己的接口：主监听端口上不提供，见 §5.4 |
+| 请求日志：保留 7 天、不记录 IP（§3.9） | 文件存储（照片是 `C10`，P2） |
 
 这样做的代价是读写接口都要自己写；换来的是：客户端能拿到什么完全由 `internal/api` 里的结构体决定，作者 ID、化名映射、举报人这类字段从结构上就不会出现在响应里。
+
+**边界**（T006 已验证，PocketBase v0.40.6；集成测试在 `internal/boundary`）：
+
+- 主监听端口（反向代理转发的端口）只提供三类路径：已注册的 `/api/osfm/*` 路由、`/api/health`（容器与反向代理的健康检查），以及 `/api/`、`/_/` 以外的路径（前端、瓦片等）。其余 `/api/*`——记录增删改查、集合、各种登录与令牌刷新、找回密码、邮箱验证、OAuth2、模拟登录、实时订阅、文件、批量、设置、日志、备份、定时任务、SQL 接口，以及不存在的路径——和管理后台 `/_/` 一律返回 JSON 404，不论请求带的是成员令牌、超级用户令牌还是没有令牌。不存在的 `/api/*` 路径因此不再落到前端的 index.html。
+- 实现是 `internal/boundary` 的全局中间件，排在 PocketBase 的请求日志与异常恢复之后、读取令牌与限速之前（被拒绝的请求照常记日志，但不读令牌、不占限额）。它同时检查请求路径和路由匹配到的模式，转义过的路径（如 `/api%2Fcollections…`）也拦得住。
+- 放行的请求在进入后续处理前去掉 `Authorization` 请求头：主监听端口上唯一的凭据是会话 cookie（AD6），PocketBase 令牌（包括超级用户的）在这里不起作用，也就不能借超级用户身份绕过限速。
+- 第二层在数据上：所有集合的访问规则为 `nil`（§3.5）；`members` 的密码、邮箱验证码、OAuth2、MFA 全部关闭，没有 OAuth2 提供方，新设备提醒关闭（它会保存由 IP 派生的指纹），认证规则（`authRule`）设为 `nil`——这样即使某个登录方式被重新打开，PocketBase 也不会为成员返回它自己的登录或刷新响应（只有超级用户的模拟登录例外）。迁移是 `1795600200_boundary`。
+
+**限速**（T006 已验证）：PocketBase 的限速是挂在根路由上的全局中间件，自定义路由同样经过它，除非路由显式解除（PocketBase 自己的记录接口就解除了它，改用按集合的限速）。规则的标签与 `"方法 路径"` 或 `路径` 精确匹配，以 `/` 结尾的标签按前缀匹配；第一条匹配的规则生效，按客户端地址在固定窗口内计数，计数在内存中、修改设置时清零，超级用户不受限。PocketBase 默认关闭限速；迁移 `1795600200_boundary` 把它打开，沿用 PocketBase 的默认规则，其中 `/api/`（每个地址每 10 秒 300 次）覆盖 `/api/osfm/*`。维护者可以在管理后台调整规则，迁移只设初始值。局限：
+
+- 客户端地址取自设置里的可信代理请求头（`trustedProxy.headers`），没有设置时取 TCP 对端地址。部署在同机反向代理后面而不设置时，所有客户端共用代理的地址，限额变成整个实例共享。这一项和部署方式有关，迁移不设置。
+- 不能按登录名计数、不能只计失败的尝试、没有临时锁定，所以登录、TOTP、恢复码、重置链接的限速（`N5`）仍由 OSFM 自己实现。
 
 ### 3.2 接口设计
 
 - 前缀 `/api/osfm/`，JSON，按资源组织：`places`、`places/{uuid}/recommendations`、`me`、`members`（维护者）、`invites`、`reports`、`exports`、`geocode`、`auth/*`。
-- **对外只用 UUIDv7**（`uuid` 字段，唯一索引）。PocketBase 自己的记录 ID 只在服务器内部使用，不出现在任何响应、链接或导出中。
+- **对外只用 UUIDv7**（`uuid` 字段，唯一索引）。PocketBase 自己的记录 ID 只在服务器内部使用，不出现在任何响应、链接或导出中。集成测试（`cmd/osfm`）按 `osfm serve` 的方式启动程序，往每个集合写入编造的记录，再调用所有已注册的路由，在每个响应的头部和正文（包括其中 JSON Web Token 解码后的内容）里查找这些记录与集合的内部 ID；路由从路由器中枚举，新增的 OSFM 路由没有对应的测试请求时测试失败（§6）。
 - **响应是投影**，例如推荐的响应只有 `uuid`、`displayName`（主名或化名，由服务器决定）、`attitude`、正文字段、`editedByMaintainerAt`，没有 `authorId`；只有当请求者就是作者时才附加 `isMine: true`，以便显示编辑入口。
 - 地点卡片里按态度统计的人数（`A4`）在服务器端按真实作者去重后只返回数字。
 - 地图数据按城市与视野范围取：`GET /api/osfm/places?city=…&bbox=…`，返回地点的最小字段集（坐标、精度、类别、各态度人数、时段集合），详情按需取。
@@ -160,13 +174,20 @@ flowchart LR
 
 **会话**：两步验证通过后签发 PocketBase 认证令牌，放在 `HttpOnly; Secure; SameSite=Lax` 的 cookie 中，前端不接触令牌。服务器中间件从 cookie 取令牌、校验并加载成员。会话有效期默认 30 天，成员被移出（`D7`）或重置凭据时，通过轮换该成员的令牌密钥使所有会话立即失效。
 
+令牌的签发与失效（T006 已验证，`internal/auth`）：
+
+- 令牌是 PocketBase 的认证令牌（JWT），签名密钥是该成员的 `tokenKey` 加上集合的 `authToken.secret`，有效期取集合的 `authToken.duration`（PocketBase 默认 5 天；按会话有效期设置是待做）。
+- `IssueToken` 调用 `record.NewAuthToken()`，不依赖任何内置登录方式；`MemberByToken` 校验签名与有效期，只接受 `members` 集合的认证令牌（超级用户令牌、文件令牌等都拒绝），不检查成员是否已离开或已删除。
+- `RevokeTokens` 轮换该成员的 `tokenKey` 并保存：之前签发的令牌全部失效，之后签发的有效，其他成员不受影响。轮换集合的 `authToken.secret` 则使所有成员的令牌失效。
+- 认证集合要求每条记录都有密码：新成员记录由 `NewMemberRecord` 创建，填一个随机值（`SetRandomPassword()`），不对外透露也不使用。
+
 **防护**：所有改变状态的请求要求自定义请求头（`X-OSFM: 1`），配合 SameSite cookie 防 CSRF；登录、TOTP、恢复码、重置链接按 IP 和登录名分别限速；登录失败的提示不区分"登录名不存在"和"密码错误"。
 
 ### 3.4 授权
 
 | 规则 | 实现位置 |
 | --- | --- |
-| 未登录只能访问登录、注册、重置相关接口（`E1`） | 中间件，默认拒绝 |
+| 未登录只能访问登录、注册、重置相关接口（`E1`），以及给其他实例读的 `/.well-known/osfm.json`（§3.8） | 中间件，默认拒绝 |
 | 可见性：`private` 只有作者可见；`circle` 所有成员可见；`federated` 预留，按 `circle` 处理（`C4`） | `store` 层的查询条件，所有读取都经过同一个函数 |
 | 隐藏的推荐只有作者和维护者可见（`C6` `D11`） | 同上 |
 | 编辑：作者或维护者；每次编辑写一条修改记录（`C5`） | `domain`，与更新在同一事务 |
@@ -210,10 +231,13 @@ erDiagram
 ```
 
 - **全部集合的访问规则都是 `nil`**（仅超级用户），客户端不能通过 `/api/collections/*` 读写任何集合（AD2）；测试以成员令牌和匿名身份逐一验证列表、查看、新建、修改、删除都被拒绝。
-- **`members` 由 PocketBase 默认的 `users` 集合改名而来**，而不是另建一个认证集合：只保留一个认证集合，沿用 PocketBase 为它生成的令牌配置，已有记录（如果有人在管理后台建过）也随之保留，迁移为它们补上 `uuid`、登录名和主名。`users` 自带的 `name`、`avatar` 字段删除。内置登录方式在这里不动，由认证任务统一关闭（§3.3）。
+- **`members` 由 PocketBase 默认的 `users` 集合改名而来**，而不是另建一个认证集合：只保留一个认证集合，沿用 PocketBase 为它生成的令牌配置，已有记录（如果有人在管理后台建过）也随之保留，迁移为它们补上 `uuid`、登录名和主名。`users` 自带的 `name`、`avatar` 字段删除。内置登录方式由后面的迁移 `1795600200_boundary` 关闭（§3.1）。
 - **不收集电子邮箱**：PocketBase 要求认证集合保留系统字段 `email`，但允许它不必填；它的唯一索引只覆盖非空值，所以全部留空没有问题。`password` 字段同样是系统字段，填随机值（§3.3）。
-- **对外 ID**：可被外部引用的实体（`members`、`invites`、`places`、`recommendations`）有 `uuid` 字段：UUIDv7，唯一索引，字段格式只接受小写的 v7。新建记录时若为空，由 `internal/store` 的记录钩子生成；已有记录的 `uuid` 不能修改（AD4）。
-- **软删除**：`members`、`places`、`recommendations` 有 `deleted_at` 字段，为空表示有效；所有读取默认过滤；导出与联邦预留中删除以墓碑形式出现。
+- **对外 ID**：可被外部引用的实体（`members`、`invites`、`places`、`recommendations`）有 `uuid` 字段：UUIDv7，唯一索引，字段格式只接受小写的 v7。新建记录时若为空，由 `internal/store` 的记录钩子生成（`store.NewUUID`）；已有记录的 `uuid` 不能修改（AD4）。接口收到的 ID 先用 `store.IsUUID` 检查格式。
+- **软删除**：`members`、`places`、`recommendations`（`store.SoftDeleted`）有 `deleted_at` 字段，为空表示有效。约定：
+  - 删除只写 `deleted_at`（`store.SoftDelete`），记录作为墓碑留下，带着它的 `uuid`；导出与以后的联邦据此得知删除，而不是对象悄悄消失。这些集合的硬删除被 `internal/store` 的钩子拒绝，不论哪段代码发起。
+  - 读取经 `store.Query(app, 集合)` 与 `store.FindByUUID`，默认过滤已删除的记录；需要墓碑的代码（导出、维护）显式调用 `.IncludeDeleted()`。查询条件一律以 AND 组合，无法用 `Where` 或 `OrWhere` 意外替换或绕过过滤条件；联表查询用 `store.NotDeleted(表名)`（列名带表名）。直接用 PocketBase 的查找函数会跳过过滤，只留给自己处理墓碑的代码。
+  - 墓碑保留还是抹去正文（成员退出、作者删除推荐时的隐私要求）由做删除的业务规则决定，不在 `store` 层。
 - **两层分表**：`places` 不含任何成员字段（也没有任何指向 `members` 的关联）；谁创建了地点、谁确认了营业状态记在 `audit_log`（`F1`）。
 - **只追加**：`audit_log` 与 `recommendation_revisions` 只有 `created` 时间，`internal/store` 的钩子拒绝修改它们的记录。修改记录保存修改前的快照、修改人角色与修改人。
 - **单行设置**：`instance_settings` 的主键字段只接受固定值 `instancesetting`，因此第二行无论用什么 ID 都写不进去；这一行由迁移创建，带默认值（举报阈值 3、邀请冷静期 30 天）。
@@ -247,11 +271,27 @@ erDiagram
 
 - **导出**（`F1`）：地点层与推荐层分别导出为 GeoJSON FeatureCollection；属性使用 `osfm:` 前缀，文件头部带 `osfm:schema` 版本号和许可声明（地点层 ODbL 1.0 + OSM 署名，推荐层 CC BY-SA 4.0）。署名只输出显示名或化名，不输出成员 ID。个人数据导出（`E6`）为 JSON。
 - **备份**（`G5`）：维护者在管理页一键生成，内容为 PocketBase 备份（数据库）+ 两层 GeoJSON + `secrets/` 下的密钥；恢复时三者一起放回数据目录。缺少主密钥会导致 TOTP 无法验证，部署文档会强调备份要包含它。
-- **联邦预留**（`F5`）：首次启动生成 Ed25519 实例密钥（`secrets/instance_ed25519`）；`/.well-known/osfm.json` 公布实例公钥、数据格式版本和软件版本，不含实例名称或成员信息；推荐的可见性字段包含 `federated`。订阅接口本身不实现。
+- **联邦预留**（`F5`）：首次启动生成 Ed25519 实例密钥（`secrets/instance_ed25519`）；推荐的可见性字段包含 `federated`；删除留墓碑（§3.5）。订阅接口本身不实现。
+- **`/.well-known/osfm.json`**（`internal/federation`）只有三项：
+
+  ```json
+  {
+    "dataFormatVersion": 1,
+    "softwareVersion": "1.2.3",
+    "publicKey": {"kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}
+  }
+  ```
+
+  - 公钥用 JSON Web Key 表示（RFC 8037：`kty` 为 `OKP`，`crv` 为 `Ed25519`，`x` 为 32 字节公钥的 base64url，无填充），其他实例可以直接用 JOSE 库解析。这个编码是格式的一部分，不随意更改。
+  - `dataFormatVersion` 是数据格式（导出与以后实例之间交换的对象）的版本，不兼容的修改时加一；`softwareVersion` 见 §5.1。
+  - 不含实例名称、城市、成员、地点或任何数量统计：实例以密钥而不是名称识别。
+  - **不需要登录**：它是给其他实例读的，它们没有会话；内容不涉及圈子本身，公开不会泄露成员或位置。代价是外界能看出这是 OSFM 实例及其版本（首页与 `/api/health` 本来也能看出是哪种程序）。会话中间件的默认拒绝必须放行这一路径（§3.4）。
+  - `Content-Type: application/json`，`Cache-Control: public, max-age=3600`，带 `ETag`，支持 `If-None-Match`（304）。密钥只在丢失后重新生成时才变，软件版本只在升级时变。
 
 ### 3.9 日志与隐私
 
-- 请求日志只用于排错：保留 7 天、不记录 IP（M1 核实 PocketBase 的对应配置）。
+- 请求日志只用于排错：保留 7 天、不记录 IP。对应 PocketBase 的日志设置 `logs.maxDays = 7`、`logs.logIP = false`、`logs.logAuthId = false`（不记录记录 ID），由 `internal/boundary` 在每次启动时重新应用，在管理后台改了也只维持到下次启动。PocketBase 每 6 小时删除一次过期日志，所以一条日志最多保留约 7 天 6 小时（T006 已验证）。
+- 一条请求日志含方法、路径、状态码、耗时、User-Agent、Referer 和认证集合名。查询字符串在写入日志前去掉（`internal/boundary`），搜索词、坐标不会经由 URL 进入日志。
 - 日志中不出现坐标、搜索词、推荐正文。
 - 不做任何访问统计、不集成任何遥测。
 
@@ -345,12 +385,13 @@ erDiagram
 
 - 一个 Docker 镜像（多架构：linux/amd64、linux/arm64），基础镜像为 distroless static，发布到 GitHub Container Registry；同时提供各平台的可执行文件。
 - 构建顺序：前端构建 → Go 编译（嵌入 `web/dist`）→ 镜像。
+- **软件版本**（`osfm --version`、`/.well-known/osfm.json`，`internal/version`）：发布时由标签经 `-ldflags -X` 写入（发布工作流；镜像用构建参数 `VERSION`），读出时去掉开头的 `v`。没有写入时取 Go 工具链记在可执行文件里的构建信息：`go install …@v1.2.3` 的模块版本，或在 Git 仓库中构建时按提交生成的伪版本；两者都没有（例如构建上下文里没有 `.git` 的镜像构建）时为 `dev`。同一标签、同一提交构建出的版本字符串相同，不影响可复现构建。
 
 ### 5.2 配置
 
 | 来源 | 内容 |
 | --- | --- |
-| 环境变量 `OSFM_*` | 监听地址 `OSFM_LISTEN`（默认 `127.0.0.1:8090`，`serve --http` 优先）、对外 URL `OSFM_PUBLIC_URL`、数据目录 `OSFM_DATA_DIR`（默认 `./data`，镜像中为 `/data`）、是否开启 PocketBase 管理后台 `OSFM_ADMIN_UI`（默认关闭）；由 `internal/config` 读取和校验，启动时打印生效的配置 |
+| 环境变量 `OSFM_*` | 监听地址 `OSFM_LISTEN`（默认 `127.0.0.1:8090`，`serve --http` 优先）、对外 URL `OSFM_PUBLIC_URL`、数据目录 `OSFM_DATA_DIR`（默认 `./data`，镜像中为 `/data`）、是否开启 PocketBase 管理后台 `OSFM_ADMIN_UI`（默认关闭）、管理后台的单独监听地址 `OSFM_ADMIN_LISTEN`（默认 `127.0.0.1:8091`，见 §5.4）；由 `internal/config` 读取和校验，启动时打印生效的配置 |
 | 首次启动向导（`G3`） | 第一个维护者（同样强制两步验证）、实例名称、关心的城市（名称、范围、对应的瓦片文件） |
 | 维护者设置页 | 举报阈值、冷静期天数、搜索服务的联系方式 |
 
@@ -363,7 +404,11 @@ erDiagram
 ### 5.4 运维入口
 
 - 维护者的日常操作都在应用内的管理页面完成。
-- PocketBase 管理后台（`/_/`）能读取所有原始数据（包括化名对应关系），生产环境**默认关闭**；部署者需要时通过环境变量临时开启，且只监听本机地址，通过 SSH 端口转发访问。
+- PocketBase 管理后台（`/_/`）能读取所有原始数据（包括化名对应关系），**默认关闭**。部署者需要时设 `OSFM_ADMIN_UI=true` 临时开启：管理后台和 PocketBase 自己的全部接口在一个**单独的监听地址**上提供（`OSFM_ADMIN_LISTEN`，默认 `127.0.0.1:8091`），主监听端口上仍然一律 404（§3.1）。反向代理只转发主端口；部署者通过 SSH 端口转发访问，例如 `ssh -L 8091:127.0.0.1:8091 <服务器>` 后打开 `http://127.0.0.1:8091/_/`（T006）。
+  - 为什么不在主端口上判断"请求是否来自本机"：反向代理与 OSFM 在同一台机器上时，每个请求的 TCP 对端都是 127.0.0.1，整个互联网看起来都是本机。PocketBase 自带的超级用户 IP 白名单（`superuserIPs`）同样取决于对端地址或代理请求头，配错一项就等于对公网开放，而且管理后台页面和超级用户登录接口仍然对外可见。单独的监听地址不依赖这些：反向代理不知道这个端口，它就到不了。
+  - 容器里的 127.0.0.1 是容器自己的回环地址，从宿主机访问不到。用镜像部署时设 `OSFM_ADMIN_LISTEN=0.0.0.0:8091`，并只把端口发布到宿主机的回环地址（`-p 127.0.0.1:8091:8091`），再从宿主机做 SSH 端口转发。监听地址不是回环地址时，启动日志会给出警告。
+  - 首次启动、还没有超级用户时，PocketBase 会建一个占位超级用户并打印进入管理后台安装页的链接（还会尝试在本机打开浏览器）。管理后台关闭时 OSFM 不做这件事；开启时链接指向单独的监听地址，只写进日志，不打开浏览器。PocketBase 的启动横幅（会把管理后台显示在主端口上）关闭，改为日志里写明两个地址。
+  - 超级用户随时可以用 `osfm superuser upsert EMAIL PASS` 创建或修改，这个命令直接操作数据库，与管理后台是否开启无关。
 - 命令行：`osfm` 可执行文件提供迁移、备份、恢复、重置维护者凭据等子命令。
 
 ## 6. 测试与 CI
@@ -372,6 +417,7 @@ erDiagram
 | --- | --- |
 | Go 单元测试 | `domain` 的业务规则（可见性、编辑与修改记录、举报阈值、冷静期、去重计数）、坐标转换、认证流程的状态机 |
 | Go 集成测试 | 使用 PocketBase 的测试应用，覆盖每个接口的权限：以"未登录 / 成员 / 作者 / 维护者"四种身份调用，断言响应中不含作者 ID 与化名映射（`E2`） |
+| 内部 ID 扫描 | `cmd/osfm` 的测试按 `osfm serve` 的方式启动程序（同一个注册函数），`internal/idscan` 往每个集合写入编造的记录（含已软删除的；有集合没写入时失败），枚举路由器上的全部路由：OSFM 的每条路由必须在测试的探测表里有请求，PocketBase 自己的路由按占位符代入各集合名后逐一请求；任何响应的头部或正文（含 gzip 解码后、JSON Web Token 解码后）出现记录或集合的内部 ID 即失败（AD4）。有了会话之后，每种身份各扫一遍 |
 | 前端单元测试 | Vitest + Testing Library |
 | 前端文案检查 | `pnpm run check:i18n`：语言文件以外的源码不含中日韩字符（§4.1） |
 | 端到端测试 | Playwright（移动端视口）：注册（passkey 用虚拟认证器、密码 + TOTP 用生成的验证码）、新建推荐、筛选、分享链接回跳 |
@@ -392,12 +438,12 @@ CI 在 GitHub Actions 上运行，顶层权限只读。代码进入仓库后，�
 | AD7 | 底图为每个城市一个 PMTiles 文件（z10–z15），服务器用自带的本地 PMTiles v3 读取器解包为 z/x/y 瓦片 | 最小缩放限制在城市级（`H2`），不需要全球低缩放；普通瓦片请求便于离线缓存；不用 go-pmtiles 是因为它的依赖使可执行文件翻倍（`G1` `G2`），且遇到损坏文件会 panic |
 | AD8 | 中日韩文字用浏览器本机字体渲染，只提供拉丁字形 | 中文字形体积巨大；不能用 CDN |
 | AD9 | 前端：React + TypeScript + Vite，React Router、TanStack Query、Tailwind CSS + shadcn/ui、react-i18next | 生态与 AI 辅助开发的可靠性；地图有官方维护的 React 封装 |
-| AD10 | PocketBase 管理后台生产环境默认关闭 | 它能读到化名对应关系等全部原始数据 |
+| AD10 | PocketBase 管理后台默认关闭；开启时只在单独的本机监听地址上提供，主监听端口上从不提供 | 它能读到化名对应关系等全部原始数据；同机反向代理后面无法凭对端地址判断"本机" |
 | AD11 | 地名搜索只经服务器代理，带缓存与限速 | 浏览器不发第三方请求（`E5`）；遵守公共服务的使用政策 |
 
 ## 8. M1 需要验证的事项
 
-1. PocketBase：关闭内置登录方式后，自行签发令牌的接口与令牌失效方式；限速设置能否覆盖自定义路由；请求日志不记录 IP 的配置。
+1. PocketBase：关闭内置登录方式后，自行签发令牌的接口与令牌失效方式；限速设置能否覆盖自定义路由；请求日志不记录 IP 的配置：已在 T006 完成（§3.1、§3.3、§3.9、§5.4）。
 2. `@vis.gl/react-maplibre` 与 MapLibre v6 的兼容性；MapLibre 在严格 CSP 下的 Worker 加载方式：已在 T015 完成（兼容；`default-src 'self'` 即可，见 §4.3、§4.7）。
 3. 每个城市 z10–z15 切片的文件体积：已在 T014 完成（约 10–30 MB）。
 4. passkey 与密码 + TOTP 在 iOS、带谷歌服务的 Android、不带谷歌服务的国产 Android 上的表现（`N6`）。

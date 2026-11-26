@@ -13,9 +13,12 @@ import (
 	"github.com/pocketbase/pocketbase/tools/osutils"
 	"github.com/spf13/cobra"
 
+	"github.com/EatWell-Studio/OSFM/internal/boundary"
 	"github.com/EatWell-Studio/OSFM/internal/config"
+	"github.com/EatWell-Studio/OSFM/internal/federation"
 	"github.com/EatWell-Studio/OSFM/internal/store"
 	"github.com/EatWell-Studio/OSFM/internal/tiles"
+	"github.com/EatWell-Studio/OSFM/internal/version"
 	"github.com/EatWell-Studio/OSFM/migrations"
 	"github.com/EatWell-Studio/OSFM/web"
 )
@@ -31,12 +34,27 @@ func main() {
 		DefaultDev:     osutils.IsProbablyGoRun(), // as pocketbase.New does
 		DefaultDataDir: cfg.PBDataDir(),
 	})
+	app.RootCmd.Version = version.String()
+	bind(app, cfg)
 
+	// The same commands as app.Start registers, with the serve command's listen address taken from the configuration.
+	app.RootCmd.AddCommand(cmd.NewSuperuserCommand(app))
+	app.RootCmd.AddCommand(newServeCommand(app, cfg))
+	if err := app.Execute(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// bind registers OSFM's hooks and routes on app. Every OSFM route is registered here, in the OnServe hook: the tests
+// boot an app through bind, so that what they check (such as the internal ID scan) is what `osfm serve` serves.
+func bind(app core.App, cfg *config.Config) {
 	// The data directory and the keys are prepared when the app bootstraps, before PocketBase opens its database, so
 	// that `osfm --help` and `osfm --version` leave the file system alone.
+	var keys *config.Keys
 	app.OnBootstrap().BindFunc(func(be *core.BootstrapEvent) error {
-		// The keys are not used yet; the authentication (TOTP secrets) and federation code will take them from here.
-		if _, err := cfg.Prepare(be.App.DataDir(), slog.Default()); err != nil {
+		// The authentication code will take the master key (TOTP secrets) from here.
+		var err error
+		if keys, err = cfg.Prepare(be.App.DataDir(), slog.Default()); err != nil {
 			return err
 		}
 		return be.Next()
@@ -46,6 +64,8 @@ func main() {
 	migrations.Bind(app)
 	// The data model's invariants (uuid, coordinate rounding, append-only collections) for every record save.
 	store.BindHooks(app)
+	// Only /api/osfm/*, /api/health and the web app on the main listener; the admin UI on its own listener (AD2).
+	boundary.Bind(app, boundary.Options{AdminUI: cfg.AdminUI, AdminListen: cfg.AdminListen})
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Basemap tiles from <data>/tiles; with OSFM_PUBLIC_URL set, the TileJSON gives absolute tile URLs. Not behind
@@ -58,6 +78,11 @@ func main() {
 		// would place them on the map (A8, E4).
 		se.Router.GET(tiles.RoutePrefix+"{path...}", apis.WrapStdHandler(tileHandler)).Bind(apis.SkipSuccessActivityLog())
 
+		// The instance metadata for other instances (F5): public, outside any session check.
+		if err := federation.Register(se.Router, keys.Instance.Public()); err != nil {
+			return err
+		}
+
 		// The single-page app answers every path the API does not; unknown paths fall back to index.html so that
 		// client-side routes work on reload.
 		if !se.Router.HasRoute(http.MethodGet, "/{path...}") {
@@ -65,19 +90,13 @@ func main() {
 		}
 		return se.Next()
 	})
-
-	// The same commands as app.Start registers, with the serve command's listen address taken from the configuration.
-	app.RootCmd.AddCommand(cmd.NewSuperuserCommand(app))
-	app.RootCmd.AddCommand(newServeCommand(app, cfg))
-	if err := app.Execute(); err != nil {
-		log.Fatal(err)
-	}
 }
 
 // newServeCommand returns PocketBase's serve command with the default of its --http flag taken from cfg
-// (OSFM_LISTEN); an explicit --http flag still takes precedence.
+// (OSFM_LISTEN); an explicit --http flag still takes precedence. PocketBase's start banner is off: it would point at
+// the admin UI on the main listener, where it is not served; internal/boundary logs the addresses instead.
 func newServeCommand(app core.App, cfg *config.Config) *cobra.Command {
-	serve := cmd.NewServeCommand(app, true)
+	serve := cmd.NewServeCommand(app, false)
 	useConfiguredListen(serve, cfg)
 	return serve
 }
