@@ -1,0 +1,8 @@
+# Settings for pnpm (this directory is a single package, not a workspace).
+overrides:
+  # Development tools only, never in the built app. workbox-build 7.4.1 (through vite-plugin-pwa) asks for glob ^11,
+  # affected by GHSA-3g3m-2fjr-6pw4, and glob 11 and @ts-morph/common (through the shadcn CLI) ask for minimatch ^10,
+  # affected by GHSA-g3hv-75wg-m249. glob 14 keeps the globSync API workbox-build uses, and minimatch 11 the API of 10.
+  # Remove each once its dependents have moved to a fixed version.
+  workbox-build>glob: ^14.0.6
+  minimatch@>=7.0.0 <11.0.1: ^11.0.1

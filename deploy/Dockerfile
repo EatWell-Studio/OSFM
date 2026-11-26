@@ -15,7 +15,7 @@
 # ---------------------------------------------------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM node:24-trixie-slim AS web
 WORKDIR /src/web
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 # The pnpm version is the one package.json pins in "packageManager" (as in CI), installed with npm rather than corepack.
 RUN npm install --global --no-fund --no-audit "$(node -p 'require("./package.json").packageManager')" \
 	&& pnpm install --frozen-lockfile
