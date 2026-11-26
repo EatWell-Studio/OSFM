@@ -5,4 +5,8 @@
 // Every path under /api/osfm/ and /tiles/ needs a session unless its route is marked [Public]; state-changing
 // requests to /api/osfm/* need the X-OSFM header. Sign-in endpoints start a session with [SignIn]; [RevokeSessions]
 // ends every session of a member.
+//
+// Invites (D1, D2): maintainers create, list and revoke invites under /api/osfm/invites ([RequireMaintainer] guards
+// maintainer routes); POST /api/osfm/invites/check is public and only says whether a code can be used. Registration
+// creates a member only through [RegisterWithInvite], which consumes the invite in the same transaction.
 package auth

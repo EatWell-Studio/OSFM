@@ -68,7 +68,7 @@ func bind(app core.App, cfg *config.Config) {
 	// Only /api/osfm/*, /api/health and the web app on the main listener; the admin UI on its own listener (AD2).
 	boundary.Bind(app, boundary.Options{AdminUI: cfg.AdminUI, AdminListen: cfg.AdminListen})
 	// Member sessions: /api/osfm/* (except the routes marked public) and /tiles/* need one; GET /api/osfm/me and
-	// POST /api/osfm/logout (AD6, E1).
+	// POST /api/osfm/logout (AD6, E1); the invite routes under /api/osfm/invites (D1, D2).
 	auth.Bind(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {

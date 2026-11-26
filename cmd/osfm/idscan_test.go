@@ -24,7 +24,7 @@ import (
 // errors); give a Status to show that a probe reached the handler it is meant for.
 //
 // Every probe is sent as each of the identities below. Status is the status a signed-in caller (member, maintainer)
-// gets; anonymous probes of a path that needs a session (/api/osfm/*, /tiles/*) must get 401 instead, unless the route
+// gets, except that members get 403 from the routes in maintainerRoutes; anonymous probes of a path that needs a session (/api/osfm/*, /tiles/*) must get 401 instead, unless the route
 // is in publicRoutes. State-changing probes of /api/osfm/* carry the X-OSFM header; the scan also sends them without
 // it and expects 403.
 var osfmProbes = map[string][]idscan.Request{
@@ -36,6 +36,32 @@ var osfmProbes = map[string][]idscan.Request{
 	},
 	"POST " + auth.LogoutPath: {
 		{Method: http.MethodPost, Path: auth.LogoutPath, Header: csrfHeader, Status: http.StatusNoContent},
+	},
+	// Maintainers only (maintainerRoutes): a member gets 403.
+	"GET " + auth.InvitesPath: {
+		{Path: auth.InvitesPath, Status: http.StatusOK},
+	},
+	"POST " + auth.InvitesPath: {
+		{Method: http.MethodPost, Path: auth.InvitesPath, Body: `{"days":7}`, Header: csrfHeader, Status: http.StatusCreated},
+		{Method: http.MethodPost, Path: auth.InvitesPath, Header: csrfHeader, Status: http.StatusCreated},
+		{Method: http.MethodPost, Path: auth.InvitesPath, Body: `{"days":99}`, Header: csrfHeader, Status: http.StatusBadRequest},
+	},
+	"POST " + auth.InviteRevokePath: {
+		// Revoking is idempotent, so every identity sees the same status.
+		{Method: http.MethodPost, Path: revokePath(idscan.ExpiredInviteUUID), Header: csrfHeader, Status: http.StatusOK},
+		{Method: http.MethodPost, Path: revokePath(idscan.UsedInviteUUID), Header: csrfHeader, Status: http.StatusConflict},
+		{Method: http.MethodPost, Path: revokePath("0190a1b2-0000-7000-8000-00000000ffff"), Header: csrfHeader,
+			Status: http.StatusNotFound},
+		{Method: http.MethodPost, Path: revokePath("x"), Header: csrfHeader, Status: http.StatusNotFound},
+	},
+	// Public: the registration page checks the code before showing the form.
+	"POST " + auth.InviteCheckPath: {
+		{Method: http.MethodPost, Path: auth.InviteCheckPath, Body: `{"code":"` + idscan.InviteCode + `"}`,
+			Header: csrfHeader, Status: http.StatusOK},
+		{Method: http.MethodPost, Path: auth.InviteCheckPath, Body: `{"code":"x"}`, Header: csrfHeader,
+			Status: http.StatusOK},
+		{Method: http.MethodPost, Path: auth.InviteCheckPath, Body: `{`, Header: csrfHeader,
+			Status: http.StatusBadRequest},
 	},
 	// No tile archive in the test data directory: the tile handler reads only the tile files, never the database.
 	"GET /tiles/{path...}": {
@@ -62,7 +88,21 @@ var osfmProbes = map[string][]idscan.Request{
 // publicRoutes are the OSFM routes under /api/osfm/ that answer without a session (auth.Public): sign-in,
 // registration and credential reset, as later tasks add them (E1). A route marked public in the code but missing here
 // fails the scan, and so does the reverse.
-var publicRoutes = map[string]bool{}
+var publicRoutes = map[string]bool{
+	"POST " + auth.InviteCheckPath: true,
+}
+
+// maintainerRoutes are the OSFM routes only maintainers may use (auth.RequireMaintainer): the member identity's
+// probes of them must get 403, whatever their Status says.
+var maintainerRoutes = map[string]bool{
+	"GET " + auth.InvitesPath:       true,
+	"POST " + auth.InvitesPath:      true,
+	"POST " + auth.InviteRevokePath: true,
+}
+
+func revokePath(uuid string) string {
+	return strings.Replace(auth.InviteRevokePath, "{uuid}", uuid, 1)
+}
 
 var csrfHeader = http.Header{http.CanonicalHeaderKey(auth.CSRFHeader): {"1"}}
 
@@ -164,7 +204,8 @@ func TestNoInternalIDsInResponses(t *testing.T) {
 
 	type probe struct {
 		idscan.Request
-		protected bool // needs a session
+		protected      bool // needs a session
+		maintainerOnly bool // members get 403
 	}
 	var reqs []probe
 	registered := map[string]bool{}
@@ -175,7 +216,8 @@ func TestNoInternalIDsInResponses(t *testing.T) {
 			t.Errorf("route %q is not covered by the internal ID scan: add probes for it to osfmProbes", route)
 		}
 		for _, p := range probes {
-			reqs = append(reqs, probe{p, needsSession(p.Path) && !publicRoutes[route.String()]})
+			reqs = append(reqs, probe{p, needsSession(p.Path) && !publicRoutes[route.String()],
+				maintainerRoutes[route.String()]})
 		}
 	}
 	for pattern := range osfmProbes {
@@ -186,6 +228,11 @@ func TestNoInternalIDsInResponses(t *testing.T) {
 	for pattern := range publicRoutes {
 		if !registered[pattern] {
 			t.Errorf("publicRoutes has %q, which is not registered", pattern)
+		}
+	}
+	for pattern := range maintainerRoutes {
+		if !registered[pattern] {
+			t.Errorf("maintainerRoutes has %q, which is not registered", pattern)
 		}
 	}
 
@@ -226,8 +273,11 @@ func TestNoInternalIDsInResponses(t *testing.T) {
 					n += idscan.Scan(t, h, []idscan.Request{r}, slices.Concat(seeded.IDs, created))
 				}
 				r := p.Request
-				if name == "anonymous" && p.protected {
+				switch {
+				case name == "anonymous" && p.protected:
 					r.Status = http.StatusUnauthorized
+				case name == "member" && p.maintainerOnly:
+					r.Status = http.StatusForbidden
 				}
 				send(r)
 				if name != "anonymous" && r.Header.Get(auth.CSRFHeader) != "" {
