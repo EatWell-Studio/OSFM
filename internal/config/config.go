@@ -25,6 +25,8 @@ const (
 	EnvListen    = "OSFM_LISTEN"
 	EnvPublicURL = "OSFM_PUBLIC_URL"
 	EnvAdminUI   = "OSFM_ADMIN_UI"
+	// EnvAdminListen is the address of the separate admin listener, used only when OSFM_ADMIN_UI is on.
+	EnvAdminListen = "OSFM_ADMIN_LISTEN"
 )
 
 // Defaults for unset environment variables.
@@ -33,6 +35,9 @@ const (
 	DefaultDataDir = "./data"
 	// DefaultListen keeps a local run private to the machine. The container image sets OSFM_LISTEN=0.0.0.0:8090.
 	DefaultListen = "127.0.0.1:8090"
+	// DefaultAdminListen is loopback-only: the admin UI is reached through an SSH tunnel, never through the reverse
+	// proxy.
+	DefaultAdminListen = "127.0.0.1:8091"
 )
 
 // Names of the subdirectories of the data directory.
@@ -50,8 +55,11 @@ type Config struct {
 	Listen string
 	// PublicURL is the absolute http(s) URL the instance is reached at, without a trailing slash; empty when unset.
 	PublicURL string
-	// AdminUI reports whether the PocketBase admin UI (/_/) should be available.
+	// AdminUI reports whether the PocketBase admin UI (/_/) and PocketBase's own APIs are served, on a separate
+	// listener at AdminListen. They are never served on the main listener.
 	AdminUI bool
+	// AdminListen is the address of the admin listener (see AdminUI).
+	AdminListen string
 
 	// listenSet records whether OSFM_LISTEN was given, as opposed to the default.
 	listenSet bool
@@ -106,6 +114,14 @@ func Parse(lookup func(string) (string, bool)) (*Config, error) {
 			errs = append(errs, fmt.Errorf("%s=%q: not a boolean (use true or false)", EnvAdminUI, raw))
 		}
 		cfg.AdminUI = v
+	}
+
+	cfg.AdminListen = get(EnvAdminListen)
+	if cfg.AdminListen == "" {
+		cfg.AdminListen = DefaultAdminListen
+	}
+	if err := validateListen(cfg.AdminListen); err != nil {
+		errs = append(errs, fmt.Errorf("%s=%q: %w", EnvAdminListen, cfg.AdminListen, err))
 	}
 
 	if err := errors.Join(errs...); err != nil {

@@ -48,6 +48,7 @@ func (c *Config) Prepare(pbDataDir string, logger *slog.Logger) (*Keys, error) {
 		slog.String("listen", c.Listen),
 		slog.String("public_url", publicURL),
 		slog.Bool("admin_ui", c.AdminUI),
+		slog.String("admin_listen", c.AdminListen),
 	)
 
 	if err := c.EnsureDirs(); err != nil {
