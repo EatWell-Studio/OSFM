@@ -11,6 +11,7 @@ const (
 	ResetLinks       = "reset_links"
 	AuditLog         = "audit_log"
 	InstanceSettings = "instance_settings"
+	Sessions         = "sessions" // sign-in sessions: hashes of the session cookie tokens (AD6)
 
 	// Places and recommendations (M2; created early so that the fields reserved for federation are fixed).
 	Places                  = "places"

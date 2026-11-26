@@ -11,6 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/EatWell-Studio/OSFM/internal/auth"
 	"github.com/EatWell-Studio/OSFM/internal/config"
 	"github.com/EatWell-Studio/OSFM/internal/federation"
 	"github.com/EatWell-Studio/OSFM/internal/idscan"
@@ -22,10 +23,19 @@ import (
 // route cannot be left out of the scan unnoticed. Probes should reach the route's real responses (successes as well as
 // errors); give a Status to show that a probe reached the handler it is meant for.
 //
-// T007 and later: once routes need a session, scan them as each identity too (see identities below).
+// Every probe is sent as each of the identities below. Status is the status a signed-in caller (member, maintainer)
+// gets; anonymous probes of a path that needs a session (/api/osfm/*, /tiles/*) must get 401 instead, unless the route
+// is in publicRoutes. State-changing probes of /api/osfm/* carry the X-OSFM header; the scan also sends them without
+// it and expects 403.
 var osfmProbes = map[string][]idscan.Request{
 	"GET " + federation.WellKnownPath: {
 		{Path: federation.WellKnownPath, Status: http.StatusOK},
+	},
+	"GET " + auth.MePath: {
+		{Path: auth.MePath, Status: http.StatusOK},
+	},
+	"POST " + auth.LogoutPath: {
+		{Method: http.MethodPost, Path: auth.LogoutPath, Header: csrfHeader, Status: http.StatusNoContent},
 	},
 	// No tile archive in the test data directory: the tile handler reads only the tile files, never the database.
 	"GET /tiles/{path...}": {
@@ -49,16 +59,41 @@ var osfmProbes = map[string][]idscan.Request{
 	},
 }
 
-// identities are the callers the scan sends every request as: a function that adds the caller's credentials to a
-// request. Anonymous only until member sessions exist (T007); add a member and a maintainer then.
-var identities = map[string]func(seeded *idscan.Seeded) http.Header{
-	"anonymous": func(*idscan.Seeded) http.Header { return nil },
+// publicRoutes are the OSFM routes under /api/osfm/ that answer without a session (auth.Public): sign-in,
+// registration and credential reset, as later tasks add them (E1). A route marked public in the code but missing here
+// fails the scan, and so does the reverse.
+var publicRoutes = map[string]bool{}
+
+var csrfHeader = http.Header{http.CanonicalHeaderKey(auth.CSRFHeader): {"1"}}
+
+// identities are the callers the scan sends every request as. Each returns the request headers that make the caller,
+// and the internal IDs it created on the way (which must not leak either); it is called for every request, so that a
+// probe that ends the session (logout) does not affect the next one.
+var identities = map[string]func(t testing.TB, app core.App, seeded *idscan.Seeded) (http.Header, []string){
+	"anonymous": func(testing.TB, core.App, *idscan.Seeded) (http.Header, []string) { return nil, nil },
+	"member": func(t testing.TB, app core.App, seeded *idscan.Seeded) (http.Header, []string) {
+		return sessionHeader(t, app, seeded.Member)
+	},
+	"maintainer": func(t testing.TB, app core.App, seeded *idscan.Seeded) (http.Header, []string) {
+		return sessionHeader(t, app, seeded.Maintainer)
+	},
+}
+
+// sessionHeader starts a session for member and returns the Cookie header that carries it, and the session's ID.
+func sessionHeader(t testing.TB, app core.App, member *core.Record) (http.Header, []string) {
+	t.Helper()
+	token, session, err := auth.CreateSession(app, member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return http.Header{"Cookie": {auth.CookieName + "=" + token}}, []string{session.Id}
 }
 
 // bootForScan boots an app on a new data directory through bind, as `osfm serve` does, seeds made-up records into
-// every collection and builds the router with all routes. It returns the routes PocketBase registers itself, the
-// routes OSFM adds and the handler.
-func bootForScan(t *testing.T) (seeded *idscan.Seeded, pbRoutes, osfmRoutes []idscan.Route, h http.Handler) {
+// every collection and builds the router with all routes. It returns the app, the seeded records, the routes
+// PocketBase registers itself, the routes OSFM adds and the handler.
+func bootForScan(t *testing.T) (app core.App, seeded *idscan.Seeded, pbRoutes, osfmRoutes []idscan.Route,
+	h http.Handler) {
 	t.Helper()
 	dir := t.TempDir()
 	cfg, err := config.Parse(func(name string) (string, bool) {
@@ -70,7 +105,7 @@ func bootForScan(t *testing.T) (seeded *idscan.Seeded, pbRoutes, osfmRoutes []id
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := core.NewBaseApp(core.BaseAppConfig{DataDir: cfg.PBDataDir()})
+	app = core.NewBaseApp(core.BaseAppConfig{DataDir: cfg.PBDataDir()})
 	bind(app, cfg)
 	if err := app.Bootstrap(); err != nil {
 		t.Fatal(err)
@@ -114,19 +149,24 @@ func bootForScan(t *testing.T) (seeded *idscan.Seeded, pbRoutes, osfmRoutes []id
 	if err != nil {
 		t.Fatal(err)
 	}
-	return seeded, pbRoutes, osfmRoutes, mux
+	return app, seeded, pbRoutes, osfmRoutes, mux
 }
 
 func noNext(*core.ServeEvent) error { return nil }
 
 // TestNoInternalIDsInResponses is the acceptance check of AD4: no response of any route contains the PocketBase
 // internal ID of a record (or of a collection). It calls every OSFM route with the probes above and every PocketBase
-// route with generic requests (each placeholder filled with every OSFM collection name, or with a dummy value), and
-// searches each response's headers and body for the seeded IDs.
+// route with generic requests (each placeholder filled with every OSFM collection name, or with a dummy value), as
+// each identity, and searches each response's headers and body for the seeded IDs. On the way it checks the session
+// rules on every OSFM route: 401 without a session where one is needed (E1), 403 without the X-OSFM header (AD6).
 func TestNoInternalIDsInResponses(t *testing.T) {
-	seeded, pbRoutes, osfmRoutes, h := bootForScan(t)
+	app, seeded, pbRoutes, osfmRoutes, h := bootForScan(t)
 
-	var reqs []idscan.Request
+	type probe struct {
+		idscan.Request
+		protected bool // needs a session
+	}
+	var reqs []probe
 	registered := map[string]bool{}
 	for _, route := range osfmRoutes {
 		registered[route.String()] = true
@@ -134,11 +174,18 @@ func TestNoInternalIDsInResponses(t *testing.T) {
 		if !ok || len(probes) == 0 {
 			t.Errorf("route %q is not covered by the internal ID scan: add probes for it to osfmProbes", route)
 		}
-		reqs = append(reqs, probes...)
+		for _, p := range probes {
+			reqs = append(reqs, probe{p, needsSession(p.Path) && !publicRoutes[route.String()]})
+		}
 	}
 	for pattern := range osfmProbes {
 		if !registered[pattern] {
 			t.Errorf("osfmProbes has probes for %q, which is not registered", pattern)
+		}
+	}
+	for pattern := range publicRoutes {
+		if !registered[pattern] {
+			t.Errorf("publicRoutes has %q, which is not registered", pattern)
 		}
 	}
 
@@ -159,29 +206,77 @@ func TestNoInternalIDsInResponses(t *testing.T) {
 			body = "{}"
 		}
 		for _, path := range idscan.Expand(route.Path, values, "x") {
-			reqs = append(reqs, idscan.Request{Method: method, Path: path, Body: body})
+			reqs = append(reqs, probe{Request: idscan.Request{Method: method, Path: path, Body: body}})
 		}
 	}
 
 	for name, identity := range identities {
 		t.Run(name, func(t *testing.T) {
-			header := identity(seeded)
-			scoped := make([]idscan.Request, len(reqs))
-			for i, r := range reqs {
-				r.Header = header
-				scoped[i] = r
+			n := 0
+			for _, p := range reqs {
+				send := func(r idscan.Request) {
+					header, created := identity(t, app, seeded)
+					r.Header = r.Header.Clone()
+					if r.Header == nil {
+						r.Header = http.Header{}
+					}
+					for k, v := range header {
+						r.Header[k] = v
+					}
+					n += idscan.Scan(t, h, []idscan.Request{r}, slices.Concat(seeded.IDs, created))
+				}
+				r := p.Request
+				if name == "anonymous" && p.protected {
+					r.Status = http.StatusUnauthorized
+				}
+				send(r)
+				if name != "anonymous" && r.Header.Get(auth.CSRFHeader) != "" {
+					r.Header = r.Header.Clone()
+					r.Header.Del(auth.CSRFHeader)
+					r.Status = http.StatusForbidden
+					send(r)
+				}
 			}
-			n := idscan.Scan(t, h, scoped, seeded.IDs)
 			t.Logf("%d responses from %d OSFM and %d PocketBase routes checked for %d internal IDs", n,
 				len(osfmRoutes), len(pbRoutes), len(seeded.IDs))
 		})
 	}
 }
 
+// needsSession reports whether a request path is one the session middleware protects.
+func needsSession(path string) bool {
+	return strings.HasPrefix(path, "/api/osfm/") || strings.HasPrefix(path, "/tiles/")
+}
+
+// TestPublicWithoutSession checks the paths that stay public as `osfm serve` serves them: the web app, the health
+// check and the instance metadata, while the API and the tiles answer 401.
+func TestPublicWithoutSession(t *testing.T) {
+	_, _, _, _, h := bootForScan(t)
+	for path, want := range map[string]int{
+		"/":                                http.StatusOK,
+		"/login":                           http.StatusOK,
+		"/manifest.webmanifest":            http.StatusOK,
+		"/api/health":                      http.StatusOK,
+		federation.WellKnownPath:           http.StatusOK,
+		auth.MePath:                        http.StatusUnauthorized,
+		"/tiles/":                          http.StatusUnauthorized,
+		"/tiles/testcity.json":             http.StatusUnauthorized,
+		"/tiles/testcity/10/1/1.mvt":       http.StatusUnauthorized,
+		"/api/osfm/no/such/route":          http.StatusNotFound,
+		"/api/collections/members/records": http.StatusNotFound,
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != want {
+			t.Errorf("GET %s: %d, want %d", path, rec.Code, want)
+		}
+	}
+}
+
 // TestWellKnownServed checks /.well-known/osfm.json as the booted app serves it: public, with the key the instance
 // generated in its data directory and nothing about the instance or its members.
 func TestWellKnownServed(t *testing.T) {
-	seeded, _, _, h := bootForScan(t)
+	_, seeded, _, _, h := bootForScan(t)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, federation.WellKnownPath, nil))
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/json" {

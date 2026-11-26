@@ -38,7 +38,7 @@ function rememberCity(id: string) {
 
 /**
  * Every request MapLibre makes goes to the page's own origin (the style holds only same-origin URLs) and carries the
- * session cookie, as the tiles will require a signed-in member (T007).
+ * session cookie: the tiles require a signed-in member.
  */
 const transformRequest: maplibregl.RequestTransformFunction = (url) => ({ url, credentials: 'same-origin' })
 

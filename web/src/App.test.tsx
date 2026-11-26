@@ -11,16 +11,21 @@ import type { Me } from './session/session'
 const member: Me = { uuid: '0190a1b2-0000-7000-8000-000000000001', displayName: 'Test Member', role: 'member' }
 
 /**
- * Answers GET /api/osfm/me with the given status (and the member for 200). 'html' stands for what the server answers
- * while the endpoint does not exist: its single-page-app fallback, index.html.
+ * Answers GET /api/osfm/me with the given status (and the member for 200), POST /api/osfm/logout with logoutStatus.
+ * 'html' stands for a response that is not the server's JSON (something in between, such as a captive portal).
  */
-function stubMe(status: number | 'html') {
-  const fetchMock = vi.fn<typeof fetch>((input) => {
+function stubMe(status: number | 'html', logoutStatus = 204) {
+  const fetchMock = vi.fn<typeof fetch>((input, init) => {
     if (input === '/api/osfm/me') {
       if (status === 'html') {
         return Promise.resolve(new Response('<!doctype html>', { headers: { 'Content-Type': 'text/html' } }))
       }
       return Promise.resolve(status === 200 ? Response.json(member) : Response.json({ message: 'x' }, { status }))
+    }
+    if (input === '/api/osfm/logout' && init?.method === 'POST') {
+      return Promise.resolve(
+        logoutStatus === 204 ? new Response(null, { status: 204 }) : Response.json({}, { status: logoutStatus }),
+      )
     }
     return Promise.resolve(new Response('', { status: 404 }))
   })
@@ -68,8 +73,8 @@ describe('app shell', () => {
 })
 
 describe('session', () => {
-  it.each([401, 404, 'html'] as const)('redirects to sign-in with next when /me answers %s', async (status) => {
-    const fetchMock = stubMe(status)
+  it('redirects to sign-in with next when /me answers 401', async () => {
+    const fetchMock = stubMe(401)
     const router = renderAt('/list?city=x#top')
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/login')
@@ -123,5 +128,37 @@ describe('session', () => {
     stubMe(200)
     await userEvent.setup().click(screen.getByRole('button', { name: zhCN.session.retry }))
     expect(await screen.findByRole('navigation', { name: zhCN.nav.label })).toBeInTheDocument()
+  })
+
+  it.each([404, 500, 'html'] as const)('treats %s from /me as an error, not as signed out', async (status) => {
+    stubMe(status)
+    const router = renderAt('/list')
+    expect(await screen.findByRole('alert', {}, { timeout: 3000 })).toHaveTextContent(zhCN.session.error)
+    expect(router.state.location.pathname).toBe('/list')
+  })
+})
+
+describe('logout', () => {
+  it.each([204, 401])('signs out and goes to the sign-in page when logout answers %s', async (logoutStatus) => {
+    const fetchMock = stubMe(200, logoutStatus)
+    const router = renderAt('/me')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: zhCN.pages.me.logout }))
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/login')
+    })
+    expect(router.state.location.search).toBe('')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(zhCN.pages.login.title)
+    const call = fetchMock.mock.calls.find(([input]) => input === '/api/osfm/logout')
+    expect(call?.[1]?.method).toBe('POST')
+    expect(new Headers(call?.[1]?.headers).get('X-OSFM')).toBe('1')
+  })
+
+  it('stays signed in and says so when logout fails', async () => {
+    stubMe(200, 500)
+    const router = renderAt('/me')
+    await userEvent.setup().click(await screen.findByRole('button', { name: zhCN.pages.me.logout }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.pages.me.logoutError)
+    expect(router.state.location.pathname).toBe('/me')
   })
 })

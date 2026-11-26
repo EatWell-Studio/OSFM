@@ -46,6 +46,8 @@ func seedRecords(t *testing.T, app core.App) (ids map[string]string, memberToken
 	save(store.ResetLinks, map[string]any{"code_hash": "hash-reset", "member": m, "created_by": m,
 		"expires_at": "2030-01-01 00:00:00Z"})
 	save(store.AuditLog, map[string]any{"actor": m, "action": "test.seed"})
+	save(store.Sessions, map[string]any{"member": m, "token_hash": strings.Repeat("ab", 32),
+		"expires_at": "2030-01-01 00:00:00Z"})
 	place := save(store.Places, map[string]any{"name": "Test Place", "lat": 31.23, "lon": 121.47,
 		"precision": "exact", "category": "cafe", "status": "open"})
 	rec := save(store.Recommendations, map[string]any{"place": place.Id, "author": m, "display_as": "main",

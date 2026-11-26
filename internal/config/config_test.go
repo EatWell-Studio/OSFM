@@ -90,6 +90,9 @@ func TestParseRelativeDataDirIsMadeAbsolute(t *testing.T) {
 func TestParseValidPublicURLs(t *testing.T) {
 	for raw, want := range map[string]string{
 		"http://localhost:8090":          "http://localhost:8090",
+		"http://127.0.0.1:8090/":         "http://127.0.0.1:8090",
+		"http://[::1]:8090":              "http://[::1]:8090",
+		"http://osfm.localhost":          "http://osfm.localhost",
 		"https://example.org/osfm/":      "https://example.org/osfm",
 		"HTTPS://example.org":            "https://example.org",
 		"https://[2001:db8::1]:8443/map": "https://[2001:db8::1]:8443/map",
@@ -123,6 +126,9 @@ func TestParseInvalid(t *testing.T) {
 		{EnvPublicURL, "https://example.org/?x=1"},
 		{EnvPublicURL, "https://example.org/#top"},
 		{EnvPublicURL, "https://exa mple.org"},
+		{EnvPublicURL, "http://example.org"}, // the Secure session cookie needs HTTPS
+		{EnvPublicURL, "http://192.0.2.10:8090"},
+		{EnvPublicURL, "http://localhost.example.org"},
 		{EnvAdminUI, "yes"},
 		{EnvAdminUI, "2"},
 		{EnvAdminListen, "8091"},
