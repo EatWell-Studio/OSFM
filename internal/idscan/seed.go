@@ -70,15 +70,18 @@ func Seed(t testing.TB, app core.App) *Seeded {
 
 	maintainer := save(store.Members, map[string]any{"login_name": "test_maintainer",
 		"display_name": "Test Maintainer", "role": "maintainer", "can_invite": true})
-	member := save(store.Members, map[string]any{"login_name": "test_member", "display_name": "Test Member",
-		"pseudonym": "Test Alias", "role": "member", "invited_by": maintainer.Id})
+	member := save(store.Members, map[string]any{"login_name": "test_member", "display_name": "Test Member", // #nosec G101 -- made up
+		"pseudonym": "Test Alias", "role": "member", "invited_by": maintainer.Id,
+		"passkey_user_handle": "dGVzdC11c2VyLWhhbmRsZS1ub3QtYS1yZWFsLW9uZSE"})
 	left := save(store.Members, map[string]any{"login_name": "test_left", "display_name": "Test Left",
 		"role": "member", "invited_by": maintainer.Id})
 	deleted(left)
 	s.Member, s.Maintainer = member, maintainer
 	m := member.Id
 
-	save(store.Credentials, map[string]any{"member": m, "kind": "passkey", "credential_id": "dGVzdC1jcmVk"}) // #nosec G101 -- made up
+	save(store.Credentials, map[string]any{"member": m, "kind": "passkey", "credential_id": "dGVzdC1jcmVk", // #nosec G101 -- made up
+		"public_key": "dGVzdC1rZXk", "sign_count": 3, "aaguid": "00000000-0000-0000-0000-000000000000",
+		"transports": []string{"internal"}, "user_verified": true, "attestation_format": "none"})
 	save(store.RecoveryCodes, map[string]any{"member": m, "code_hash": "test-hash-recovery"})
 	// Invites in every state, with fixed uuids for the probes: used (by the member), active (its code is
 	// InviteCode), expired and revoked.

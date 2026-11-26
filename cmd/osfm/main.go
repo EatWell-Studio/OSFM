@@ -70,12 +70,15 @@ func bind(app core.App, cfg *config.Config) {
 	// Member sessions: /api/osfm/* (except the routes marked public) and /tiles/* need one; GET /api/osfm/me and
 	// POST /api/osfm/logout (AD6, E1); the invite routes under /api/osfm/invites (D1, D2).
 	// Registration and sign-in with password and TOTP; the master key is read once the app has bootstrapped.
-	auth.Bind(app, auth.Options{HostPrefix: cfg.PublicHTTPS(), MasterKey: func() []byte {
-		if keys == nil {
-			return nil
-		}
-		return keys.Master
-	}})
+	// Passkey registration and sign-in under /api/osfm/passkey (D3, D4), for the relying party OSFM_PUBLIC_URL names.
+	rpID, rpOrigins := cfg.PasskeyRP()
+	auth.Bind(app, auth.Options{HostPrefix: cfg.PublicHTTPS(), PasskeyRPID: rpID, PasskeyOrigins: rpOrigins,
+		MasterKey: func() []byte {
+			if keys == nil {
+				return nil
+			}
+			return keys.Master
+		}})
 	// The web app on every path the API does not answer (client-side routes fall back to index.html, missing files get
 	// 404), and the security headers of the main listener (§4.7).
 	webapp.Bind(app, webapp.Options{FS: web.FS(), HSTS: cfg.PublicHTTPS()})

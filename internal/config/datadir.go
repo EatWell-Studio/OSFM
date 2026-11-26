@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // pbDatabaseFile is the name of PocketBase's main database in its data directory.
@@ -40,6 +41,7 @@ func (c *Config) Prepare(pbDataDir string, logger *slog.Logger) (*Keys, error) {
 	if abs, err := filepath.Abs(pbDataDir); err == nil {
 		pbDataDir = abs
 	}
+	rpID, rpOrigins := c.PasskeyRP()
 	logger.Info("OSFM configuration",
 		slog.String("data_dir", c.DataDir),
 		slog.String("pb_data", pbDataDir),
@@ -49,6 +51,8 @@ func (c *Config) Prepare(pbDataDir string, logger *slog.Logger) (*Keys, error) {
 		slog.String("public_url", publicURL),
 		slog.Bool("admin_ui", c.AdminUI),
 		slog.String("admin_listen", c.AdminListen),
+		slog.String("passkey_rp_id", rpID),
+		slog.String("passkey_origins", strings.Join(rpOrigins, " ")),
 	)
 
 	if err := c.EnsureDirs(); err != nil {
