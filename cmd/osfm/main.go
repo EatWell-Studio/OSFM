@@ -4,7 +4,6 @@ package main
 import (
 	"log"
 	"log/slog"
-	"net/http"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -20,6 +19,7 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/store"
 	"github.com/EatWell-Studio/OSFM/internal/tiles"
 	"github.com/EatWell-Studio/OSFM/internal/version"
+	"github.com/EatWell-Studio/OSFM/internal/webapp"
 	"github.com/EatWell-Studio/OSFM/migrations"
 	"github.com/EatWell-Studio/OSFM/web"
 )
@@ -69,7 +69,10 @@ func bind(app core.App, cfg *config.Config) {
 	boundary.Bind(app, boundary.Options{AdminUI: cfg.AdminUI, AdminListen: cfg.AdminListen})
 	// Member sessions: /api/osfm/* (except the routes marked public) and /tiles/* need one; GET /api/osfm/me and
 	// POST /api/osfm/logout (AD6, E1); the invite routes under /api/osfm/invites (D1, D2).
-	auth.Bind(app)
+	auth.Bind(app, auth.Options{HostPrefix: cfg.PublicHTTPS()})
+	// The web app on every path the API does not answer (client-side routes fall back to index.html, missing files get
+	// 404), and the security headers of the main listener (§4.7).
+	webapp.Bind(app, webapp.Options{FS: web.FS(), HSTS: cfg.PublicHTTPS()})
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Basemap tiles from <data>/tiles; with OSFM_PUBLIC_URL set, the TileJSON gives absolute tile URLs. Members
@@ -85,12 +88,6 @@ func bind(app core.App, cfg *config.Config) {
 		// The instance metadata for other instances (F5): public, outside any session check.
 		if err := federation.Register(se.Router, keys.Instance.Public()); err != nil {
 			return err
-		}
-
-		// The single-page app answers every path the API does not; unknown paths fall back to index.html so that
-		// client-side routes work on reload.
-		if !se.Router.HasRoute(http.MethodGet, "/{path...}") {
-			se.Router.GET("/{path...}", apis.Static(web.FS(), true))
 		}
 		return se.Next()
 	})

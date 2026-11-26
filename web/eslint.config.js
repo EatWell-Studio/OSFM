@@ -4,6 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
+import { plainText } from './scripts/lint-plain-text.ts'
 
 export default defineConfig([
   globalIgnores(['dist']),
@@ -25,4 +26,5 @@ export default defineConfig([
       },
     },
   },
+  plainText,
 ])

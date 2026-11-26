@@ -32,15 +32,22 @@ const (
 )
 
 type env struct {
-	t   *testing.T
-	app *tests.TestApp
-	h   http.Handler
+	t          *testing.T
+	app        *tests.TestApp
+	h          http.Handler
+	cookieName string // the session cookie's name
 }
 
 // newEnv returns a test app with the boundary and the session layer bound, and a handler built as apis.Serve builds
 // it (PocketBase's router with its middlewares, rate limiter included, then the OnServe hooks). prepare runs before
 // the router is built.
 func newEnv(t *testing.T, prepare ...func(core.App)) *env {
+	t.Helper()
+	return newEnvWith(t, auth.Options{}, prepare...)
+}
+
+// newEnvWith is newEnv with the session layer bound with opts.
+func newEnvWith(t *testing.T, opts auth.Options, prepare ...func(core.App)) *env {
 	t.Helper()
 	app, err := tests.NewTestApp(t.TempDir())
 	if err != nil {
@@ -49,7 +56,7 @@ func newEnv(t *testing.T, prepare ...func(core.App)) *env {
 	t.Cleanup(app.Cleanup)
 	store.BindHooks(app)
 	boundary.Bind(app, boundary.Options{})
-	auth.Bind(app)
+	auth.Bind(app, opts)
 	for _, f := range prepare {
 		f(app)
 	}
@@ -93,7 +100,7 @@ func newEnv(t *testing.T, prepare ...func(core.App)) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{t: t, app: app, h: h}
+	return &env{t: t, app: app, h: h, cookieName: auth.SessionCookieName(app)}
 }
 
 func (en *env) member(login, role string) *core.Record {
@@ -127,7 +134,7 @@ func (en *env) req(method, path, token string, headers ...string) *httptest.Resp
 	en.t.Helper()
 	r := httptest.NewRequest(method, path, nil)
 	if token != "" {
-		r.Header.Add("Cookie", auth.CookieName+"="+token)
+		r.Header.Add("Cookie", en.cookieName+"="+token)
 	}
 	for i := 0; i+1 < len(headers); i += 2 {
 		r.Header.Set(headers[i], headers[i+1])
@@ -151,10 +158,10 @@ func (en *env) sessionCount(member *core.Record) int64 {
 	return n
 }
 
-// responseCookie returns the session cookie a response sets, or nil.
+// responseCookie returns the session cookie a response sets, under either name, or nil.
 func responseCookie(rec *httptest.ResponseRecorder) *http.Cookie {
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == auth.CookieName {
+		if c.Name == auth.CookieName || c.Name == auth.HostCookieName {
 			return c
 		}
 	}
@@ -289,6 +296,9 @@ func TestSignIn(t *testing.T) {
 	if c == nil {
 		t.Fatal("no session cookie")
 	}
+	if c.Name != auth.CookieName {
+		t.Errorf("cookie %q, want %q without Options.HostPrefix", c.Name, auth.CookieName)
+	}
 	raw := rec.Header().Get("Set-Cookie")
 	for _, attr := range []string{"Path=/", "HttpOnly", "Secure", "SameSite=Lax", "Max-Age=", "Expires="} {
 		if !strings.Contains(raw, attr) {
@@ -338,6 +348,46 @@ func TestSignIn(t *testing.T) {
 	}
 	if n := en.sessionCount(m); n != 1 {
 		t.Errorf("%d sessions after signing in twice, want 1", n)
+	}
+}
+
+// TestHostPrefix checks the session cookie of an instance served over HTTPS at a public host name: called
+// __Host-osfm_session, with the attributes the prefix requires (Secure, Path=/, no Domain); a cookie under the
+// unprefixed name is not read, and logout and invalid sessions clear the prefixed one.
+func TestHostPrefix(t *testing.T) {
+	en := newEnvWith(t, auth.Options{HostPrefix: true})
+	m := en.member("test_member", auth.RoleMember)
+	if got := auth.SessionCookieName(en.app); got != auth.HostCookieName {
+		t.Fatalf("SessionCookieName = %q", got)
+	}
+
+	rec := en.req(http.MethodPost, signInPath+"?login=test_member", "", csrf, "1")
+	c := responseCookie(rec)
+	if rec.Code != http.StatusNoContent || c == nil || c.Name != auth.HostCookieName {
+		t.Fatalf("sign-in: %d, cookie %+v", rec.Code, c)
+	}
+	raw := rec.Header().Get("Set-Cookie")
+	if !strings.HasPrefix(raw, auth.HostCookieName+"=") || !strings.Contains(raw, "; Secure") ||
+		!strings.Contains(raw, "Path=/;") || strings.Contains(strings.ToLower(raw), "domain=") {
+		t.Errorf("Set-Cookie %q does not meet the __Host- requirements", raw)
+	}
+	if got := en.status(http.MethodGet, auth.MePath, c.Value); got != http.StatusOK {
+		t.Errorf("/me with the prefixed cookie: %d", got)
+	}
+
+	// The same token under the unprefixed name, as a sibling subdomain could plant it, is not a session here.
+	r := httptest.NewRequest(http.MethodGet, auth.MePath, nil)
+	r.Header.Add("Cookie", auth.CookieName+"="+en.session(m))
+	plain := httptest.NewRecorder()
+	en.h.ServeHTTP(plain, r)
+	if plain.Code != http.StatusUnauthorized {
+		t.Errorf("/me with the unprefixed cookie: %d, want 401", plain.Code)
+	}
+
+	rec = en.req(http.MethodPost, auth.LogoutPath, c.Value, csrf, "1")
+	if cleared := responseCookie(rec); rec.Code != http.StatusNoContent || cleared == nil ||
+		cleared.Name != auth.HostCookieName || cleared.MaxAge >= 0 {
+		t.Errorf("logout: %d, cookie %+v", rec.Code, cleared)
 	}
 }
 

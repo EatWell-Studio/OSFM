@@ -82,6 +82,8 @@ var osfmProbes = map[string][]idscan.Request{
 		{Path: "/list", Status: http.StatusOK},
 		{Path: "/some/client/route?next=%2Fme", Status: http.StatusOK},
 		{Path: "/manifest.webmanifest"},
+		{Path: "/assets/no-such-file.js", Status: http.StatusNotFound},
+		{Path: "/favicon.ico", Status: http.StatusNotFound},
 	},
 }
 
@@ -126,7 +128,7 @@ func sessionHeader(t testing.TB, app core.App, member *core.Record) (http.Header
 	if err != nil {
 		t.Fatal(err)
 	}
-	return http.Header{"Cookie": {auth.CookieName + "=" + token}}, []string{session.Id}
+	return http.Header{"Cookie": {auth.SessionCookieName(app) + "=" + token}}, []string{session.Id}
 }
 
 // bootForScan boots an app on a new data directory through bind, as `osfm serve` does, seeds made-up records into
@@ -305,7 +307,7 @@ func TestPublicWithoutSession(t *testing.T) {
 	for path, want := range map[string]int{
 		"/":                                http.StatusOK,
 		"/login":                           http.StatusOK,
-		"/manifest.webmanifest":            http.StatusOK,
+		"/assets/no-such-file.js":          http.StatusNotFound, // not the app's index.html (T018)
 		"/api/health":                      http.StatusOK,
 		federation.WellKnownPath:           http.StatusOK,
 		auth.MePath:                        http.StatusUnauthorized,

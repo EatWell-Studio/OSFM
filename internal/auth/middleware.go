@@ -23,8 +23,8 @@ const (
 	LogoutPath = boundary.OSFMPrefix + "logout"
 
 	// CSRFHeader must be sent, with the value "1", on every state-changing request to /api/osfm/* (AD6). A cross-site
-	// form cannot add a header, and a cross-origin script cannot send one with credentials: PocketBase's CORS
-	// middleware does not allow credentials, so the browser's preflight fails.
+	// form cannot add a header, and a cross-origin script cannot send one: the main listener answers preflight
+	// requests without any CORS header (internal/webapp), so the browser's preflight fails.
 	CSRFHeader = "X-OSFM"
 )
 
@@ -66,6 +66,13 @@ const (
 	memberKey  = "osfmMember"
 )
 
+// Options configures [Bind].
+type Options struct {
+	// HostPrefix names the session cookie [HostCookieName] instead of [CookieName]. Set it when the instance is served
+	// over HTTPS at a public host name (config.Config.PublicHTTPS).
+	HostPrefix bool
+}
+
 // Bind installs the session layer on app:
 //
 //   - the middlewares (session cookie, default deny, CSRF header) and the routes GET [MePath] and POST [LogoutPath],
@@ -74,7 +81,13 @@ const (
 //   - a hook that deletes a member's sessions and revokes their open invites as soon as they leave, are removed or
 //     are soft-deleted;
 //   - a daily job that deletes expired sessions.
-func Bind(app core.App) {
+func Bind(app core.App, opts Options) {
+	name := CookieName
+	if opts.HostPrefix {
+		name = HostCookieName
+	}
+	app.Store().Set(cookieNameKey, name)
+
 	app.OnRecordUpdate(store.Members).BindFunc(func(e *core.RecordEvent) error {
 		if err := e.Next(); err != nil {
 			return err
@@ -168,7 +181,7 @@ func SignIn(e *core.RequestEvent, member *core.Record) error {
 	if old := currentSession(e); old != nil {
 		deleteSession(e.App, old)
 	}
-	e.SetCookie(sessionCookie(token, session.GetDateTime("expires_at").Time()))
+	e.SetCookie(sessionCookie(SessionCookieName(e.App), token, session.GetDateTime("expires_at").Time()))
 	setSession(e, session, member)
 	return nil
 }
@@ -180,7 +193,7 @@ func SignOut(e *core.RequestEvent) error {
 			return err
 		}
 	}
-	e.SetCookie(clearedCookie())
+	e.SetCookie(clearedCookie(SessionCookieName(e.App)))
 	e.Set(sessionKey, nil)
 	e.Set(memberKey, nil)
 	e.Auth = nil
@@ -201,7 +214,7 @@ func loadSession() *hook.Handler[*core.RequestEvent] {
 			if !under(e.Request, protectedPrefixes...) {
 				return e.Next()
 			}
-			cookie, err := e.Request.Cookie(CookieName)
+			cookie, err := e.Request.Cookie(SessionCookieName(e.App))
 			if err != nil {
 				return e.Next() // no cookie
 			}
@@ -211,7 +224,7 @@ func loadSession() *hook.Handler[*core.RequestEvent] {
 				setSession(e, session, member)
 			case errors.Is(err, errNoSession):
 				// Expired, revoked or made up: the browser can forget it.
-				e.SetCookie(clearedCookie())
+				e.SetCookie(clearedCookie(SessionCookieName(e.App)))
 			default:
 				return e.InternalServerError("", err)
 			}

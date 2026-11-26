@@ -192,3 +192,25 @@ func TestHTTPAddr(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicHTTPS(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"":                          false,
+		"https://food.example.org":  true,
+		"https://food.example.org/": true,
+		"http://localhost:8090":     false,
+		"http://127.0.0.1:8090":     false,
+		"https://localhost:8443":    false, // HSTS and the cookie prefix would follow the developer to every local app
+		"https://osfm.localhost":    false,
+		"https://[::1]:8443":        false,
+		"https://192.0.2.10":        true,
+	} {
+		cfg, err := Parse(env(map[string]string{EnvPublicURL: raw}))
+		if err != nil {
+			t.Fatalf("%q: %v", raw, err)
+		}
+		if got := cfg.PublicHTTPS(); got != want {
+			t.Errorf("%q: PublicHTTPS() = %v, want %v", raw, got, want)
+		}
+	}
+}
