@@ -10,17 +10,67 @@
     "me": "Me"
   },
   "pages": {
-    "map": { "title": "Map" },
-    "list": { "title": "List" },
+    "map": {
+      "title": "Map"
+    },
+    "list": {
+      "title": "List"
+    },
     "me": {
       "title": "Me",
       "logout": "Sign out",
-      "logoutError": "Could not sign out. Check your connection and try again."
+      "logoutError": "Could not sign out. Check your connection and try again.",
+      "admin": "Administration"
     },
-    "admin": { "title": "Administration" },
-    "login": { "title": "Sign in" },
-    "register": { "title": "Register" },
-    "notFound": { "title": "Page not found" }
+    "admin": {
+      "title": "Administration",
+      "notAllowed": "Only maintainers can use the administration page.",
+      "invites": {
+        "title": "Invites",
+        "validity": "Valid for",
+        "days_one": "{{count}} day",
+        "days_other": "{{count}} days",
+        "create": "Create invite link",
+        "createError": "Could not create the invite. Check your connection and try again.",
+        "link": "Invite link",
+        "copy": "Copy",
+        "copied": "Copied",
+        "copyError": "Could not copy. Select the link and copy it by hand.",
+        "shownOnce": "This link is shown only now: the server keeps only its hash and cannot show it again. Each link registers one member.",
+        "loadError": "Could not load the invites. Check your connection and try again.",
+        "retry": "Try again",
+        "empty": "No invites yet.",
+        "revoke": "Revoke",
+        "revokeError": "Could not revoke the invite. Reload and try again.",
+        "state": {
+          "active": "Active",
+          "used": "Used",
+          "expired": "Expired",
+          "revoked": "Revoked"
+        },
+        "createdBy": "Created by {{name}} on {{date}}",
+        "usedBy": "Used by {{name}} on {{date}}",
+        "revokedAt": "Revoked on {{date}}",
+        "expiresAt": "Valid until {{date}}",
+        "unknownMember": "(unknown member)"
+      }
+    },
+    "login": {
+      "title": "Sign in"
+    },
+    "register": {
+      "title": "Register",
+      "noInvite": "You need an invite link to register. Ask a maintainer of the circle for one.",
+      "checking": "Checking the invite…",
+      "invalidInvite": "This invite link is invalid or has expired. Ask the person who invited you for a new one.",
+      "validInvite": "The invite is valid.",
+      "formsPending": "Registration will open here soon.",
+      "checkError": "Could not check the invite. Check your connection and try again.",
+      "retry": "Try again"
+    },
+    "notFound": {
+      "title": "Page not found"
+    }
   },
   "session": {
     "error": "Could not check whether you are signed in. Check your connection and try again.",

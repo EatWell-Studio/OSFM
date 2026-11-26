@@ -49,6 +49,10 @@ const (
 	// the public routes too: signing in must not be forgeable either.
 	CSRFMiddlewareID       = "osfmCSRF"
 	CSRFMiddlewarePriority = RequireSessionMiddlewarePriority + 1
+
+	// RequireMaintainerMiddlewareID is the route middleware of [RequireMaintainer]. Its priority is the default (0),
+	// so it runs after all of the above.
+	RequireMaintainerMiddlewareID = "osfmRequireMaintainer"
 )
 
 // protectedPrefixes are the paths that need a session (E1): the OSFM API, except the routes marked [Public], and the
@@ -73,7 +77,9 @@ type Options struct {
 //
 //   - the middlewares (session cookie, default deny, CSRF header) and the routes GET [MePath] and POST [LogoutPath],
 //     when serving;
-//   - a hook that deletes a member's sessions as soon as they leave, are removed or are soft-deleted;
+//   - the invite routes ([bindInviteRoutes]);
+//   - a hook that deletes a member's sessions and revokes their open invites as soon as they leave, are removed or
+//     are soft-deleted;
 //   - a daily job that deletes expired sessions.
 func Bind(app core.App, opts Options) {
 	name := CookieName
@@ -94,8 +100,10 @@ func Bind(app core.App, opts Options) {
 		if store.IsDeleted(e.Record) {
 			reason = RevokeDeleted
 		}
-		_, err := RevokeSessions(e.App, e.Record, nil, reason)
-		return err
+		if _, err := RevokeSessions(e.App, e.Record, nil, reason); err != nil {
+			return err
+		}
+		return revokeOpenInvites(e.App, e.Record, reason)
 	})
 
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
@@ -114,6 +122,7 @@ func Bind(app core.App, opts Options) {
 		se.Router.Bind(loadSession(), requireSession(), requireCSRFHeader())
 		se.Router.GET(MePath, handleMe)
 		se.Router.POST(LogoutPath, handleLogout)
+		bindInviteRoutes(se)
 		return se.Next()
 	})
 }
@@ -123,6 +132,30 @@ func Bind(app core.App, opts Options) {
 // still read, so [CurrentMember] and [SignIn] work as on any other route.
 func Public(route *router.Route[*core.RequestEvent]) *router.Route[*core.RequestEvent] {
 	return route.Unbind(RequireSessionMiddlewareID)
+}
+
+// IsMaintainer reports whether member is a maintainer (D6) who may sign in.
+func IsMaintainer(member *core.Record) bool {
+	return CanSignIn(member) && member.GetString("role") == RoleMaintainer
+}
+
+// RequireMaintainer returns a route middleware that lets only maintainers through: 401 without a session (in case the
+// route was marked [Public] by mistake), 403 for a member who is not a maintainer. Bind it to every maintainer route:
+// route.Bind(auth.RequireMaintainer()).
+func RequireMaintainer() *hook.Handler[*core.RequestEvent] {
+	return &hook.Handler[*core.RequestEvent]{
+		Id: RequireMaintainerMiddlewareID,
+		Func: func(e *core.RequestEvent) error {
+			m := CurrentMember(e)
+			if m == nil {
+				return e.UnauthorizedError("", nil)
+			}
+			if !IsMaintainer(m) {
+				return e.ForbiddenError("Only maintainers may do this.", nil)
+			}
+			return e.Next()
+		},
+	}
 }
 
 // CurrentMember returns the member of the request's session, or nil without one. Use it rather than e.Auth: on the

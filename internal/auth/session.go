@@ -212,7 +212,8 @@ func RevokeSessions(app core.App, member, actor *core.Record, reason string) (in
 		if n, err = res.RowsAffected(); err != nil {
 			return err
 		}
-		return writeAudit(tx, actor, AuditRevokeSessions, member, map[string]any{"reason": reason, "sessions": n})
+		return writeAudit(tx, actor, AuditRevokeSessions, store.Members, member.GetString(store.FieldUUID),
+			map[string]any{"reason": reason, "sessions": n})
 	})
 	if err != nil {
 		return 0, fmt.Errorf("auth: revoke sessions: %w", err)
@@ -231,8 +232,9 @@ func DeleteExpiredSessions(app core.App) (int64, error) {
 	return res.RowsAffected()
 }
 
-// writeAudit appends an audit_log entry about a member.
-func writeAudit(app core.App, actor *core.Record, action string, target *core.Record, details map[string]any) error {
+// writeAudit appends an audit_log entry: who (actor, nil for the system or the member's own action), what (action),
+// about which object (the collection name and the uuid of the target) and details.
+func writeAudit(app core.App, actor *core.Record, action, targetType, targetUUID string, details map[string]any) error {
 	c, err := app.FindCachedCollectionByNameOrId(store.AuditLog)
 	if err != nil {
 		return err
@@ -242,8 +244,8 @@ func writeAudit(app core.App, actor *core.Record, action string, target *core.Re
 		r.Set("actor", actor.Id)
 	}
 	r.Set("action", action)
-	r.Set("target_type", store.Members)
-	r.Set("target_uuid", target.GetString(store.FieldUUID))
+	r.Set("target_type", targetType)
+	r.Set("target_uuid", targetUUID)
 	r.Set("details", details)
 	return app.Save(r)
 }
