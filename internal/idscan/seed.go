@@ -1,6 +1,8 @@
 package idscan
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -21,6 +23,16 @@ type Seeded struct {
 	// Member and Maintainer are seeded members who may sign in, with role member and maintainer.
 	Member, Maintainer *core.Record
 }
+
+// Made-up invites [Seed] writes, for the probes of the invite routes.
+const (
+	// InviteCode is the code of the seeded active invite.
+	InviteCode = "dGVzdC1pbnZpdGUtY29kZS1ub3QtYS1yZWFsLW9uZSE" // #nosec G101 -- made up
+	// ActiveInviteUUID, UsedInviteUUID and ExpiredInviteUUID are the uuids of seeded invites in those states.
+	ActiveInviteUUID  = "0190a1b2-0000-7000-8000-00000000a001"
+	UsedInviteUUID    = "0190a1b2-0000-7000-8000-00000000a002"
+	ExpiredInviteUUID = "0190a1b2-0000-7000-8000-00000000a003"
+)
 
 // Seed writes made-up records into every OSFM collection of app, a bootstrapped app with the OSFM migrations
 // applied, including soft-deleted ones, and returns their internal IDs. It fails the test if a collection that is
@@ -68,10 +80,17 @@ func Seed(t testing.TB, app core.App) *Seeded {
 
 	save(store.Credentials, map[string]any{"member": m, "kind": "passkey", "credential_id": "dGVzdC1jcmVk"}) // #nosec G101 -- made up
 	save(store.RecoveryCodes, map[string]any{"member": m, "code_hash": "test-hash-recovery"})
-	save(store.Invites, map[string]any{"code_hash": "test-hash-invite-1", "created_by": maintainer.Id,
-		"used_by": m, "expires_at": "2030-01-01 00:00:00Z"})
-	save(store.Invites, map[string]any{"code_hash": "test-hash-invite-2", "created_by": maintainer.Id,
-		"expires_at": "2030-01-01 00:00:00Z"})
+	// Invites in every state, with fixed uuids for the probes: used (by the member), active (its code is
+	// InviteCode), expired and revoked.
+	save(store.Invites, map[string]any{store.FieldUUID: UsedInviteUUID, "code_hash": strings.Repeat("1a", 32),
+		"created_by": maintainer.Id, "used_by": m, "used_at": "2026-01-02 00:00:00Z", "expires_at": "2026-01-08 00:00:00Z"})
+	inviteHash := sha256.Sum256([]byte(InviteCode))
+	save(store.Invites, map[string]any{store.FieldUUID: ActiveInviteUUID, "code_hash": hex.EncodeToString(inviteHash[:]),
+		"created_by": maintainer.Id, "expires_at": "2099-01-01 00:00:00Z"})
+	save(store.Invites, map[string]any{store.FieldUUID: ExpiredInviteUUID, "code_hash": strings.Repeat("1b", 32),
+		"created_by": maintainer.Id, "expires_at": "2020-01-01 00:00:00Z"})
+	save(store.Invites, map[string]any{"code_hash": strings.Repeat("1c", 32), "created_by": maintainer.Id,
+		"expires_at": "2099-01-01 00:00:00Z", "revoked_at": "2026-01-02 00:00:00Z"})
 	save(store.ResetLinks, map[string]any{"code_hash": "test-hash-reset", "member": m, "created_by": maintainer.Id,
 		"expires_at": "2030-01-01 00:00:00Z"})
 	save(store.AuditLog, map[string]any{"actor": maintainer.Id, "action": "test.seed"})
