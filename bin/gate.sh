@@ -6,8 +6,8 @@
 #   bin/gate.sh                 all steps
 #   bin/gate.sh <step> ...      only these steps; each step is one shell command line run from the repository root
 #
-# Each step's output goes to its own file, gate-<n>.txt, in OSFM_GATE_OUTPUT (default: ../osfm-gate-output beside the
-# repository). Frontend dependencies must be installed first: pnpm --dir web install.
+# Each step's output goes to its own file, gate-<n>.txt, in OSFM_GATE_OUTPUT (default: ../osfm-gate-output/<name of the
+# repository directory>, so that checkouts and worktrees side by side do not overwrite each other's output). Frontend dependencies must be installed first: pnpm --dir web install.
 #
 # Exit status: 0 when every step passed, else the status of the step that failed.
 
@@ -18,7 +18,7 @@ for name in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do
 done
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="${OSFM_GATE_OUTPUT:-$REPO/../osfm-gate-output}"
+OUT="${OSFM_GATE_OUTPUT:-$REPO/../osfm-gate-output/$(basename "$REPO")}"
 mkdir -p "$OUT" || exit 1
 
 if [ "$#" -eq 0 ]; then
