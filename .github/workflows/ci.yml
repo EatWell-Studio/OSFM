@@ -111,6 +111,12 @@ jobs:
           for icon in pwa-192x192.png pwa-512x512.png maskable-icon-512x512.png apple-touch-icon-180x180.png; do
             curl -fsS -o /dev/null "http://127.0.0.1:8090/$icon"
           done
+          # The instance metadata: public JSON with the instance key and the version the binary reports.
+          ./osfm --version
+          version="$(./osfm --version | sed 's/.* version //')"
+          test "$(curl -s -o /dev/null -w '%{content_type}' http://127.0.0.1:8090/.well-known/osfm.json)" = application/json
+          curl -fsS http://127.0.0.1:8090/.well-known/osfm.json | tee /dev/stderr | grep -Fq "\"softwareVersion\":\"$version\""
+          curl -fsS http://127.0.0.1:8090/.well-known/osfm.json | grep -q '"publicKey":{"kty":"OKP","crv":"Ed25519","x":"[A-Za-z0-9_-]\{43\}"}'
           echo "The binary serves the embedded web app."
 
   docker:
@@ -137,6 +143,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: false
           provenance: false
+          # A fixed version, so that the image reports something to check below (a release passes its tag).
+          build-args: |
+            VERSION=0.0.0-ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -149,6 +158,8 @@ jobs:
           platforms: linux/amd64
           load: true
           provenance: false
+          build-args: |
+            VERSION=0.0.0-ci
           tags: osfm:ci-amd64
 
       - name: Load the arm64 image
@@ -159,6 +170,8 @@ jobs:
           platforms: linux/arm64
           load: true
           provenance: false
+          build-args: |
+            VERSION=0.0.0-ci
           tags: osfm:ci-arm64
 
       - name: Image sizes
@@ -197,6 +210,8 @@ jobs:
             case "$page" in *'/assets/index-'*) ;; *) echo "linux/$arch: / does not serve the built web app" >&2; return 1 ;; esac
             # Client-side routes fall back to index.html.
             test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/some/client/route")" = 200
+            # The version from the build argument, in the instance metadata.
+            curl -fsS "http://127.0.0.1:$port/.well-known/osfm.json" | grep -Fq '"softwareVersion":"0.0.0-ci"'
             # It runs as the non-root user and keeps its database in the volume.
             test "$(docker inspect --format '{{.Config.User}}' "$name")" = 65532:65532
             files="$(docker cp "$name:/data/pb_data" - | tar -t)"

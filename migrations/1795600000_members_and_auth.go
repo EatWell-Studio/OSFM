@@ -85,7 +85,7 @@ func upMembers(app core.App) error {
 		email.Required = false
 	}
 	c.Fields.Add(
-		&core.TextField{Name: store.FieldUUID, Required: true, Min: 36, Max: 36, Pattern: uuidPattern},
+		&core.TextField{Name: store.FieldUUID, Required: true, Min: 36, Max: 36, Pattern: store.UUIDPattern},
 		&core.TextField{Name: "login_name", Required: true, Min: 3, Max: 32, Pattern: loginNamePattern},
 		requiredText("display_name", 64),
 		text("pseudonym", 64),

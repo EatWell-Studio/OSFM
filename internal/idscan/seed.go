@@ -1,0 +1,120 @@
+package idscan
+
+import (
+	"testing"
+
+	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/EatWell-Studio/OSFM/internal/store"
+)
+
+// Seeded is the made-up data [Seed] writes.
+type Seeded struct {
+	// IDs holds the internal identifiers no response may contain: the PocketBase record ID of every seeded record
+	// and the ID of every OSFM collection.
+	IDs []string
+	// Records holds the seeded records by collection name.
+	Records map[string][]*core.Record
+	// Superuser is a seeded superuser (its ID is in IDs too).
+	Superuser *core.Record
+}
+
+// Seed writes made-up records into every OSFM collection of app, a bootstrapped app with the OSFM migrations
+// applied, including soft-deleted ones, and returns their internal IDs. It fails the test if a collection that is
+// not one of PocketBase's system collections is left without a record: a task that adds a collection adds its records
+// here, so that the scan covers it.
+func Seed(t testing.TB, app core.App) *Seeded {
+	t.Helper()
+	s := &Seeded{Records: map[string][]*core.Record{}}
+	save := func(collection string, values map[string]any) *core.Record {
+		t.Helper()
+		c, err := app.FindCollectionByNameOrId(collection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := core.NewRecord(c)
+		for k, v := range values {
+			r.Set(k, v)
+		}
+		if c.IsAuth() {
+			r.SetRandomPassword()
+		}
+		if err := app.Save(r); err != nil {
+			t.Fatalf("seed %s: %v", collection, err)
+		}
+		s.Records[collection] = append(s.Records[collection], r)
+		s.IDs = append(s.IDs, r.Id)
+		return r
+	}
+	deleted := func(r *core.Record) {
+		t.Helper()
+		if err := store.SoftDelete(app, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	maintainer := save(store.Members, map[string]any{"login_name": "test_maintainer",
+		"display_name": "Test Maintainer", "role": "maintainer", "can_invite": true})
+	member := save(store.Members, map[string]any{"login_name": "test_member", "display_name": "Test Member",
+		"pseudonym": "Test Alias", "role": "member", "invited_by": maintainer.Id})
+	left := save(store.Members, map[string]any{"login_name": "test_left", "display_name": "Test Left",
+		"role": "member", "invited_by": maintainer.Id})
+	deleted(left)
+	m := member.Id
+
+	save(store.Credentials, map[string]any{"member": m, "kind": "passkey", "credential_id": "dGVzdC1jcmVk"}) // #nosec G101 -- made up
+	save(store.RecoveryCodes, map[string]any{"member": m, "code_hash": "test-hash-recovery"})
+	save(store.Invites, map[string]any{"code_hash": "test-hash-invite-1", "created_by": maintainer.Id,
+		"used_by": m, "expires_at": "2030-01-01 00:00:00Z"})
+	save(store.Invites, map[string]any{"code_hash": "test-hash-invite-2", "created_by": maintainer.Id,
+		"expires_at": "2030-01-01 00:00:00Z"})
+	save(store.ResetLinks, map[string]any{"code_hash": "test-hash-reset", "member": m, "created_by": maintainer.Id,
+		"expires_at": "2030-01-01 00:00:00Z"})
+	save(store.AuditLog, map[string]any{"actor": maintainer.Id, "action": "test.seed"})
+
+	place := save(store.Places, map[string]any{"name": "Test Noodle Bar", "lat": 31.23, "lon": 121.47,
+		"precision": "exact", "category": "restaurant", "status": "open"})
+	gone := save(store.Places, map[string]any{"name": "Test Closed Cafe", "lat": 31.24, "lon": 121.48,
+		"precision": "approx", "category": "cafe", "status": "closed"})
+	deleted(gone)
+	rec := save(store.Recommendations, map[string]any{"place": place.Id, "author": m, "display_as": "pseudonym",
+		"attitude": "good", "visibility": "circle", "text": "Test text"})
+	private := save(store.Recommendations, map[string]any{"place": place.Id, "author": maintainer.Id,
+		"display_as": "main", "attitude": "ok", "visibility": "private", "text": "Test private text"})
+	deleted(private)
+	save(store.RecommendationRevisions, map[string]any{"recommendation": rec.Id, "editor_role": "author",
+		"editor": m, "snapshot": map[string]any{"text": "Test old text"}})
+	save(store.Reports, map[string]any{"recommendation": rec.Id, "reporter": maintainer.Id, "reason": "test"})
+	save(store.Notices, map[string]any{"member": m, "kind": "test"})
+
+	// The single settings row exists from the migration; give it a made-up name and city.
+	settings, err := app.FindRecordById(store.InstanceSettings, store.SettingsID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.Set("name", "Test Circle")
+	settings.Set("cities", []map[string]any{{"slug": "testcity", "name": "Test City",
+		"bbox": []float64{121.3, 31.1, 121.6, 31.4}, "center": []float64{121.47, 31.23}}})
+	if err := app.Save(settings); err != nil {
+		t.Fatal(err)
+	}
+	s.Records[store.InstanceSettings] = []*core.Record{settings}
+	s.IDs = append(s.IDs, settings.Id)
+
+	s.Superuser = save(core.CollectionNameSuperusers, map[string]any{"email": "superuser@example.test"})
+
+	collections, err := app.FindAllCollections()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range collections {
+		if c.System {
+			continue
+		}
+		s.IDs = append(s.IDs, c.Id)
+		if len(s.Records[c.Name]) == 0 {
+			t.Errorf("idscan.Seed writes no record into collection %s: add made-up records for it", c.Name)
+		}
+	}
+	return s
+}
