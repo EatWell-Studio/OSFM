@@ -2,6 +2,7 @@ package tiles
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,7 +33,7 @@ const (
 	// Tiles change only when an archive is extracted again; a day of freshness, then revalidation by ETag. They are
 	// "private" because they will be served only to signed-in members (T007), so shared caches must not keep them.
 	tileCacheControl = "private, max-age=86400"
-	// The TileJSON follows the archive (zoom levels, bounds), so it is revalidated on every use.
+	// The TileJSON and the city index follow the archives (zoom levels, bounds), so they are revalidated on every use.
 	tileJSONCacheControl = "private, no-cache"
 
 	// tileContentType is the media type of Mapbox Vector Tiles that MapLibre and most tile servers use.
@@ -79,7 +81,8 @@ func NewHandler(dir, publicURL string, logger *slog.Logger) (*Handler, error) {
 	}, nil
 }
 
-// ServeHTTP answers GET and HEAD requests for RoutePrefix + "<city>/<z>/<x>/<y>.mvt" and RoutePrefix + "<city>.json".
+// ServeHTTP answers GET and HEAD requests for RoutePrefix + "<city>/<z>/<x>/<y>.mvt", RoutePrefix + "<city>.json" and
+// RoutePrefix itself, the index of the cities.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
@@ -89,6 +92,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rest, ok := strings.CutPrefix(r.URL.Path, RoutePrefix)
 	if !ok {
 		notFound(w)
+		return
+	}
+	if rest == "" {
+		h.serveIndex(w, r)
 		return
 	}
 	if city, ok := strings.CutSuffix(rest, ".json"); ok && cityPattern.MatchString(city) {
@@ -140,6 +147,41 @@ func (h *Handler) serveTileJSON(w http.ResponseWriter, r *http.Request, city str
 	}
 	_ = f.Close()
 	writeBody(w, r, a.tileJSON, "application/json", "", tileJSONCacheControl)
+}
+
+// cityIndex is the body of the index: every city with an archive that is served, by name. The bounds, center and zoom
+// levels are those of the city's TileJSON, from the archive header.
+type cityIndex struct {
+	Cities []cityEntry `json:"cities"`
+}
+
+type cityEntry struct {
+	ID      string     `json:"id"`
+	Bounds  [4]float64 `json:"bounds"` // minLon, minLat, maxLon, maxLat
+	Center  [3]float64 `json:"center"` // lon, lat, zoom
+	MinZoom uint8      `json:"minzoom"`
+	MaxZoom uint8      `json:"maxzoom"`
+}
+
+// serveIndex lists the cities whose archives are served, sorted by name; archives under invalid names and those that
+// fail their checks are left out, as their tiles are not served either.
+func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
+	index := cityIndex{Cities: []cityEntry{}}
+	for _, city := range h.cities() {
+		f, a, ok := h.open(city)
+		if !ok {
+			continue
+		}
+		_ = f.Close()
+		index.Cities = append(index.Cities, a.cityEntry(city))
+	}
+	body, err := json.Marshal(index)
+	if err != nil {
+		// Unreachable: the index holds only strings and numbers.
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	writeBody(w, r, body, "application/json", "", tileJSONCacheControl)
 }
 
 // serveTile answers with the tile as stored in the archive; a tile outside the archive's zoom levels or not in it is a
@@ -234,31 +276,53 @@ func (h *Handler) markBroken(city string, a *archive, err error) {
 	}
 }
 
-// archivePath looks name up in the listing of the tiles directory, read again whenever the directory changes (or, for a
-// name not found, at most once a second, for file systems with a coarse modification time). The path to a file is
-// thus never built from the request, only taken from the listing. h.mu must be held.
+// archivePath looks name up in the listing of the tiles directory. The path to a file is thus never built from the
+// request, only taken from the listing. h.mu must be held.
 func (h *Handler) archivePath(name string) (string, bool) {
+	_, listed := h.files[name]
+	h.refreshListing(!listed)
+	path, ok := h.files[name]
+	return path, ok
+}
+
+// cities returns the names of the cities whose archives are in the tiles directory, sorted; their archives may still
+// fail their checks.
+func (h *Handler) cities() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.refreshListing(true)
+	var cities []string
+	for name := range h.files {
+		if city := strings.TrimSuffix(name, ".pmtiles"); cityPattern.MatchString(city) {
+			cities = append(cities, city)
+		}
+	}
+	slices.Sort(cities)
+	return cities
+}
+
+// refreshListing reads the listing of the tiles directory again whenever the directory changes or, when stale is set
+// (a name was not found), at most once a second, for file systems with a coarse modification time. h.mu must be held.
+func (h *Handler) refreshListing(stale bool) {
 	info, err := os.Stat(h.dir)
 	if err != nil {
 		h.files = nil
-		return "", false
+		return
 	}
-	_, listed := h.files[name]
-	if h.files == nil || !info.ModTime().Equal(h.listedAt) || !listed && time.Since(h.readAt) > time.Second {
-		entries, err := os.ReadDir(h.dir)
-		if err != nil {
-			h.files = nil
-			return "", false
-		}
-		h.files = make(map[string]string)
-		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".pmtiles") {
-				h.files[entry.Name()] = filepath.Join(h.dir, entry.Name())
-			}
-		}
-		h.listedAt = info.ModTime()
-		h.readAt = time.Now()
+	if h.files != nil && info.ModTime().Equal(h.listedAt) && (!stale || time.Since(h.readAt) <= time.Second) {
+		return
 	}
-	path, ok := h.files[name]
-	return path, ok
+	entries, err := os.ReadDir(h.dir)
+	if err != nil {
+		h.files = nil
+		return
+	}
+	h.files = make(map[string]string)
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".pmtiles") {
+			h.files[entry.Name()] = filepath.Join(h.dir, entry.Name())
+		}
+	}
+	h.listedAt = info.ModTime()
+	h.readAt = time.Now()
 }

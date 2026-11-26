@@ -54,7 +54,9 @@ func main() {
 		if err != nil {
 			return err
 		}
-		se.Router.GET(tiles.RoutePrefix+"{path...}", apis.WrapStdHandler(tileHandler))
+		// Successful tile requests stay out of the request log: the tiles a member loads after "show my location"
+		// would place them on the map (A8, E4).
+		se.Router.GET(tiles.RoutePrefix+"{path...}", apis.WrapStdHandler(tileHandler)).Bind(apis.SkipSuccessActivityLog())
 
 		// The single-page app answers every path the API does not; unknown paths fall back to index.html so that
 		// client-side routes work on reload.
