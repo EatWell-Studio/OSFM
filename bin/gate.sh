@@ -26,6 +26,7 @@ if [ "$#" -eq 0 ]; then
 		'bin/check-private-paths.sh' \
 		'pnpm --dir web run format:check' \
 		'pnpm --dir web run lint' \
+		'pnpm --dir web run check:i18n' \
 		'pnpm --dir web run typecheck' \
 		'pnpm --dir web run test' \
 		'pnpm --dir web run build' \

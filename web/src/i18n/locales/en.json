@@ -1,0 +1,25 @@
+{
+  "app": {
+    "instanceNamePlaceholder": "OSFM",
+    "loading": "Loading…"
+  },
+  "nav": {
+    "label": "Main navigation",
+    "map": "Map",
+    "list": "List",
+    "me": "Me"
+  },
+  "pages": {
+    "map": { "title": "Map" },
+    "list": { "title": "List" },
+    "me": { "title": "Me" },
+    "admin": { "title": "Administration" },
+    "login": { "title": "Sign in" },
+    "register": { "title": "Register" },
+    "notFound": { "title": "Page not found" }
+  },
+  "session": {
+    "error": "Could not check whether you are signed in. Check your connection and try again.",
+    "retry": "Try again"
+  }
+}
