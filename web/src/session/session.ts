@@ -2,8 +2,8 @@ import { queryOptions } from '@tanstack/react-query'
 import { ApiError, apiFetch, isJson } from '@/lib/api'
 
 /**
- * The signed-in member as GET /api/osfm/me returns it. This is the shape the frontend assumes until the endpoint
- * exists (T007/T009); the types generated from the server's structs replace it then.
+ * The signed-in member as GET /api/osfm/me returns it (auth.Me on the server). Hand-written until the types are
+ * generated from the server's structs.
  */
 export interface Me {
   uuid: string
@@ -26,14 +26,16 @@ function isMe(value: unknown): value is Me {
 /** The current member, or null when nobody is signed in. */
 export async function fetchSession(): Promise<Me | null> {
   const response = await apiFetch('/me')
-  // 401: no valid session. Until the endpoint exists (T007), nobody can be signed in, and the server answers either
-  // 404 or, because its single-page-app fallback still catches unknown GET paths under /api/, index.html with 200.
-  // Remove the last two cases once /api/osfm/me is served.
-  if (response.status === 401 || response.status === 404 || (response.ok && !isJson(response))) {
+  // 401: no valid session. Anything else that is not a JSON 200 is an error (the server answers every /api/ path
+  // with JSON, so HTML here means something in between, such as a captive portal).
+  if (response.status === 401) {
     return null
   }
   if (!response.ok) {
     throw new ApiError(response.status, '/me')
+  }
+  if (!isJson(response)) {
+    throw new Error('/me: not a JSON response')
   }
   const body: unknown = await response.json()
   if (!isMe(body)) {

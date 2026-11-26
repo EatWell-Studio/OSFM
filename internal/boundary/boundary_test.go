@@ -151,7 +151,9 @@ func (in *instance) seed(t *testing.T) {
 		t.Fatal(err)
 	}
 	in.memberID = member.Id
-	if in.memberToken, err = auth.IssueToken(member); err != nil {
+	// A PocketBase auth token for the member, as PocketBase itself would issue one. OSFM never issues these (members
+	// have session cookies, AD6); the tests check that such a token carries no weight anyway.
+	if in.memberToken, err = member.NewAuthToken(); err != nil {
 		t.Fatal(err)
 	}
 

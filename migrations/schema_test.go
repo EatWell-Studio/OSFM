@@ -76,6 +76,10 @@ var wantCollections = map[string]collectionSpec{
 		"name": tText, "cities": tJSON, "report_threshold": tNumber, "invite_cooldown_days": tNumber,
 		"geocoder_contact": tText, "created": tAutodate, "updated": tAutodate,
 	})},
+	store.Sessions: {fields: fields(map[string]string{
+		"uuid": tText, "member": tRelation, "token_hash": tText, "expires_at": tDate, "last_seen_at": tDate,
+		"created": tAutodate,
+	}), indexes: []string{"idx_sessions_uuid", "idx_sessions_token_hash", "idx_sessions_member", "idx_sessions_expires_at"}},
 	store.Places: {fields: fields(map[string]string{
 		"uuid": tText, "name": tText, "aliases": tJSON, "lat": tNumber, "lon": tNumber, "precision": tSelect,
 		"position_note": tText, "landmark": tJSON, "osm_ref": tText, "category": tSelect, "cuisine": tJSON,
@@ -104,7 +108,7 @@ var wantCollections = map[string]collectionSpec{
 var uniqueIndexes = []string{
 	"idx_members_uuid", "idx_members_login_name", "idx_credentials_credential_id", "idx_recovery_codes_code_hash",
 	"idx_invites_uuid", "idx_invites_code_hash", "idx_reset_links_code_hash", "idx_places_uuid",
-	"idx_recommendations_uuid", "idx_reports_recommendation_reporter",
+	"idx_recommendations_uuid", "idx_reports_recommendation_reporter", "idx_sessions_uuid", "idx_sessions_token_hash",
 }
 
 func newApp(t *testing.T) *tests.TestApp {

@@ -12,7 +12,11 @@
   "pages": {
     "map": { "title": "Map" },
     "list": { "title": "List" },
-    "me": { "title": "Me" },
+    "me": {
+      "title": "Me",
+      "logout": "Sign out",
+      "logoutError": "Could not sign out. Check your connection and try again."
+    },
     "admin": { "title": "Administration" },
     "login": { "title": "Sign in" },
     "register": { "title": "Register" },

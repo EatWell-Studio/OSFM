@@ -13,6 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/osutils"
 	"github.com/spf13/cobra"
 
+	"github.com/EatWell-Studio/OSFM/internal/auth"
 	"github.com/EatWell-Studio/OSFM/internal/boundary"
 	"github.com/EatWell-Studio/OSFM/internal/config"
 	"github.com/EatWell-Studio/OSFM/internal/federation"
@@ -66,10 +67,13 @@ func bind(app core.App, cfg *config.Config) {
 	store.BindHooks(app)
 	// Only /api/osfm/*, /api/health and the web app on the main listener; the admin UI on its own listener (AD2).
 	boundary.Bind(app, boundary.Options{AdminUI: cfg.AdminUI, AdminListen: cfg.AdminListen})
+	// Member sessions: /api/osfm/* (except the routes marked public) and /tiles/* need one; GET /api/osfm/me and
+	// POST /api/osfm/logout (AD6, E1).
+	auth.Bind(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
-		// Basemap tiles from <data>/tiles; with OSFM_PUBLIC_URL set, the TileJSON gives absolute tile URLs. Not behind
-		// authentication yet: member sessions arrive with T007.
+		// Basemap tiles from <data>/tiles; with OSFM_PUBLIC_URL set, the TileJSON gives absolute tile URLs. Members
+		// only: the session middleware answers 401 without a session (E1).
 		tileHandler, err := tiles.NewHandler(cfg.TilesDir(), cfg.PublicURL, se.App.Logger())
 		if err != nil {
 			return err

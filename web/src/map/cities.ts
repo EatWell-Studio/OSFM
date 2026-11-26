@@ -1,6 +1,8 @@
 // The cities the map can show: one per basemap archive on the server, listed by GET /tiles/ (docs/architecture.md
 // §3.6, §4.3). Each comes with the bounds, center and zoom levels of its TileJSON.
 
+import { ApiError } from '@/lib/api'
+
 /** minLon, minLat, maxLon, maxLat in WGS-84 degrees. */
 export type Bounds = [number, number, number, number]
 
@@ -49,8 +51,8 @@ export function parseCities(body: unknown): City[] {
 }
 
 /**
- * Fetches the city index. Same origin with the session cookie, like every request of the app: the tiles will require
- * a signed-in member (T007).
+ * Fetches the city index. Same origin with the session cookie, like every request of the app: the tiles require a
+ * signed-in member. A 401 is an ApiError, so that the query client re-checks the session (and so sign-in).
  */
 export async function fetchCities(signal?: AbortSignal): Promise<City[]> {
   const response = await fetch(citiesUrl, {
@@ -59,7 +61,7 @@ export async function fetchCities(signal?: AbortSignal): Promise<City[]> {
     signal,
   })
   if (!response.ok) {
-    throw new Error(`${citiesUrl}: HTTP ${String(response.status)}`)
+    throw new ApiError(response.status, citiesUrl)
   }
   return parseCities(await response.json())
 }

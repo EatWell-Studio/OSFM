@@ -1,6 +1,7 @@
 package idscan
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -17,6 +18,8 @@ type Seeded struct {
 	Records map[string][]*core.Record
 	// Superuser is a seeded superuser (its ID is in IDs too).
 	Superuser *core.Record
+	// Member and Maintainer are seeded members who may sign in, with role member and maintainer.
+	Member, Maintainer *core.Record
 }
 
 // Seed writes made-up records into every OSFM collection of app, a bootstrapped app with the OSFM migrations
@@ -60,6 +63,7 @@ func Seed(t testing.TB, app core.App) *Seeded {
 	left := save(store.Members, map[string]any{"login_name": "test_left", "display_name": "Test Left",
 		"role": "member", "invited_by": maintainer.Id})
 	deleted(left)
+	s.Member, s.Maintainer = member, maintainer
 	m := member.Id
 
 	save(store.Credentials, map[string]any{"member": m, "kind": "passkey", "credential_id": "dGVzdC1jcmVk"}) // #nosec G101 -- made up
@@ -71,6 +75,12 @@ func Seed(t testing.TB, app core.App) *Seeded {
 	save(store.ResetLinks, map[string]any{"code_hash": "test-hash-reset", "member": m, "created_by": maintainer.Id,
 		"expires_at": "2030-01-01 00:00:00Z"})
 	save(store.AuditLog, map[string]any{"actor": maintainer.Id, "action": "test.seed"})
+	// Sessions as stored: a hash of a token nobody holds, one live and one expired. The scan's member and maintainer
+	// identities sign in with sessions of their own.
+	save(store.Sessions, map[string]any{"member": m, "token_hash": strings.Repeat("0a", 32),
+		"expires_at": "2030-01-01 00:00:00Z", "last_seen_at": "2026-01-01 00:00:00Z"})
+	save(store.Sessions, map[string]any{"member": maintainer.Id, "token_hash": strings.Repeat("0b", 32),
+		"expires_at": "2020-01-01 00:00:00Z"})
 
 	place := save(store.Places, map[string]any{"name": "Test Noodle Bar", "lat": 31.23, "lon": 121.47,
 		"precision": "exact", "category": "restaurant", "status": "open"})

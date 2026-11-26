@@ -111,13 +111,18 @@ jobs:
           for icon in pwa-192x192.png pwa-512x512.png maskable-icon-512x512.png apple-touch-icon-180x180.png; do
             curl -fsS -o /dev/null "http://127.0.0.1:8090/$icon"
           done
-          # The map: its glyphs and sprites, MapLibre's worker as JavaScript (a module worker needs a script type),
-          # and the city index (empty without tile files).
+          # The map: its glyphs and sprites and MapLibre's worker as JavaScript (a module worker needs a script type).
           curl -fsS -o /dev/null 'http://127.0.0.1:8090/map/fonts/Noto%20Sans%20Regular/0-255.pbf'
           curl -fsS http://127.0.0.1:8090/map/sprites/light.json | grep -q '"width"'
           worker="$(cd web/dist/app && ls assets/maplibre-gl-worker-*.mjs)"
           curl -fsS -o /dev/null -w '%{content_type}' "http://127.0.0.1:8090/$worker" | grep -q '^text/javascript'
-          test "$(curl -fsS http://127.0.0.1:8090/tiles/)" = '{"cities":[]}'
+          # Without a session, the API and the tiles (the city index included) answer 401 (E1); writes to the API
+          # without the X-OSFM header are refused too.
+          for path in api/osfm/me tiles/ tiles/testcity.json; do
+            test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8090/$path")" = 401
+          done
+          curl -s http://127.0.0.1:8090/api/osfm/me | grep -q '"status":401'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'X-OSFM: 1' http://127.0.0.1:8090/api/osfm/logout)" = 401
           # The instance metadata: public JSON with the instance key and the version the binary reports.
           ./osfm --version
           version="$(./osfm --version | sed 's/.* version //')"

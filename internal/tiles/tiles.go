@@ -31,7 +31,7 @@ const (
 	maxZoom = 30
 
 	// Tiles change only when an archive is extracted again; a day of freshness, then revalidation by ETag. They are
-	// "private" because they will be served only to signed-in members (T007), so shared caches must not keep them.
+	// "private" because they are served only to signed-in members (internal/auth), so shared caches must not keep them.
 	tileCacheControl = "private, max-age=86400"
 	// The TileJSON and the city index follow the archives (zoom levels, bounds), so they are revalidated on every use.
 	tileJSONCacheControl = "private, no-cache"

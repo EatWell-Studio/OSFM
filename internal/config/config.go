@@ -53,7 +53,8 @@ type Config struct {
 	DataDir string
 	// Listen is the default HTTP listen address of `osfm serve`; an explicit --http flag takes precedence.
 	Listen string
-	// PublicURL is the absolute http(s) URL the instance is reached at, without a trailing slash; empty when unset.
+	// PublicURL is the absolute URL the instance is reached at, without a trailing slash; empty when unset. It is
+	// https://, or http:// for localhost or a loopback address only.
 	PublicURL string
 	// AdminUI reports whether the PocketBase admin UI (/_/) and PocketBase's own APIs are served, on a separate
 	// listener at AdminListen. They are never served on the main listener.
@@ -149,6 +150,17 @@ func (c *Config) HTTPAddr(withDomains bool) string {
 	return c.Listen
 }
 
+// isLoopbackHost reports whether host names the local machine: localhost, a name under .localhost, or a loopback IP
+// address. Browsers treat these as secure contexts and accept Secure cookies from them over plain HTTP.
+func isLoopbackHost(host string) bool {
+	host = strings.ToLower(host)
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func validateListen(addr string) error {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -174,6 +186,11 @@ func parsePublicURL(raw string) (string, error) {
 		return "", errors.New("must not contain user information")
 	case u.RawQuery != "" || u.ForceQuery || u.Fragment != "":
 		return "", errors.New("must not contain a query or fragment")
+	case strings.EqualFold(u.Scheme, "http") && !isLoopbackHost(u.Hostname()):
+		// The session cookie is Secure: over plain HTTP, browsers neither store nor send it, except for the local
+		// machine. An instance at such a URL would let nobody sign in.
+		return "", errors.New("must be https:// unless the host is localhost or a loopback address (the session " +
+			"cookie is Secure, so browsers would not keep it over plain HTTP)")
 	}
 	return strings.TrimRight(u.String(), "/"), nil
 }

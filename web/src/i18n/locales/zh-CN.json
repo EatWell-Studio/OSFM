@@ -12,7 +12,7 @@
   "pages": {
     "map": { "title": "地图" },
     "list": { "title": "列表" },
-    "me": { "title": "我的" },
+    "me": { "title": "我的", "logout": "退出登录", "logoutError": "退出失败，请检查网络后重试。" },
     "admin": { "title": "管理" },
     "login": { "title": "登录" },
     "register": { "title": "注册" },
