@@ -34,15 +34,19 @@ func TestParseDefaults(t *testing.T) {
 	if cfg.AdminUI {
 		t.Error("AdminUI = true, want false")
 	}
+	if cfg.AdminListen != DefaultAdminListen {
+		t.Errorf("AdminListen = %q, want %q", cfg.AdminListen, DefaultAdminListen)
+	}
 }
 
 func TestParseValues(t *testing.T) {
 	dir := t.TempDir()
 	cfg, err := Parse(env(map[string]string{
-		EnvDataDir:   dir,
-		EnvListen:    " 0.0.0.0:8090 ",
-		EnvPublicURL: "https://food.example.org/",
-		EnvAdminUI:   "true",
+		EnvDataDir:     dir,
+		EnvListen:      " 0.0.0.0:8090 ",
+		EnvPublicURL:   "https://food.example.org/",
+		EnvAdminUI:     "true",
+		EnvAdminListen: "0.0.0.0:9091",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +62,9 @@ func TestParseValues(t *testing.T) {
 	}
 	if !cfg.AdminUI {
 		t.Error("AdminUI = false, want true")
+	}
+	if cfg.AdminListen != "0.0.0.0:9091" {
+		t.Errorf("AdminListen = %q", cfg.AdminListen)
 	}
 	if got, want := cfg.PBDataDir(), filepath.Join(dir, "pb_data"); got != want {
 		t.Errorf("PBDataDir = %q, want %q", got, want)
@@ -118,6 +125,8 @@ func TestParseInvalid(t *testing.T) {
 		{EnvPublicURL, "https://exa mple.org"},
 		{EnvAdminUI, "yes"},
 		{EnvAdminUI, "2"},
+		{EnvAdminListen, "8091"},
+		{EnvAdminListen, "127.0.0.1:0"},
 	} {
 		_, err := Parse(env(map[string]string{tc.name: tc.value}))
 		if err == nil {

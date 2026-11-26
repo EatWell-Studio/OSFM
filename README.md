@@ -36,7 +36,9 @@ go build -o osfm ./cmd/osfm   # one binary with the web app embedded
 ./osfm serve                  # http://127.0.0.1:8090, data in ./data
 ```
 
-`./data` holds `pb_data/` (database), `tiles/` (map tiles) and `secrets/` (instance keys, generated on first start; keep them in your backups). Settings come from environment variables: `OSFM_DATA_DIR` (default `./data`), `OSFM_LISTEN` (default `127.0.0.1:8090`; `serve --http` overrides it), `OSFM_PUBLIC_URL` and `OSFM_ADMIN_UI` (default `false`). The effective configuration is printed at startup.
+`./data` holds `pb_data/` (database), `tiles/` (map tiles) and `secrets/` (instance keys, generated on first start; keep them in your backups). Settings come from environment variables: `OSFM_DATA_DIR` (default `./data`), `OSFM_LISTEN` (default `127.0.0.1:8090`; `serve --http` overrides it), `OSFM_PUBLIC_URL`, `OSFM_ADMIN_UI` (default `false`) and `OSFM_ADMIN_LISTEN` (default `127.0.0.1:8091`). The effective configuration is printed at startup.
+
+Clients only use `/api/osfm/*`: PocketBase's own APIs and its admin UI are never served on the main listener (every other `/api/` path answers with a JSON 404). With `OSFM_ADMIN_UI=true`, the admin UI and PocketBase's APIs are served on a separate listener at `OSFM_ADMIN_LISTEN`, which your reverse proxy should not forward; reach it through an SSH tunnel (`ssh -L 8091:127.0.0.1:8091 your-server`, then open `http://127.0.0.1:8091/_/`). In a container, set `OSFM_ADMIN_LISTEN=0.0.0.0:8091` and publish the port on the host's loopback only (`-p 127.0.0.1:8091:8091`). Superusers are created with `osfm superuser upsert EMAIL PASS`.
 
 For frontend work, run `./osfm serve` and `pnpm --dir web dev` side by side; the Vite dev server proxies `/api` and `/tiles` to the binary. Without a frontend build the binary still compiles and serves a placeholder page.
 
