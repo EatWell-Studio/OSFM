@@ -192,6 +192,19 @@ func checkSchema(t *testing.T, app core.App) {
 	if email, _ := members.Fields.GetByName(core.FieldNameEmail).(*core.EmailField); email == nil || email.Required {
 		t.Error("members.email must exist and be optional")
 	}
+	// AD2: no built-in sign-in method for members.
+	if members.PasswordAuth.Enabled || members.OTP.Enabled || members.OAuth2.Enabled || members.MFA.Enabled ||
+		len(members.OAuth2.Providers) != 0 || members.AuthAlert.Enabled || members.AuthRule != nil {
+		t.Errorf("members sign-in: password %v, otp %v, oauth2 %v (%d providers), mfa %v, alert %v, auth rule %v",
+			members.PasswordAuth.Enabled, members.OTP.Enabled, members.OAuth2.Enabled, len(members.OAuth2.Providers),
+			members.MFA.Enabled, members.AuthAlert.Enabled, members.AuthRule)
+	}
+	if rl := app.Settings().RateLimits; !rl.Enabled || len(rl.Rules) == 0 {
+		t.Errorf("rate limits: %+v, want enabled with rules", rl)
+	} else if rule, ok := rl.FindRateLimitRule([]string{"GET /api/osfm/places", "/api/osfm/places"}); !ok ||
+		rule.Label != "/api/" {
+		t.Errorf("rate limit rule for /api/osfm/*: %+v, %v", rule, ok)
+	}
 
 	settings, err := app.FindRecordById(store.InstanceSettings, store.SettingsID)
 	if err != nil {
@@ -297,6 +310,12 @@ func TestDownAndUpAgain(t *testing.T) {
 	}
 	if users.Fields.GetByName("name") == nil || users.Fields.GetByName("login_name") != nil {
 		t.Errorf("users fields not restored: %v", users.Fields.FieldNames())
+	}
+	if !users.PasswordAuth.Enabled || users.AuthRule == nil || *users.AuthRule != "" {
+		t.Errorf("users sign-in not restored: password %v, auth rule %v", users.PasswordAuth.Enabled, users.AuthRule)
+	}
+	if app.Settings().RateLimits.Enabled {
+		t.Error("rate limits still enabled after the down migrations")
 	}
 
 	if _, err := runner.Up(); err != nil {

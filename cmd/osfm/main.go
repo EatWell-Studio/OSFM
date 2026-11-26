@@ -13,6 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/osutils"
 	"github.com/spf13/cobra"
 
+	"github.com/EatWell-Studio/OSFM/internal/boundary"
 	"github.com/EatWell-Studio/OSFM/internal/config"
 	"github.com/EatWell-Studio/OSFM/internal/federation"
 	"github.com/EatWell-Studio/OSFM/internal/store"
@@ -63,6 +64,8 @@ func bind(app core.App, cfg *config.Config) {
 	migrations.Bind(app)
 	// The data model's invariants (uuid, coordinate rounding, append-only collections) for every record save.
 	store.BindHooks(app)
+	// Only /api/osfm/*, /api/health and the web app on the main listener; the admin UI on its own listener (AD2).
+	boundary.Bind(app, boundary.Options{AdminUI: cfg.AdminUI, AdminListen: cfg.AdminListen})
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Basemap tiles from <data>/tiles; with OSFM_PUBLIC_URL set, the TileJSON gives absolute tile URLs. Not behind
@@ -88,9 +91,10 @@ func bind(app core.App, cfg *config.Config) {
 }
 
 // newServeCommand returns PocketBase's serve command with the default of its --http flag taken from cfg
-// (OSFM_LISTEN); an explicit --http flag still takes precedence.
+// (OSFM_LISTEN); an explicit --http flag still takes precedence. PocketBase's start banner is off: it would point at
+// the admin UI on the main listener, where it is not served; internal/boundary logs the addresses instead.
 func newServeCommand(app core.App, cfg *config.Config) *cobra.Command {
-	serve := cmd.NewServeCommand(app, true)
+	serve := cmd.NewServeCommand(app, false)
 	useConfiguredListen(serve, cfg)
 	return serve
 }
