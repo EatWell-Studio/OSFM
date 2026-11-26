@@ -3,6 +3,7 @@ package boundary_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -50,7 +51,10 @@ type echo struct {
 	Auth       bool `json:"auth"`
 }
 
-func start(t *testing.T, adminUI bool) *instance {
+// start serves a test app with the boundary bound. Each prepare function runs on the app before it serves: settings
+// must be changed there, since PocketBase writes request logs in the background, reading the settings, and a later
+// settings save races with the log entries of the health checks below.
+func start(t *testing.T, adminUI bool, prepare ...func(core.App) error) *instance {
 	t.Helper()
 	app, err := tests.NewTestApp(t.TempDir())
 	if err != nil {
@@ -62,6 +66,11 @@ func start(t *testing.T, adminUI bool) *instance {
 	}
 	in := &instance{app: app, log: &bytes.Buffer{}}
 	in.seed(t)
+	for _, f := range prepare {
+		if err := f(app); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	adminLn := make(chan net.Listener, 1)
 	restore := *boundary.ListenAdmin
@@ -443,16 +452,15 @@ func TestInstallerPointsAtTheAdminListener(t *testing.T) {
 
 // TestRateLimitCoversOSFMRoutes checks that PocketBase's rate limiter applies to the OSFM routes.
 func TestRateLimitCoversOSFMRoutes(t *testing.T) {
-	in := start(t, false)
-	s := in.app.Settings()
-	if !s.RateLimits.Enabled {
-		t.Fatal("rate limits are off")
-	}
-	s.RateLimits.Rules = append([]core.RateLimitRule{{Label: boundary.OSFMPrefix, MaxRequests: 2, Duration: 60}},
-		s.RateLimits.Rules...)
-	if err := in.app.Save(s); err != nil {
-		t.Fatal(err)
-	}
+	in := start(t, false, func(app core.App) error {
+		s := app.Settings()
+		if !s.RateLimits.Enabled {
+			return errors.New("rate limits are off")
+		}
+		s.RateLimits.Rules = append([]core.RateLimitRule{{Label: boundary.OSFMPrefix, MaxRequests: 2, Duration: 60}},
+			s.RateLimits.Rules...)
+		return app.Save(s)
+	})
 	for i, want := range []int{http.StatusOK, http.StatusOK, http.StatusTooManyRequests} {
 		if res := do(t, http.MethodGet, in.main+boundary.OSFMPrefix+"echo", "", ""); res.status != want {
 			t.Errorf("request %d: %d, want %d", i+1, res.status, want)
