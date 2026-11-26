@@ -36,7 +36,7 @@ func jsonBody(t *testing.T, v any) string {
 func (en *env) registerOptions(code, login, display string) optionsResponse {
 	en.t.Helper()
 	rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
-		jsonBody(en.t, map[string]string{"code": code, "loginName": login, "displayName": display}))
+		jsonBody(en.t, map[string]string{"invite": code, "loginName": login, "displayName": display}))
 	if rec.Code != http.StatusOK {
 		en.t.Fatalf("registration options: %d %s", rec.Code, rec.Body.String())
 	}
@@ -51,7 +51,7 @@ func (en *env) finishRegistration(a *passkeytest.Authenticator, code string, o o
 		en.t.Fatal(err)
 	}
 	return en.reqJSON(http.MethodPost, auth.PasskeyRegisterPath, "",
-		jsonBody(en.t, map[string]any{"code": code, "state": o.State, "credential": json.RawMessage(cred)}))
+		jsonBody(en.t, map[string]any{"invite": code, "state": o.State, "credential": json.RawMessage(cred)}))
 }
 
 // registerPasskey registers a member with a passkey of a; it fails the test unless that works.
@@ -100,11 +100,6 @@ func sessionToken(t *testing.T, rec *httptest.ResponseRecorder) string {
 	}
 	t.Fatalf("no session cookie in %v", rec.Header().Values("Set-Cookie"))
 	return ""
-}
-
-func errorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
-	t.Helper()
-	return decode[auth.AuthError](t, rec).Code
 }
 
 func (en *env) memberByLogin(login string) *core.Record {
@@ -211,7 +206,7 @@ func TestPasskeyRegistrationAndSignIn(t *testing.T) {
 		stored[r.GetString("code_hash")] = true
 	}
 	for _, c := range codes {
-		if !stored[auth.HashRecoveryCode(c)] || strings.Contains(strings.Join(mapKeys(stored), ""), c) {
+		if !stored[auth.HashRecoveryCode(strings.ReplaceAll(c, "-", ""))] || strings.Contains(strings.Join(mapKeys(stored), ""), c) {
 			t.Errorf("recovery code %q is not stored as its hash", c)
 		}
 	}
@@ -420,7 +415,7 @@ func TestPasskeyStateIsSingleUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterPath, "",
-		jsonBody(t, map[string]any{"code": code2, "state": so.State, "credential": json.RawMessage(cred)}))
+		jsonBody(t, map[string]any{"invite": code2, "state": so.State, "credential": json.RawMessage(cred)}))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("sign-in state used for registration: %d", rec.Code)
 	}
@@ -429,7 +424,7 @@ func TestPasskeyStateIsSingleUse(t *testing.T) {
 	other := &passkeytest.Authenticator{}
 	ro = en.registerOptions(code2, "test_other", "")
 	cred, _ = other.Create(ro.Options)
-	body := jsonBody(t, map[string]any{"code": code2, "state": ro.State, "credential": json.RawMessage(cred)})
+	body := jsonBody(t, map[string]any{"invite": code2, "state": ro.State, "credential": json.RawMessage(cred)})
 	if rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterPath, "", body); rec.Code != http.StatusCreated {
 		t.Fatalf("registration: %d %s", rec.Code, rec.Body.String())
 	}
@@ -447,30 +442,30 @@ func TestPasskeyRegistrationNeedsInvite(t *testing.T) {
 
 	for _, c := range []string{"", "x", strings.Repeat("A", 43)} {
 		rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
-			jsonBody(t, map[string]string{"code": c, "loginName": "test_new"}))
-		if rec.Code != http.StatusForbidden || errorCode(t, rec) != auth.CodeInvalidInvite {
+			jsonBody(t, map[string]string{"invite": c, "loginName": "test_new"}))
+		if rec.Code != http.StatusForbidden || errorCode(t, rec) != auth.CodeInviteInvalid {
 			t.Errorf("options with code %q: %d %s", c, rec.Code, rec.Body.String())
 		}
 	}
 	for login, want := range map[string]string{
-		"ab": auth.CodeInvalidLoginName, "has space": auth.CodeInvalidLoginName, "名字": auth.CodeInvalidLoginName,
-		strings.Repeat("a", 33): auth.CodeInvalidLoginName, "test_maintainer": auth.CodeLoginNameTaken,
+		"ab": auth.CodeLoginNameInvalid, "has space": auth.CodeLoginNameInvalid, "名字": auth.CodeLoginNameInvalid,
+		strings.Repeat("a", 33): auth.CodeLoginNameInvalid, "test_maintainer": auth.CodeLoginNameTaken,
 	} {
 		rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
-			jsonBody(t, map[string]string{"code": code, "loginName": login}))
+			jsonBody(t, map[string]string{"invite": code, "loginName": login}))
 		if errorCode(t, rec) != want {
 			t.Errorf("login name %q: %d %s", login, rec.Code, rec.Body.String())
 		}
 	}
 	// A taken login name is not told without a valid invite.
 	rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
-		jsonBody(t, map[string]string{"code": "x", "loginName": "test_maintainer"}))
-	if errorCode(t, rec) != auth.CodeInvalidInvite {
+		jsonBody(t, map[string]string{"invite": "x", "loginName": "test_maintainer"}))
+	if errorCode(t, rec) != auth.CodeInviteInvalid {
 		t.Errorf("taken login name without invite: %s", rec.Body.String())
 	}
 	rec = en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
-		jsonBody(t, map[string]string{"code": code, "loginName": "test_new", "displayName": "Test\u202eName"}))
-	if errorCode(t, rec) != auth.CodeInvalidDisplayName {
+		jsonBody(t, map[string]string{"invite": code, "loginName": "test_new", "displayName": "Test\u202eName"}))
+	if errorCode(t, rec) != auth.CodeDisplayNameInvalid {
 		t.Errorf("display name with a bidi override: %s", rec.Body.String())
 	}
 
@@ -487,7 +482,7 @@ func TestPasskeyRegistrationNeedsInvite(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec = en.finishRegistration(a, code, o)
-	if rec.Code != http.StatusForbidden || errorCode(t, rec) != auth.CodeInvalidInvite {
+	if rec.Code != http.StatusForbidden || errorCode(t, rec) != auth.CodeInviteInvalid {
 		t.Errorf("finish with a revoked invite: %d %s", rec.Code, rec.Body.String())
 	}
 	// The login name is taken between the two requests.
@@ -575,7 +570,7 @@ func TestPasskeySignInRefusals(t *testing.T) {
 func TestPasskeysUnavailable(t *testing.T) {
 	en := newEnvWith(t, auth.Options{PasskeyRPID: "192.0.2.10", PasskeyOrigins: []string{"https://192.0.2.10"}})
 	for _, path := range []string{auth.PasskeySignInOptionsPath, auth.PasskeyRegisterOptionsPath} {
-		rec := en.reqJSON(http.MethodPost, path, "", `{"code":"x","loginName":"test_new"}`)
+		rec := en.reqJSON(http.MethodPost, path, "", `{"invite":"x","loginName":"test_new"}`)
 		if rec.Code != http.StatusServiceUnavailable || errorCode(t, rec) != auth.CodePasskeysUnavailable {
 			t.Errorf("%s: %d %s", path, rec.Code, rec.Body.String())
 		}

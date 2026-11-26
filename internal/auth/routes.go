@@ -16,6 +16,15 @@ type Me struct {
 	Role        string `json:"role"` // RoleMember or RoleMaintainer
 }
 
+// meOf returns member as [Me]: the shape of GET /api/osfm/me and of the sign-in and registration responses.
+func meOf(member *core.Record) Me {
+	return Me{
+		UUID:        member.GetString(store.FieldUUID),
+		DisplayName: member.GetString("display_name"),
+		Role:        member.GetString("role"),
+	}
+}
+
 // handleMe answers GET /api/osfm/me: 200 with [Me]; without a session the middleware has answered 401 already.
 func handleMe(e *core.RequestEvent) error {
 	m := CurrentMember(e)
@@ -23,11 +32,7 @@ func handleMe(e *core.RequestEvent) error {
 		return e.UnauthorizedError("", nil)
 	}
 	e.Response.Header().Set("Cache-Control", "no-store")
-	return e.JSON(http.StatusOK, Me{
-		UUID:        m.GetString(store.FieldUUID),
-		DisplayName: m.GetString("display_name"),
-		Role:        m.GetString("role"),
-	})
+	return e.JSON(http.StatusOK, meOf(m))
 }
 
 // handleLogout answers POST /api/osfm/logout: ends the current session and clears the cookie, 204. The member's

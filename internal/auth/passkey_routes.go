@@ -28,29 +28,16 @@ const (
 // bytes; this leaves room for the largest credential IDs and keys.
 const maxPasskeyBody = 64 << 10
 
-// Error codes of the passkey routes, in the "code" member of an error response ([AuthError]).
+// Error codes of the passkey routes besides those of [AuthError] they share with the password routes.
 const (
-	CodeBadRequest          = "bad_request"
-	CodeInvalidInvite       = "invalid_invite"
-	CodeInvalidLoginName    = "invalid_login_name"
-	CodeInvalidDisplayName  = "invalid_display_name"
-	CodeLoginNameTaken      = "login_name_taken"
 	CodePasskeyFailed       = "passkey_failed"
 	CodePasskeysUnavailable = "passkeys_unavailable"
 )
 
-// AuthError is the body of an unsuccessful response of the registration and sign-in routes: PocketBase's error shape
-// (status, message) with a code the web app can tell apart.
-type AuthError struct {
-	Status  int    `json:"status"`
-	Message string `json:"message"`
-	Code    string `json:"code"`
-}
-
 // PasskeyRegisterOptionsRequest is the body of POST [PasskeyRegisterOptionsPath]. displayName may be empty: the login
 // name is used then.
 type PasskeyRegisterOptionsRequest struct {
-	Code        string `json:"code"`
+	Invite      string `json:"invite"`
 	LoginName   string `json:"loginName"`
 	DisplayName string `json:"displayName"`
 }
@@ -66,7 +53,7 @@ type PasskeyOptionsResponse struct {
 // PasskeyRegisterRequest is the body of POST [PasskeyRegisterPath]: the same invite code, the state, and the
 // PublicKeyCredential from navigator.credentials.create() in its JSON form (RegistrationResponseJSON).
 type PasskeyRegisterRequest struct {
-	Code       string          `json:"code"`
+	Invite     string          `json:"invite"`
 	State      string          `json:"state"`
 	Credential json.RawMessage `json:"credential"`
 }
@@ -91,11 +78,6 @@ func bindPasskeyRoutes(se *core.ServeEvent) {
 	Public(se.Router.POST(PasskeySignInPath, handlePasskeySignIn))
 }
 
-func authError(e *core.RequestEvent, status int, code, message string) error {
-	e.Response.Header().Set("Cache-Control", "no-store")
-	return e.JSON(status, AuthError{Status: status, Message: message, Code: code})
-}
-
 // readPasskeyJSON decodes a JSON body of at most maxPasskeyBody bytes into v.
 func readPasskeyJSON(e *core.RequestEvent, v any) error {
 	body, err := io.ReadAll(http.MaxBytesReader(e.Response, e.Request.Body, maxPasskeyBody))
@@ -105,35 +87,28 @@ func readPasskeyJSON(e *core.RequestEvent, v any) error {
 	return json.Unmarshal(body, v)
 }
 
-// registrationError answers the errors of the registration routes that are not about the passkey itself.
-func registrationError(e *core.RequestEvent, err error) error {
+// passkeyError answers the errors of the passkey routes: those about the passkey itself here, the others (invite,
+// login name, display name) as the password registration does ([registrationError]).
+func passkeyError(e *core.RequestEvent, err error) error {
 	switch {
-	case errors.Is(err, ErrInvalidLoginName):
-		return authError(e, http.StatusBadRequest, CodeInvalidLoginName, "The login name is not valid.")
-	case errors.Is(err, ErrInvalidDisplayName):
-		return authError(e, http.StatusBadRequest, CodeInvalidDisplayName, "The display name is not valid.")
-	case errors.Is(err, ErrInvalidInvite):
-		return authError(e, http.StatusForbidden, CodeInvalidInvite, "The invite is invalid or has expired.")
-	case errors.Is(err, ErrLoginNameTaken):
-		return authError(e, http.StatusConflict, CodeLoginNameTaken, "The login name is taken.")
 	case errors.Is(err, ErrPasskeyFailed):
 		return authError(e, http.StatusBadRequest, CodePasskeyFailed, "The passkey could not be verified.")
 	case errors.Is(err, ErrPasskeysUnavailable):
 		e.App.Logger().Warn("passkeys are not available", "error", err)
 		return authError(e, http.StatusServiceUnavailable, CodePasskeysUnavailable, "Passkeys are not available here.")
 	default:
-		return e.InternalServerError("", err)
+		return registrationError(e, err)
 	}
 }
 
 func handlePasskeyRegisterOptions(e *core.RequestEvent) error {
 	var req PasskeyRegisterOptionsRequest
 	if err := readPasskeyJSON(e, &req); err != nil {
-		return authError(e, http.StatusBadRequest, CodeBadRequest, "The request is not valid.")
+		return badRequest(e)
 	}
-	options, state, err := BeginPasskeyRegistration(e.App, req.Code, req.LoginName, req.DisplayName)
+	options, state, err := BeginPasskeyRegistration(e.App, req.Invite, req.LoginName, req.DisplayName)
 	if err != nil {
-		return registrationError(e, err)
+		return passkeyError(e, err)
 	}
 	e.Response.Header().Set("Cache-Control", "no-store")
 	return e.JSON(http.StatusOK, PasskeyOptionsResponse{Options: options, State: state})
@@ -142,11 +117,11 @@ func handlePasskeyRegisterOptions(e *core.RequestEvent) error {
 func handlePasskeyRegister(e *core.RequestEvent) error {
 	var req PasskeyRegisterRequest
 	if err := readPasskeyJSON(e, &req); err != nil {
-		return authError(e, http.StatusBadRequest, CodeBadRequest, "The request is not valid.")
+		return badRequest(e)
 	}
-	member, codes, err := FinishPasskeyRegistration(e.App, req.Code, req.State, req.Credential)
+	member, codes, err := FinishPasskeyRegistration(e.App, req.Invite, req.State, req.Credential)
 	if err != nil {
-		return registrationError(e, err)
+		return passkeyError(e, err)
 	}
 	if err := SignIn(e, member); err != nil {
 		return e.InternalServerError("", err)
@@ -158,7 +133,7 @@ func handlePasskeyRegister(e *core.RequestEvent) error {
 func handlePasskeySignInOptions(e *core.RequestEvent) error {
 	options, state, err := BeginPasskeySignIn(e.App)
 	if err != nil {
-		return registrationError(e, err)
+		return passkeyError(e, err)
 	}
 	e.Response.Header().Set("Cache-Control", "no-store")
 	return e.JSON(http.StatusOK, PasskeyOptionsResponse{Options: options, State: state})
@@ -169,7 +144,7 @@ func handlePasskeySignInOptions(e *core.RequestEvent) error {
 func handlePasskeySignIn(e *core.RequestEvent) error {
 	var req PasskeySignInRequest
 	if err := readPasskeyJSON(e, &req); err != nil {
-		return authError(e, http.StatusBadRequest, CodeBadRequest, "The request is not valid.")
+		return badRequest(e)
 	}
 	member, err := VerifyPasskeySignIn(e.App, req.State, req.Credential)
 	if err == nil {
@@ -182,7 +157,7 @@ func handlePasskeySignIn(e *core.RequestEvent) error {
 	case errors.Is(err, ErrPasskeyFailed), errors.Is(err, ErrCannotSignIn):
 		return authError(e, http.StatusUnauthorized, CodePasskeyFailed, "The passkey sign-in failed.")
 	case errors.Is(err, ErrPasskeysUnavailable):
-		return registrationError(e, err)
+		return passkeyError(e, err)
 	default:
 		return e.InternalServerError("", err)
 	}

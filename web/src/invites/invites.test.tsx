@@ -92,7 +92,7 @@ describe('register page', () => {
     const fetchMock = stubApi(null, { 'POST /api/osfm/invites/check': () => Response.json({ valid: true }) })
     const router = renderAt(`/register#invite=${code}`)
     expect(await screen.findByText(zhCN.pages.register.validInvite)).toHaveAttribute('role', 'status')
-    expect(screen.getByRole('button', { name: zhCN.pages.register.methodPasskey })).toBeInTheDocument()
+    expect(screen.getByLabelText(zhCN.pages.register.password.loginName)).toBeInTheDocument()
     expect(router.state.location.hash).toBe('')
     expect(router.state.location.pathname).toBe('/register')
     const call = fetchMock.mock.calls.find(([input]) => input === '/api/osfm/invites/check')

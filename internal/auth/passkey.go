@@ -145,21 +145,22 @@ type registrationState struct {
 
 // BeginPasskeyRegistration starts registering a new member with a passkey: it checks the invite code (without using
 // it), the login name and the display name, and returns the options for navigator.credentials.create() together with
-// the sealed state that [FinishPasskeyRegistration] needs. Errors: [ErrInvalidLoginName], [ErrInvalidDisplayName],
-// [ErrInvalidInvite], [ErrLoginNameTaken] (only told to holders of a valid invite) and [ErrPasskeysUnavailable].
+// the sealed state that [FinishPasskeyRegistration] needs. Errors: errLoginNameInvalid, errDisplayNameInvalid,
+// [ErrInvalidInvite], errLoginNameTaken (only told to holders of a valid invite) and [ErrPasskeysUnavailable].
 func BeginPasskeyRegistration(app core.App, code, loginName, displayName string) (
 	options *protocol.CredentialCreation, state string, err error) {
 	p, err := passkeysOf(app)
 	if err != nil {
 		return nil, "", err
 	}
-	if loginName, err = NormalizeLoginName(loginName); err != nil {
-		return nil, "", err
+	if loginName = NormalizeLoginName(loginName); !validLoginName(loginName) {
+		return nil, "", errLoginNameInvalid
 	}
-	if displayName, err = NormalizeDisplayName(displayName, loginName); err != nil {
-		return nil, "", err
+	var ok bool
+	if displayName, ok = normalizeDisplayName(displayName, loginName); !ok {
+		return nil, "", errDisplayNameInvalid
 	}
-	ok, err := CheckInvite(app, code)
+	ok, err = CheckInvite(app, code)
 	if err != nil {
 		return nil, "", err
 	}
@@ -169,7 +170,7 @@ func BeginPasskeyRegistration(app core.App, code, loginName, displayName string)
 	if taken, err := loginNameTaken(app, loginName); err != nil {
 		return nil, "", err
 	} else if taken {
-		return nil, "", ErrLoginNameTaken
+		return nil, "", errLoginNameTaken
 	}
 
 	handle := make([]byte, userHandleBytes)
@@ -195,7 +196,7 @@ func BeginPasskeyRegistration(app core.App, code, loginName, displayName string)
 // state from [BeginPasskeyRegistration] and then, through [RegisterWithInvite], creates the member with the passkey
 // and a new set of recovery codes, consuming the invite. It returns the member and the recovery codes, which exist
 // nowhere else. The caller signs the member in. Errors: [ErrPasskeyFailed] (also for a code other than the one the
-// ceremony began with), [ErrInvalidInvite], [ErrLoginNameTaken].
+// ceremony began with), [ErrInvalidInvite], errLoginNameTaken.
 func FinishPasskeyRegistration(app core.App, code, state string, response []byte) (
 	member *core.Record, recoveryCodes []string, err error) {
 	p, err := passkeysOf(app)
@@ -224,7 +225,7 @@ func FinishPasskeyRegistration(app core.App, code, state string, response []byte
 		if taken, err := loginNameTaken(tx, st.LoginName); err != nil {
 			return err
 		} else if taken {
-			return ErrLoginNameTaken
+			return errLoginNameTaken
 		}
 		m.Set("login_name", st.LoginName)
 		m.Set("display_name", st.DisplayName)

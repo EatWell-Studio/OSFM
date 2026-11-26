@@ -14,10 +14,10 @@ import { RecoveryCodes } from './RecoveryCodes'
 
 /** The error messages of the registration form, by server error code or ceremony failure. */
 const messageKeys = {
-  invalid_login_name: 'passkey.register.errors.invalidLoginName',
-  invalid_display_name: 'passkey.register.errors.invalidDisplayName',
+  login_name_invalid: 'passkey.register.errors.invalidLoginName',
+  display_name_invalid: 'passkey.register.errors.invalidDisplayName',
   login_name_taken: 'passkey.register.errors.loginNameTaken',
-  invalid_invite: 'passkey.register.errors.invalidInvite',
+  invite_invalid: 'passkey.register.errors.invalidInvite',
   passkey_failed: 'passkey.register.errors.verifyFailed',
   passkeys_unavailable: 'passkey.errors.unavailable',
   cancelled: 'passkey.errors.cancelled',
@@ -60,7 +60,9 @@ export function PasskeyRegistration({ code, onDone }: { code: string; onDone: ()
   }
 
   async function register() {
-    const start = await readCeremonyStart(await postJson('/passkey/register/options', { code, loginName, displayName }))
+    const start = await readCeremonyStart(
+      await postJson('/passkey/register/options', { invite: code, loginName, displayName }),
+    )
     let credential: Credential | null
     try {
       credential = await navigator.credentials.create(creationOptionsFromJSON(start.options))
@@ -71,7 +73,7 @@ export function PasskeyRegistration({ code, onDone }: { code: string; onDone: ()
       throw new PasskeyError('failed')
     }
     const response = await postJson('/passkey/register', {
-      code,
+      invite: code,
       state: start.state,
       credential: registrationToJSON(credential),
     })
@@ -84,9 +86,9 @@ export function PasskeyRegistration({ code, onDone }: { code: string; onDone: ()
   }
 
   const fieldError =
-    error?.code === 'invalid_login_name' || error?.code === 'login_name_taken'
+    error?.code === 'login_name_invalid' || error?.code === 'login_name_taken'
       ? 'login'
-      : error?.code === 'invalid_display_name'
+      : error?.code === 'display_name_invalid'
         ? 'display'
         : null
 

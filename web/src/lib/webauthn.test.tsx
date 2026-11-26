@@ -211,8 +211,8 @@ describe('passkey registration', () => {
     await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.register.submit }))
 
     expect(await screen.findByText(codes[9] ?? '')).toBeInTheDocument()
-    expect(bodies[0]).toEqual({ code: 'test-code', loginName: 'test_new', displayName: 'Test New' })
-    expect(bodies[1]).toMatchObject({ code: 'test-code', state: 'test-state', credential: { rawId: 'Bwg' } })
+    expect(bodies[0]).toEqual({ invite: 'test-code', loginName: 'test_new', displayName: 'Test New' })
+    expect(bodies[1]).toMatchObject({ invite: 'test-code', state: 'test-state', credential: { rawId: 'Bwg' } })
     const go = screen.getByRole('button', { name: zhCN.recoveryCodes.continue })
     expect(go).toBeDisabled()
     await userEvent.click(screen.getByLabelText(zhCN.recoveryCodes.confirm))

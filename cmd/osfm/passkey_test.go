@@ -71,14 +71,14 @@ func TestPasskeyResponsesHaveNoInternalIDs(t *testing.T) {
 	}
 
 	decodeInto(send("registration options", http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
-		map[string]string{"code": idscan.InviteCode, "loginName": "test_passkey", "displayName": "Test Passkey"},
+		map[string]string{"invite": idscan.InviteCode, "loginName": "test_passkey", "displayName": "Test Passkey"},
 		http.StatusOK), &options)
 	cred, err := a.Create(options.Options)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rec := send("registration", http.MethodPost, auth.PasskeyRegisterPath, "",
-		map[string]any{"code": idscan.InviteCode, "state": options.State, "credential": json.RawMessage(cred)},
+		map[string]any{"invite": idscan.InviteCode, "state": options.State, "credential": json.RawMessage(cred)},
 		http.StatusCreated)
 	send("me after registration", http.MethodGet, auth.MePath, cookieOf(rec), nil, http.StatusOK)
 

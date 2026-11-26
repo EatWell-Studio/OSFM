@@ -128,7 +128,7 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 
 使用的库：WebAuthn 用 `github.com/go-webauthn/webauthn`；TOTP 用 `github.com/pquerna/otp`（RFC 6238，30 秒、6 位）；密码哈希用 argon2id（`golang.org/x/crypto/argon2`）。
 
-**数据**：凭据存在单独的 `credentials` 集合（`D3`）：passkey 的凭据 ID、公钥、签名计数及认证器的标志（见下面的"passkey"）；或密码哈希 + TOTP 密钥。TOTP 密钥用实例主密钥（`secrets/master.key`，AES-256-GCM）加密后存储，防止只拿到数据库文件的人生成验证码。恢复码、邀请码、重置链接只存哈希（`N5`）。PocketBase 认证集合自带的 `password` 字段填随机值且不使用。
+**数据**：凭据存在单独的 `credentials` 集合（`D3`）：passkey 的凭据 ID、公钥、签名计数及认证器的标志（见下面的"passkey"）；或密码哈希 + TOTP 密钥。TOTP 密钥用实例主密钥（`secrets/master.key`，AES-256-GCM）加密后存储，防止只拿到数据库文件的人生成验证码（格式见下面"密码 + TOTP"）。恢复码、邀请码、重置链接只存哈希（`N5`）。PocketBase 认证集合自带的 `password` 字段填随机值且不使用。
 
 **流程**：
 
@@ -202,7 +202,7 @@ flowchart LR
 - **登录接口**（T009、T010）在两个因素都通过后调用 `auth.SignIn(e, member)`：建会话、设置 cookie，并结束这个请求原来带着的会话（换号登录时不留下旧会话）；已离开或已删除的成员返回 `auth.ErrCannotSignIn`。
 - **CSRF**：跨站的表单加不了自定义请求头；跨源脚本要带 cookie 并加自定义请求头必须先通过预检，而主监听端口对预检不返回任何 CORS 响应头（§3.1），预检失败、请求不会发出。`SameSite=Lax` 另外挡住跨站的子请求与表单 POST。
 - **`__Host-` 前缀**（T018）：`OSFM_PUBLIC_URL` 是 `https://` 且主机不是 localhost 或回环地址时（`config.PublicHTTPS`），会话 cookie 叫 `__Host-osfm_session`。带这个前缀的 cookie 浏览器只在 `Secure`、`Path=/`、没有 `Domain` 时接受，同级子域名（例如同一个上级域名下别人的站点）也就无法为上级域名写入同名 cookie，把成员带进攻击者的会话或遮住成员自己的会话（cookie tossing）。本地开发不用前缀：WebKit（Safari）在 `http://localhost`、`http://127.0.0.1` 上拒绝 `__Host-` cookie，却接受同样属性、不带前缀的 `Secure` cookie（T018 用 Playwright 的 WebKit 27.2 与 Chrome 158 实测；Chrome 两种都接受；Firefox 未能在测试环境中启动，未测）。前缀开启时只读带前缀的 cookie，不带前缀的同名 cookie 不被当作会话。
-- **Secure 与本地开发**：cookie 始终带 `Secure`。浏览器把 `localhost`、`127.0.0.1` 当作安全上下文，接受它们通过 http 设置的 Secure cookie（T018 实测 Chrome 158 与 WebKit 27.2 都接受；Firefox 未测，登录接口出现后由 T009 在真浏览器中确认），所以 `http://127.0.0.1:8090` 和 Vite 开发服务器（`http://localhost:5173`，代理到后端）都能登录。其他主机名通过 http 访问时浏览器不保存这个 cookie、谁也登录不了，所以 `OSFM_PUBLIC_URL` 只接受 `https://`，或主机为 `localhost`、`*.localhost`、回环地址的 `http://`，否则拒绝启动（§5.2）。
+- **Secure 与本地开发**：cookie 始终带 `Secure`。浏览器把 `localhost`、`127.0.0.1` 当作安全上下文，接受它们通过 http 设置的 Secure cookie（T018 实测 Chrome 158 与 WebKit 27.2 都接受；T009 用 Playwright 的 Chromium 159 与 WebKit 27.2 在 `http://127.0.0.1` 与经 Vite 代理的 `http://localhost` 上完成了注册与两种登录，cookie 被保存、会话可用、没有 CSP 违规；Firefox 在测试环境中仍无法启动，未测），所以 `http://127.0.0.1:8090` 和 Vite 开发服务器（`http://localhost:5173`，代理到后端）都能登录。其他主机名通过 http 访问时浏览器不保存这个 cookie、谁也登录不了，所以 `OSFM_PUBLIC_URL` 只接受 `https://`，或主机为 `localhost`、`*.localhost`、回环地址的 `http://`，否则拒绝启动（§5.2）。
 - **接口**：`GET /api/osfm/me` 返回当前成员 `{"uuid", "displayName", "role"}`（`displayName` 为主名，`role` 为 `member` 或 `maintainer`），`Cache-Control: no-store`；没有会话时 401。`POST /api/osfm/logout` 删除当前会话、让浏览器删掉 cookie，返回 204；会话已失效时同样是 401 并清掉 cookie。
 
 **邀请**（`D1` `D2`，T008，`internal/auth`）：没有邀请不能注册。M1 只有维护者能创建邀请；成员邀请、冷静期（`D12`）与邀请树（`D10`）在 M2。
@@ -221,12 +221,35 @@ flowchart LR
 - **每次仪式都要求用户验证**（`userVerification: required`：认证器验证指纹、面容或 PIN，所以一个 passkey 本身就是两个因素）**和可发现凭据**（`residentKey: required`，登录时不用输登录名）。**证明（attestation）为 `none`**：不限制认证器型号，也不让认证器透露设备型号；因此不保存原始证明数据，也不接 FIDO 元数据服务。
 - **用户句柄**（WebAuthn 的 `user.id`）：每个成员一个，32 字节随机数（`members.passkey_user_handle`，base64url），在第一次注册 passkey 时生成，该成员所有 passkey 共用。它既不是 PocketBase 记录 ID（AD4），也不是成员的 `uuid`：认证器和同步 passkey 的服务商（Apple、Google、密码管理器）会保存这个值，它不应告诉它们任何东西，也不应把 passkey 与出现在接口响应、导出以及以后的联邦里的标识联系起来（UUIDv7 还带着注册时间）。随机句柄也可以在重置凭据时更换而不改变成员身份。认证器另外保存登录名和显示名，用于在系统的 passkey 选择界面里区分账号。
 - **仪式状态**：一次仪式有两个请求，第一个返回带新挑战（challenge）的选项，第二个带回认证器的签名；注册和登录都发生在有会话之前。服务器把第一个请求决定的内容（挑战、依赖方、要求的用户验证；注册时还有邀请码的哈希、登录名、显示名、用户句柄）用 AES-256-GCM 加密后交给浏览器（`state`），第二个请求原样带回。密钥是进程启动时生成、只在内存里的随机密钥（不是实例主密钥）；仪式类型作为附加认证数据，注册的状态不能用于登录，反之亦然；状态 6 分钟后过期（浏览器的超时为 5 分钟）；**只能用一次**：打开时把它的随机 ID 记在内存里直到过期，不论这次验证成功与否，再用就失败。密钥与这份记录同生同灭，所以重启后旧状态全部失效（只是需要重新开始仪式）。OSFM 是单进程（AD1），第一步不写数据库，未登录的请求不会让数据库增长。
-- **注册**：`POST /api/osfm/passkey/register/options`（正文 `{"code", "loginName", "displayName"}`）先检查登录名格式（3–32 个字符，`a–z 0–9 _ -`，自动转小写）与显示名（最多 64 个字符，不含控制字符与双向文本控制符；留空时用登录名），再检查邀请（不消耗），最后检查登录名是否已被使用（只告诉持有有效邀请的人），返回创建选项与状态。`POST /api/osfm/passkey/register`（正文 `{"code", "state", "credential"}`）先在事务外验证认证器的响应（挑战、来源、依赖方 ID 的哈希、用户验证、签名），邀请码必须与第一步相同；再经 `auth.RegisterWithInvite` 在一个事务里创建成员（登录名、显示名、用户句柄）、保存 passkey、生成 10 个恢复码并消耗邀请，然后签发会话，返回 `201 {"recoveryCodes": […]}`。恢复码只出现在这个响应里；前端要求成员勾选"已保存"后才进入地图。会话在这一步就签发：两个因素此时都已验证，恢复码只是备用手段；成员中途关掉页面也已经能用 passkey 登录。
+- **注册**：`POST /api/osfm/passkey/register/options`（正文 `{"invite", "loginName", "displayName"}`）先检查登录名格式与显示名（规则与"密码 + TOTP"相同，见下），，再检查邀请（不消耗），最后检查登录名是否已被使用（只告诉持有有效邀请的人），返回创建选项与状态。`POST /api/osfm/passkey/register`（正文 `{"invite", "state", "credential"}`）先在事务外验证认证器的响应（挑战、来源、依赖方 ID 的哈希、用户验证、签名），邀请码必须与第一步相同；再经 `auth.RegisterWithInvite` 在一个事务里创建成员（登录名、显示名、用户句柄）、保存 passkey、生成 10 个恢复码并消耗邀请，然后签发会话，返回 `201 {"recoveryCodes": […]}`。恢复码只出现在这个响应里；前端要求成员勾选"已保存"后才进入地图。会话在这一步就签发：两个因素此时都已验证，恢复码只是备用手段；成员中途关掉页面也已经能用 passkey 登录。
 - **登录**：`POST /api/osfm/passkey/login/options` 返回请求选项（不列出凭据，由浏览器在本实例的 passkey 中选择）与状态；`POST /api/osfm/passkey/login`（正文 `{"state", "credential"}`）按凭据 ID 找到 passkey，核对响应里的用户句柄就是该 passkey 所属成员的句柄，验证签名、来源、依赖方、用户验证、备份资格标志不变，成员必须可以登录（未离开、未删除），然后 `auth.SignIn`，返回 204。失败一律 `401 {"code": "passkey_failed"}`，不区分未知 passkey、签名错误、状态已用或过期、成员已离开。
 - **签名计数**：新计数不大于已存的计数、且两者不都是 0 时拒绝登录（WebAuthn §7.2 第 17 步：认证器可能被复制），并写审计记录 `credentials.passkey_counter_regression`（目标为成员的 uuid）；同步型 passkey 一直报告 0，照常通过。新的计数用条件更新写入（只有存储的计数仍是验证时读到的那个才写），两个同时用同一计数的登录只有一个成功。
-- 错误响应的正文是 `{"status", "message", "code"}`，`code` 为 `bad_request`、`invalid_invite`、`invalid_login_name`、`invalid_display_name`、`login_name_taken`、`passkey_failed`、`passkeys_unavailable` 之一。所有响应 `Cache-Control: no-store`；四个接口都是公开路由（`auth.Public`），同样要求 `X-OSFM: 1`。
+- 错误响应与"密码 + TOTP"的格式和 `code` 相同（`auth.AuthError`：`invalid_request`、`invite_invalid`、`login_name_invalid`、`display_name_invalid`、`login_name_taken`），另有 passkey 自己的 `passkey_failed`、`passkeys_unavailable`。所有响应 `Cache-Control: no-store`；四个接口都是公开路由（`auth.Public`），同样要求 `X-OSFM: 1`。
 - **响应头**：主监听端口的 `Permissions-Policy`（§4.7）不列 `publickey-credentials-create`、`publickey-credentials-get`，它们按浏览器默认只对本站开放；T010 在真实响应头与 `default-src 'self'` 下用 Chrome 实测注册与登录都不受影响。
-- **以后**：成员给自己添加更多 passkey（T012）走已登录的接口，创建选项要带上 `excludeCredentials`（该成员已有的凭据 ID 与传输方式）并复用成员的用户句柄；还没有句柄的成员（用"密码 + TOTP"注册的）第一次添加时生成。凭据列表按 `credentials.uuid` 命名。登录页的自动填充（`mediation: "conditional"`，登录名输入框加 `autocomplete="username webauthn"`）等密码登录表单（T009）合并后再加。认证接口的限速与审计在 T011。
+- **以后**：成员给自己添加更多 passkey（T012）走已登录的接口，创建选项要带上 `excludeCredentials`（该成员已有的凭据 ID 与传输方式）并复用成员的用户句柄；还没有句柄的成员（用"密码 + TOTP"注册的）第一次添加时生成。凭据列表按 `credentials.uuid` 命名。登录页的自动填充（`mediation: "conditional"`，登录名输入框加 `autocomplete="username webauthn"`）待做。认证接口的限速与审计在 T011。
+
+**密码 + TOTP**（`D3` `D4`，T009，`internal/auth`）：注册与登录各两步，所有接口都是公开的 POST（`auth.Public`，仍要求 `X-OSFM: 1`），响应 `Cache-Control: no-store`，错误响应在 PocketBase 的错误格式上多一个机器可读的 `code`（`auth.AuthError`），前端按它显示文案。
+
+- **密码哈希**：argon2id（`golang.org/x/crypto/argon2`，RFC 9106），64 MiB 内存、2 遍、2 路并行、16 字节随机盐、32 字节输出，以 PHC 字符串（`$argon2id$v=19$m=65536,t=2,p=2$<盐>$<哈希>`）存在 `credentials.password_hash`：每个哈希自带参数，以后提高参数时旧哈希仍可验证（登录成功时再按新参数重算，待做）。参数按最小的目标设备（2 核 ARM）选：2 路并行时一次计算用满两个核，那里约 100–300 毫秒（开发机 Apple M 系列实测约 40 毫秒；2 核 ARM 上的实测随 T021）。同时最多 2 个 argon2id 计算（其余请求排队，请求取消即放弃），内存上限因此是 128 MiB，一阵登录尝试也压不垮小机器。密码先做 Unicode NFKC 规范化（不同设备输入的同一密码得到同一哈希）；规则只有长度（规范化后 8–128 个字符）和不能等于登录名，不设字符组合要求（两步验证是强制的）。
+- **TOTP**（`github.com/pquerna/otp`，RFC 6238）：HMAC-SHA1、30 秒、6 位、160 位密钥（服务器用 `crypto/rand` 生成）。接受当前时间步与前后各一步（±30 秒，手机时钟偏差和输入时间）；每次接受的时间步用条件更新写进 `credentials.totp_last_step`（只在新时间步大于已记录的时才写入），所以同一个验证码不能用两次，两个同时到达的请求也只有一个成功，用过较新的验证码之后较旧的也失效。注册时确认用的那个验证码的时间步同样记为已用。
+- **主密钥派生与加密格式**：主密钥不直接使用，按用途用 HKDF-SHA256 派生三把子密钥（TOTP 密钥存储、待完成的注册、登录票据），一种用途的密文不能冒充另一种。每个密文用 AES-256-GCM、各自随机的 96 位 nonce（`cipher.NewGCMWithRandomNonce`），编码为 base64url（nonce ‖ 密文 ‖ 标签）。`totp_secret_enc` 为 `v1.` 前缀加上述编码（前缀留给以后换格式或换密钥），附加数据是成员的 `uuid`：密文只能为这个成员解开，不能被挪到别人的凭据上。主密钥丢失则所有 TOTP 密钥失效，只能重置（`D5`）；备份要同时包含 `secrets/`（§3.8）。
+- **注册**：
+  1. `POST /api/osfm/register/password/start`，正文 `{"invite", "loginName", "displayName", "password"}`：先检查邀请（任何无效邀请都是同一个 403 `invite_invalid`），再检查登录名（去掉首尾空白并转小写后须为 3–32 个小写字母、数字、`_`、`-`；400 `login_name_invalid`；已被占用——包括已删除成员的登录名，登录名不复用——是 409 `login_name_taken`）、显示名（可空，空时用登录名；最多 64 个字符，不能有控制字符）和密码规则。登录名是否被占用只告诉持有有效邀请的人，所以这不是登录接口那种"登录名是否存在"的探测口。然后计算密码哈希、生成 TOTP 密钥，返回 `{"secret", "otpauthUri", "enrolment", "expiresAt"}`：密钥（base32，手动输入用）、`otpauth://` 地址（二维码与"在本设备的验证器中添加"链接用；发行方是实例名称，没有名称时为 `OSFM`，账户是登录名），以及**待完成的注册**：登录名、显示名、密码哈希、TOTP 密钥、邀请码的哈希和 15 分钟的过期时间，用主密钥封装。这一步什么都不写入数据库，邀请也不消耗。
+  2. `POST /api/osfm/register/password/confirm`，正文 `{"invite", "enrolment", "code"}`：解开待完成的注册（被改动、过期或用别的邀请码开始的都是 400 `enrolment_expired`，前端回到第一步），核对验证码（400 `code_invalid`），然后经 `auth.RegisterWithInvite` 在一个事务里创建成员（`uuid` 事先生成，作为 TOTP 密文的附加数据）、`password_totp` 凭据和 10 个恢复码，并消耗邀请；最后 `auth.SignIn` 建会话，返回 201 `{"me", "recoveryCodes"}`。事务里再查一次登录名（期间被占用则 409，邀请不消耗）。同一份待完成的注册第二次确认时邀请已用，得到 403。
+  - **为什么把中间状态交给客户端保管，而不是建一条"待定"记录**：不提前创建成员，也不需要新集合、迁移和清理任务；放弃的注册不留下任何东西；客户端看不到、改不了里面的内容（认证加密），跳过 TOTP 确认就拿不到成员；里面的密码哈希与 TOTP 密钥没有主密钥解不开。代价是 15 分钟内同一份数据可以重复提交确认，但邀请只能消耗一次。
+  - **会话在恢复码确认之前签发**：确认验证码的请求创建成员时，两个因素都已绑定，两步验证已经完成（`D3`），所以同一个请求就签发会话；前端随即显示恢复码，勾选"已保存"之后才进入地图。若等"已保存"再签发，需要一个已有成员却没有会话的中间状态，而成员此时已经能用密码 + TOTP 登录，延后签发挡不住什么；恢复码是否保存只有成员自己知道，确认只能是界面上的。
+- **登录**：
+  1. `POST /api/osfm/signin/password`，正文 `{"loginName", "password"}`（登录名同样去空白、转小写）：成功时返回 `{"ticket", "expiresAt"}`，**不设置 cookie、不建会话**。失败时，登录名不存在、密码错误、成员没有密码凭据（只有 passkey）、成员已离开或被删除，得到的状态码（401）、正文（`credentials_invalid`）和响应头完全相同；没有可验证的哈希时用一个固定的假哈希（同样参数）计算一次 argon2id，耗时与密码错误相同。
+  2. `POST /api/osfm/signin/totp` 或 `POST /api/osfm/signin/recovery`，正文 `{"ticket", "code"}`：验证码（见上）或恢复码（用掉，见下）通过后才 `auth.SignIn`，返回 `{"me"}`；用恢复码时另返回剩下的个数 `recoveryCodesLeft`，前端提示成员。验证码错误、已用过是 401 `code_invalid`；票据无效或过期是 401 `ticket_expired`，前端回到第一步。
+  - **登录票据**不是会话：只证明密码那一步已通过，只能用于这两个接口，5 分钟过期。内容是成员的 `uuid`、当时密码哈希的指纹（SHA-256 的前 16 字节）和过期时间，用主密钥封装；改了密码（指纹不同）或成员已不能登录时作废。它是无状态的，有效期内可以再试别的验证码——这与重新提交一次密码等价；按账号的尝试次数限制随 T011。
+- **审计**：T009 不写登录、注册的审计记录（T011）；无论何处都不记录密码、验证码、恢复码、TOTP 密钥或票据。
+
+**恢复码**（`D3` `D4`，T009，`internal/auth`；passkey 注册同样使用）：`auth.NewRecoveryCodes(tx, 成员)` 生成 10 个新码，删除该成员原有的全部恢复码，只存哈希，明文只在返回值里出现一次。
+
+- 每个码 80 位随机数（`crypto/rand`），用 Crockford base32 写成 16 个字符（0–9 与 A–Z，去掉 I、L、O、U），四个一组显示（`XXXX-XXXX-XXXX-XXXX`）；输入时不分大小写、忽略空格与连字符，O 当作 0、I 与 L 当作 1。
+- `recovery_codes` 只存规范形式的 SHA-256（十六进制，唯一索引）：80 位随机性下离线穷举不可行，与邀请码同理不需要慢哈希。
+- 使用是条件更新（只在 `used_at` 为空时写入），两个同时提交同一个码的请求只有一个成功。
+- 前端（`web/src/register/RecoveryCodes.tsx`）列出恢复码，可复制、可下载为文本文件（`blob:` 地址的下载，不是 `data:` 地址），必须勾选"已保存"才能继续。
 
 **防护**：所有改变状态的请求要求自定义请求头（`X-OSFM: 1`），配合 SameSite cookie 防 CSRF；登录、TOTP、恢复码、重置链接按 IP 和登录名分别限速；登录失败的提示不区分"登录名不存在"和"密码错误"。
 
@@ -252,7 +275,7 @@ flowchart LR
 | 集合 | 内容 | 里程碑 |
 | --- | --- | --- |
 | `members` | 成员（PocketBase 认证集合）：登录名、主名、化名、角色、邀请权与冷静期、邀请人、加入与离开时间；passkey 的用户句柄（§3.3） | M1 |
-| `credentials` | passkey，或密码哈希 + 加密的 TOTP 密钥（`D3`）。passkey 一行：`uuid`、凭据 ID 与 COSE 公钥（base64url）、签名计数、认证器型号 AAGUID、传输方式、备份资格与备份状态、用户验证标志、证明类型与格式、设备名称（由成员填写，T012） | M1 |
+| `credentials` | passkey，或密码哈希（argon2id，PHC 字符串）+ 加密的 TOTP 密钥 + 最近一次接受的时间步（`D3`，§3.3）。每行有 `uuid`；passkey 一行：凭据 ID 与 COSE 公钥（base64url）、签名计数、认证器型号 AAGUID、传输方式、备份资格与备份状态、用户验证标志、证明类型与格式、设备名称（由成员填写，T012） | M1 |
 | `recovery_codes`、`invites`、`reset_links` | 恢复码、邀请码、重置链接，都只存哈希（`N5`）；邀请另有邀请人、过期、使用者与使用时间、撤销时间（§3.3） | M1 |
 | `audit_log` | 维护者操作、地点的创建与营业状态确认（只追加） | M1 |
 | `instance_settings` | 实例设置，只有一行 | M1 |
@@ -366,6 +389,7 @@ erDiagram
 | 多语言 | react-i18next | 中文优先，文案全部走翻译键（`N4`）：`zh-CN` 为默认语言与源语言，`en` 的键与之相同（类型检查与单元测试保证）；`pnpm run check:i18n` 检查 `web/src/` 下除语言文件（`web/src/i18n/locales/`）外的 `.ts`/`.tsx` 不含中日韩字符，在 `bin/gate.sh` 与 CI 中运行 |
 | PWA | vite-plugin-pwa（Workbox） | 安装清单、离线缓存（§4.5） |
 | passkey | 浏览器原生 WebAuthn 接口（配合 `@simplewebauthn/browser` 处理编码） | — |
+| TOTP 二维码 | qrcode.react（`QRCodeSVG`） | 在本机生成内联 SVG，不请求外部服务，内容安全策略不需要 `img-src data:`（§4.7） |
 | 坐标转换 | gcoord | 只用于导航跳转（§4.6） |
 | 测试 | Vitest + Testing Library；Playwright 端到端 | Playwright 的虚拟认证器用于测试 passkey 流程 |
 
@@ -381,7 +405,7 @@ erDiagram
 | 管理（维护者） | `/admin` | 邀请与邀请树、成员、举报与隐藏、审计记录、城市与底图设置、备份 |
 | 注册 / 登录 / 重置 | `/register`、`/login`、待定 | §3.3 的流程 |
 
-地图、列表、我的三个页面共用底部导航；未登录时只能访问登录与注册页（`E1`），其余路径（包括不存在的路径）先跳到登录页。管理页要求登录；不是维护者的成员只看到"只有维护者可以使用"的提示（服务器端的维护者接口另有 403）。维护者在"我的"页有进入管理页的链接。管理页目前只有邀请：选择有效期创建邀请链接（只显示这一次，带复制按钮）、邀请列表与状态、撤销。注册页检查邀请链接（§3.3），有效时让成员选择注册方式；每种方式是 `web/src/register/` 下的一个组件（passkey：`PasskeyRegistration`，登录名、显示名 → 创建 passkey → 恢复码，确认已保存后进入地图）。登录页同样由 `web/src/login/` 下的组件组成（`PasskeySignIn`：一个按钮，不用输登录名）。浏览器不支持 passkey 时，页面说明改用"密码 + TOTP"。
+地图、列表、我的三个页面共用底部导航；未登录时只能访问登录与注册页（`E1`），其余路径（包括不存在的路径）先跳到登录页。管理页要求登录；不是维护者的成员只看到"只有维护者可以使用"的提示（服务器端的维护者接口另有 403）。维护者在"我的"页有进入管理页的链接。管理页目前只有邀请：选择有效期创建邀请链接（只显示这一次，带复制按钮）、邀请列表与状态、撤销。注册页检查邀请链接（§3.3），有效时让成员选择注册方式；登录页同样只提供方式的选择（先列"密码 + 验证器 App"，再列 passkey），每种方式是单独的组件（`web/src/register/`、`web/src/login/`）。passkey 的注册是登录名、显示名 → 创建 passkey → 保存恢复码 → 进入地图，登录是一个按钮、不用输登录名；浏览器不支持 passkey 时，页面说明改用"密码 + TOTP"。密码 + TOTP 的注册依次是登录名、显示名与密码 → 绑定验证器 App（二维码是内联 SVG，`qrcode.react` 在本机生成，不请求任何外部服务；另有在本设备的验证器 App 中添加的链接和可复制的密钥，在同一部手机上注册时扫不了自己的屏幕）→ 输入一个验证码 → 保存恢复码 → 进入地图；登录是登录名与密码 → 验证码，或改用恢复码，成功后回到登录前想去的页面。
 
 ### 4.3 地图组件
 
@@ -489,7 +513,7 @@ erDiagram
 | 层 | 内容 |
 | --- | --- |
 | Go 单元测试 | `domain` 的业务规则（可见性、编辑与修改记录、举报阈值、冷静期、去重计数）、坐标转换、认证流程的状态机 |
-| Go 集成测试 | 使用 PocketBase 的测试应用，覆盖每个接口的权限：以"未登录 / 成员 / 作者 / 维护者"四种身份调用，断言响应中不含作者 ID 与化名映射（`E2`）。passkey 用 `internal/auth/passkeytest` 的软件认证器（ES256、可发现凭据、证明 `none`，可以改来源、依赖方 ID、签名计数与标志）：带邀请注册、免登录名登录、计数回退、来源或依赖方错误、状态重放、无有效邀请、成员已离开 |
+| Go 集成测试 | 使用 PocketBase 的测试应用，覆盖每个接口的权限：以"未登录 / 成员 / 作者 / 维护者"四种身份调用，断言响应中不含作者 ID 与化名映射（`E2`）。密码 + TOTP（T009）：用生成的验证码完成注册与登录的端到端测试（只过密码一步时没有会话 cookie；同一验证码、较旧的验证码、用过的恢复码都被拒绝；并发提交同一验证码或恢复码只有一个成功；无效邀请一律被拒；登录名不存在、密码错误、没有密码凭据、已离开的成员得到完全相同的响应；票据在过期、改密码、离开后作废；响应中没有内部 ID）。passkey 用 `internal/auth/passkeytest` 的软件认证器（ES256、可发现凭据、证明 `none`，可以改来源、依赖方 ID、签名计数与标志）：带邀请注册、免登录名登录、计数回退、来源或依赖方错误、状态重放、无有效邀请、成员已离开 |
 | 内部 ID 扫描 | `cmd/osfm` 的测试按 `osfm serve` 的方式启动程序（同一个注册函数），`internal/idscan` 往每个集合写入编造的记录（含已软删除的；有集合没写入时失败），枚举路由器上的全部路由：OSFM 的每条路由必须在测试的探测表里有请求，PocketBase 自己的路由按占位符代入各集合名后逐一请求；任何响应的头部或正文（含 gzip 解码后、JSON Web Token 解码后，以及其中每个 base64 或 base64url 值解码后，例如 WebAuthn 选项里的用户句柄与凭据 ID）出现记录或集合的内部 ID 即失败（AD4）。passkey 注册与登录的成功响应另由一个测试用软件认证器走完整个仪式后检查（包括仪式中新建的成员、凭据、恢复码与会话的 ID）。每个请求按匿名、成员、维护者三种身份各发一次（成员与维护者每个请求用一个新会话，退出登录的探测不影响后面的请求），会话 cookie 本身也在被检查的请求里；同时检查会话规则：匿名访问需要登录的路径必须得到 401，公开路由必须在测试的清单里，只限维护者的路由（另一份清单）成员访问必须得到 403，带 `X-OSFM` 的写请求去掉这个头后必须得到 403 |
 | 前端单元测试 | Vitest + Testing Library |
 | 前端文案检查 | `pnpm run check:i18n`：语言文件以外的源码不含中日韩字符（§4.1） |

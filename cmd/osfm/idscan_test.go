@@ -56,30 +56,65 @@ var osfmProbes = map[string][]idscan.Request{
 	},
 	// Public: the registration page checks the code before showing the form.
 	"POST " + auth.InviteCheckPath: {
-		{Method: http.MethodPost, Path: auth.InviteCheckPath, Body: `{"code":"` + idscan.InviteCode + `"}`,
+		{Method: http.MethodPost, Path: auth.InviteCheckPath, Body: `{"invite":"` + idscan.InviteCode + `"}`,
 			Header: csrfHeader, Status: http.StatusOK},
 		{Method: http.MethodPost, Path: auth.InviteCheckPath, Body: `{"code":"x"}`, Header: csrfHeader,
 			Status: http.StatusOK},
 		{Method: http.MethodPost, Path: auth.InviteCheckPath, Body: `{`, Header: csrfHeader,
 			Status: http.StatusBadRequest},
 	},
+	// Public: registration with password and TOTP. The start probes reach every answer; a pending enrolment is sealed
+	// with the instance's master key, so the confirm probes can only reach the refusals (the success path is tested
+	// in internal/auth).
+	"POST " + auth.RegisterPasswordStartPath: {
+		{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Status: http.StatusOK,
+			Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_scan","password":"test scan password"}`},
+		{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Status: http.StatusConflict,
+			Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member","password":"test scan password"}`},
+		{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Status: http.StatusForbidden,
+			Body: `{"invite":"x","loginName":"test_scan","password":"test scan password"}`},
+		{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Body: `{`,
+			Status: http.StatusBadRequest},
+	},
+	"POST " + auth.RegisterPasswordConfirmPath: {
+		{Method: http.MethodPost, Path: auth.RegisterPasswordConfirmPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{"invite":"` + idscan.InviteCode + `","enrolment":"x","code":"123456"}`},
+		{Method: http.MethodPost, Path: auth.RegisterPasswordConfirmPath, Header: csrfHeader, Body: `{`,
+			Status: http.StatusBadRequest},
+	},
+	// Public: sign-in with password, then TOTP or a recovery code. The seeded member has no password, so the password
+	// step refuses (the same answer as for a wrong password); tickets are sealed like enrolments.
+	"POST " + auth.SignInPasswordPath: {
+		{Method: http.MethodPost, Path: auth.SignInPasswordPath, Header: csrfHeader, Status: http.StatusUnauthorized,
+			Body: `{"loginName":"test_member","password":"test scan password"}`},
+		{Method: http.MethodPost, Path: auth.SignInPasswordPath, Header: csrfHeader, Body: `{`,
+			Status: http.StatusBadRequest},
+	},
+	"POST " + auth.SignInTOTPPath: {
+		{Method: http.MethodPost, Path: auth.SignInTOTPPath, Header: csrfHeader, Body: `{"ticket":"x","code":"123456"}`,
+			Status: http.StatusUnauthorized},
+	},
+	"POST " + auth.SignInRecoveryPath: {
+		{Method: http.MethodPost, Path: auth.SignInRecoveryPath, Header: csrfHeader,
+			Body: `{"ticket":"x","code":"0000-0000-0000-0000"}`, Status: http.StatusUnauthorized},
+	},
 	// Public: passkey registration and sign-in. The successful second steps need an authenticator; they are scanned
 	// by TestPasskeyResponsesHaveNoInternalIDs.
 	"POST " + auth.PasskeyRegisterOptionsPath: {
 		{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusOK,
-			Body: `{"code":"` + idscan.InviteCode + `","loginName":"test_probe","displayName":"Test Probe"}`},
+			Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_probe","displayName":"Test Probe"}`},
 		{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusConflict,
-			Body: `{"code":"` + idscan.InviteCode + `","loginName":"test_member"}`},
+			Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member"}`},
 		{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusForbidden,
-			Body: `{"code":"x","loginName":"test_probe"}`},
+			Body: `{"invite":"x","loginName":"test_probe"}`},
 		{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusBadRequest,
-			Body: `{"code":"` + idscan.InviteCode + `","loginName":"x"}`},
+			Body: `{"invite":"` + idscan.InviteCode + `","loginName":"x"}`},
 		{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusBadRequest,
 			Body: `{`},
 	},
 	"POST " + auth.PasskeyRegisterPath: {
 		{Method: http.MethodPost, Path: auth.PasskeyRegisterPath, Header: csrfHeader, Status: http.StatusBadRequest,
-			Body: `{"code":"` + idscan.InviteCode + `","state":"x","credential":{}}`},
+			Body: `{"invite":"` + idscan.InviteCode + `","state":"x","credential":{}}`},
 		{Method: http.MethodPost, Path: auth.PasskeyRegisterPath, Header: csrfHeader, Status: http.StatusBadRequest,
 			Body: `{`},
 	},
@@ -120,11 +155,16 @@ var osfmProbes = map[string][]idscan.Request{
 // registration and credential reset, as later tasks add them (E1). A route marked public in the code but missing here
 // fails the scan, and so does the reverse.
 var publicRoutes = map[string]bool{
-	"POST " + auth.InviteCheckPath:            true,
-	"POST " + auth.PasskeyRegisterOptionsPath: true,
-	"POST " + auth.PasskeyRegisterPath:        true,
-	"POST " + auth.PasskeySignInOptionsPath:   true,
-	"POST " + auth.PasskeySignInPath:          true,
+	"POST " + auth.InviteCheckPath:             true,
+	"POST " + auth.RegisterPasswordStartPath:   true,
+	"POST " + auth.RegisterPasswordConfirmPath: true,
+	"POST " + auth.SignInPasswordPath:          true,
+	"POST " + auth.SignInTOTPPath:              true,
+	"POST " + auth.SignInRecoveryPath:          true,
+	"POST " + auth.PasskeyRegisterOptionsPath:  true,
+	"POST " + auth.PasskeyRegisterPath:         true,
+	"POST " + auth.PasskeySignInOptionsPath:    true,
+	"POST " + auth.PasskeySignInPath:           true,
 }
 
 // maintainerRoutes are the OSFM routes only maintainers may use (auth.RequireMaintainer): the member identity's
