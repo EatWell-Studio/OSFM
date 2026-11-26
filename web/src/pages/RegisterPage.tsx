@@ -1,10 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { type ReactNode, useEffect, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router'
 import { PageHeading } from '@/components/PageHeading'
 import { Button } from '@/components/ui/button'
 import { checkInvite, inviteCodeFromHash, isWellFormedInviteCode } from '@/invites/invites'
+import { PasswordTotpRegistration } from '@/register/PasswordTotpRegistration'
+import { type Me, sessionQueryKey } from '@/session/session'
 
 // The code from the invite link is kept for this tab only, so that reloading the page still finds it after the
 // fragment has been removed from the address bar.
@@ -26,15 +29,39 @@ function storeCode(code: string) {
   }
 }
 
+function forgetCode() {
+  try {
+    sessionStorage.removeItem(storageKey)
+  } catch {
+    // Nothing stored.
+  }
+}
+
+/** The ways to register (D3); each is its own component, the page only offers the choice. */
+const methods: {
+  id: string
+  label: (t: TFunction) => string
+  form: (props: { invite: string; onRegistered: (me: Me) => void }) => ReactNode
+}[] = [
+  {
+    id: 'password',
+    label: (t) => t('pages.register.methods.password'),
+    form: (props) => <PasswordTotpRegistration {...props} />,
+  },
+]
+
 /**
  * Registration with an invite (D1). Reads the code from the invite link's fragment (/register#invite=…), removes it
- * from the address bar and asks the server whether it can be used. The registration forms themselves (passkey, or
- * password and TOTP) come with T009 and T010; the server checks the invite again when the member is created.
+ * from the address bar and asks the server whether it can be used; then offers the registration methods (D3). The
+ * server checks the invite again when the member is created. Once the member has saved the recovery codes, the app
+ * opens the map.
  */
 export function RegisterPage() {
   const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [method, setMethod] = useState('password')
   const [code] = useState(() => {
     const fromLink = inviteCodeFromHash(location.hash)
     if (fromLink !== null) {
@@ -60,6 +87,12 @@ export function RegisterPage() {
     retry: 1,
   })
 
+  const registered = (me: Me) => {
+    forgetCode()
+    queryClient.setQueryData(sessionQueryKey, me)
+    void navigate('/', { replace: true })
+  }
+
   let content
   if (code === null) {
     content = <p>{t('pages.register.noInvite')}</p>
@@ -73,7 +106,23 @@ export function RegisterPage() {
     content = (
       <>
         <p role="status">{t('pages.register.validInvite')}</p>
-        <p className="text-muted-foreground">{t('pages.register.formsPending')}</p>
+        {methods.length > 1 && (
+          <div role="group" aria-label={t('pages.register.method')} className="flex flex-wrap gap-2">
+            {methods.map((m) => (
+              <Button
+                key={m.id}
+                variant={m.id === method ? 'default' : 'outline'}
+                aria-pressed={m.id === method}
+                onClick={() => {
+                  setMethod(m.id)
+                }}
+              >
+                {m.label(t)}
+              </Button>
+            ))}
+          </div>
+        )}
+        {methods.find((m) => m.id === method)?.form({ invite: code, onRegistered: registered })}
       </>
     )
   } else if (check.isError) {
