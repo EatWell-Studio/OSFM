@@ -111,6 +111,13 @@ jobs:
           for icon in pwa-192x192.png pwa-512x512.png maskable-icon-512x512.png apple-touch-icon-180x180.png; do
             curl -fsS -o /dev/null "http://127.0.0.1:8090/$icon"
           done
+          # The map: its glyphs and sprites, MapLibre's worker as JavaScript (a module worker needs a script type),
+          # and the city index (empty without tile files).
+          curl -fsS -o /dev/null 'http://127.0.0.1:8090/map/fonts/Noto%20Sans%20Regular/0-255.pbf'
+          curl -fsS http://127.0.0.1:8090/map/sprites/light.json | grep -q '"width"'
+          worker="$(cd web/dist/app && ls assets/maplibre-gl-worker-*.mjs)"
+          curl -fsS -o /dev/null -w '%{content_type}' "http://127.0.0.1:8090/$worker" | grep -q '^text/javascript'
+          test "$(curl -fsS http://127.0.0.1:8090/tiles/)" = '{"cities":[]}'
           # The instance metadata: public JSON with the instance key and the version the binary reports.
           ./osfm --version
           version="$(./osfm --version | sed 's/.* version //')"

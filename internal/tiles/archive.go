@@ -74,9 +74,25 @@ func loadArchive(f io.ReaderAt, size int64, tileURL string) (*archive, error) {
 	return &archive{size: size, header: h, root: root, tileJSON: tileJSON}, nil
 }
 
+// cityEntry describes the archive in the city index, with the same bounds, center and zoom levels as its TileJSON.
+func (a *archive) cityEntry(city string) cityEntry {
+	h := a.header
+	return cityEntry{
+		ID:      city,
+		Bounds:  [4]float64{e7Degrees(h.minLonE7), e7Degrees(h.minLatE7), e7Degrees(h.maxLonE7), e7Degrees(h.maxLatE7)},
+		Center:  [3]float64{e7Degrees(h.centerLonE7), e7Degrees(h.centerLatE7), float64(h.centerZoom)},
+		MinZoom: h.minZoom,
+		MaxZoom: h.maxZoom,
+	}
+}
+
+// e7Degrees converts the fixed-point degrees of the header (degrees × 10⁷) to degrees.
+func e7Degrees(v int32) float64 {
+	return float64(v) / 1e7
+}
+
 // buildTileJSON returns the TileJSON 3.0 document of an archive.
 func buildTileJSON(h header, metadata map[string]any, tileURL string) ([]byte, error) {
-	const e7 = 1e7
 	layers, ok := metadata["vector_layers"]
 	if !ok {
 		layers = []any{}
@@ -89,9 +105,9 @@ func buildTileJSON(h header, metadata map[string]any, tileURL string) ([]byte, e
 		"minzoom":       h.minZoom,
 		"maxzoom":       h.maxZoom,
 		"bounds": []float64{
-			float64(h.minLonE7) / e7, float64(h.minLatE7) / e7, float64(h.maxLonE7) / e7, float64(h.maxLatE7) / e7,
+			e7Degrees(h.minLonE7), e7Degrees(h.minLatE7), e7Degrees(h.maxLonE7), e7Degrees(h.maxLatE7),
 		},
-		"center": []any{float64(h.centerLonE7) / e7, float64(h.centerLatE7) / e7, h.centerZoom},
+		"center": []any{e7Degrees(h.centerLonE7), e7Degrees(h.centerLatE7), h.centerZoom},
 	}
 	for _, key := range []string{"attribution", "description", "name", "version"} {
 		if v, ok := metadata[key]; ok {

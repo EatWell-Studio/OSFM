@@ -252,10 +252,11 @@ erDiagram
 ### 3.6 地图瓦片
 
 - 底图数据来自 Protomaps 的 OSM 构建，部署时用 `pmtiles extract` 按每个城市的范围裁剪出 **z10–z15** 的切片（更高的缩放由客户端放大显示），每个城市一个文件：`tiles/{city}.pmtiles`。`deploy/tiles.sh` 是裁剪脚本（`--dry-run` 只估算体积）；实测一个城市约 10–30 MB（T014）。
-- **服务器把 PMTiles 解包成普通的 `z/x/y` 瓦片**（`/tiles/{city}/{z}/{x}/{y}.mvt`，另有 `/tiles/{city}.json` 的 TileJSON），而不是让浏览器对大文件发范围请求。这样每块瓦片都是一个普通的可缓存请求，离线缓存（`A9`）可以直接用 Service Worker 的常规缓存策略。
+- **服务器把 PMTiles 解包成普通的 `z/x/y` 瓦片**（`/tiles/{city}/{z}/{x}/{y}.mvt`，另有 `/tiles/{city}.json` 的 TileJSON；`/tiles/` 列出瓦片目录中可用的城市及其范围、中心与缩放级别，地图页的城市列表来自这里），而不是让浏览器对大文件发范围请求。这样每块瓦片都是一个普通的可缓存请求，离线缓存（`A9`）可以直接用 Service Worker 的常规缓存策略。
 - 解包用**自带的本地 PMTiles v3 读取器**（`internal/tiles`，按规范实现），不用 `github.com/protomaps/go-pmtiles`：后者为远程存储链接了 AWS、Azure、Google Cloud 的 SDK 和 Prometheus，使可执行文件体积翻倍，且遇到损坏或截断的文件会 panic 导致整个进程退出。自带读取器只读本地文件，读取前检查每个偏移和长度，解压有上限，目录缓存有大小上限；损坏的文件返回 404 并记录一次警告。
-- 样式基于 Protomaps basemaps 的样式，字形（只需要拉丁字符区段）和图标精灵图由实例提供；**中日韩文字由浏览器用本机字体渲染**（MapLibre 的本地表意文字渲染），不需要下载中文字形。
-- 不使用影像图层，不加载任何边界或行政区图层（`H2` `H4`）。
+- 样式基于 Protomaps basemaps 的样式，字形和图标精灵图由实例提供（随前端构建嵌入可执行文件，路径 `/map/`，见 §4.3）；字形只有 Noto Sans 三种字重的 0–255 区段（基本拉丁与 Latin-1），**其余字符（包括中日韩文字）由浏览器用本机字体渲染**（MapLibre 的本地字形渲染），不需要下载中文字形。
+- 不使用影像图层，不画任何边界，也不显示国家与省级行政区的名称（样式去掉 `boundaries` 数据层以及 `places_country`、`places_region` 图层；`H2` `H4`）。
+- 成功的瓦片请求不写入请求日志：成员"定位到我"之后加载的瓦片会暴露其位置（`A8` `E4`）。
 - 地图署名 "© OpenStreetMap contributors" 写在样式的 attribution 中，始终显示（`A1`）。
 
 ### 3.7 地名搜索代理
@@ -304,7 +305,7 @@ erDiagram
 | 框架 | React | 单页应用；不使用服务器端渲染 |
 | 路由 | React Router（单页模式，`createBrowserRouter` 数据路由） | 路由表在 `web/src/routes.tsx`（§4.2） |
 | 服务器数据 | TanStack Query | 缓存、重试；离线时把查询缓存持久化到 IndexedDB（`A9`，P1） |
-| 地图 | MapLibre GL JS + `@vis.gl/react-maplibre` | 与 MapLibre v6 的兼容性 M1 验证 |
+| 地图 | MapLibre GL JS v6 + `@vis.gl/react-maplibre` | 封装 8.1 已支持 MapLibre v6（T015 验证，§4.3）；底图样式来自 `@protomaps/basemaps` |
 | 样式 | Tailwind CSS v4（`@tailwindcss/vite`） | 移动优先；不加载网络字体，使用系统字体栈（`system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif`） |
 | 交互组件 | shadcn/ui（代码复制进仓库 `web/src/components/ui/`，基于 Radix） | 弹窗、底部抽屉、菜单、表单控件；可访问性由底层库保证；只加入实际用到的组件 |
 | 图标 | lucide-react | 打包进产物，按需引入 |
@@ -332,7 +333,14 @@ erDiagram
 
 - 地点数据按城市与视野加载，转换成 GeoJSON 数据源，使用 MapLibre 内置的聚合（`A2`）。
 - 精度不同的地点用不同图层表现：`exact` 为图钉，`approx` 和 `area` 为半透明圆（半径约 50 m / 按片区）。
-- 地图限制：`minZoom = 10`、`maxBounds` 为当前城市范围（`H2`）；切换城市就是切换数据源与范围。
+- 地图限制：`minZoom = 10`、`maxBounds` 为当前城市范围（`H2`；城市较小、屏幕较大时，范围限制使最小缩放实际高于 10）；切换城市就是切换数据源与范围。
+- 实现（T015）：MapLibre GL JS v6 + `@vis.gl/react-maplibre` 8.1（其 8.1 版已按 v6 去掉的 `map.transform` 等接口适配，实测可用）。地图代码单独成块（`web/src/map/`），只在打开地图时加载，应用外壳不含 MapLibre。
+- 城市列表来自 `GET /tiles/`（§3.6）：瓦片目录里有一个城市的文件，地图就能切换到它，不需要另外配置。城市的显示名称暂时由文件名生成，首次启动向导与实例设置加入后改用设置中的名称。当前城市记在地址的 `?city=` 参数中，并在本机记住上次的选择。
+- 样式在浏览器中生成：`@protomaps/basemaps` 的 `light` 图层（标注语言随界面：中文界面用 `zh-Hans`），数据源直接写瓦片地址、范围与署名，不另取 TileJSON。字形、图标精灵图放在 `web/public/map/`，随前端构建嵌入可执行文件：它们必须与样式版本一致，体积小（约 300 KB），且这样部署者不需要另外下载。来源为 `protomaps/basemaps-assets`，字形为 SIL OFL 1.1，图标为 MIT（来自 tangrams/icons），许可文本在同一目录。
+- 所有地图请求都由样式中的同源绝对地址发出，并带 `credentials: 'same-origin'`，瓦片要求登录之后也能继续工作。
+- 署名 "© OpenStreetMap contributors" 用展开的署名控件，始终可见，不被底部导航遮挡（`A1`）。
+- "定位到我"只用浏览器的定位接口：位置只在页面里用于移动地图（不在当前城市时切换到所在城市，不在任何城市时给出提示），不发给服务器、不保存（`A8`）。
+- 缩放与定位按钮是自己的组件，不用 MapLibre 自带的控件：后者的图标是 `data:` 地址的 SVG，在 §4.7 的 CSP 下会被拦截。
 - 新建地点时地图中央显示固定准星，提交的是地图中心坐标，四舍五入到 5 位小数。
 
 ### 4.4 数据获取
@@ -349,6 +357,7 @@ erDiagram
 - Service Worker 由构建生成的 `registerSW.js` 注册（不用内联脚本，§4.7）；对页面导航用缓存的 `index.html` 应答，但 `/api/`、`/tiles/`、`/_/` 与 `/.well-known/` 不在此列，始终走网络。
 - 安装清单 `manifest.webmanifest`：名称 OSFM、`lang` 为 `zh-CN`、`display: standalone`、192/512 图标与可裁切（maskable）图标；`index.html` 另有 `theme-color`、`apple-touch-icon` 与 `apple-mobile-web-app-*` 标签，供 iOS 添加到主屏幕。
 - 瓦片请求（`/tiles/…`）使用"缓存优先"，按城市设置条目上限；数据请求使用"网络优先、失败时用缓存"。
+- 目前（T015）地图代码块与图标精灵图（PNG）随应用外壳预缓存；MapLibre 的 Worker（`.mjs`）、字形与瓦片尚未缓存，始终走网络，随离线功能（`A9`）一起处理。
 - 离线时只读（`A9` 为 P1）；新建与编辑需要联网，离线时给出提示。
 - iOS 需要"添加到主屏幕"才能持久保存数据，首次使用时给出引导。
 
@@ -366,7 +375,7 @@ erDiagram
 
 ### 4.7 安全相关的前端约束
 
-- 内容安全策略：`default-src 'self'`；MapLibre 使用 Web Worker，需要 `worker-src 'self' blob:`（或使用 MapLibre 的 CSP 构建，M1 选定）；不允许内联脚本。
+- 内容安全策略：`default-src 'self'`；不允许内联脚本。MapLibre v6 不再有单独的 CSP 构建，它的 Worker 是独立的模块文件，同源时直接用 `new Worker(url, {type: 'module'})` 加载，不需要 `blob:`；前端用 `setWorkerUrl` 指向构建产物中的 Worker 文件。T015 在无头 Chrome 中验证：只有 `default-src 'self'` 时地图、Worker、字形、图标精灵图与城市切换都正常，没有 CSP 违规（MapLibre 自带控件的 `data:` 图标除外，已不使用，见 §4.3）。所以不需要 `worker-src blob:`，也不需要 `img-src data:`。
 - 不使用任何 CDN 或外部字体；构建时检查产物中不含外部 URL。
 - 用户输入的文本一律按纯文本显示，不渲染 HTML 或 Markdown。
 
@@ -435,7 +444,7 @@ CI 在 GitHub Actions 上运行，顶层权限只读。代码进入仓库后，�
 ## 8. M1 需要验证的事项
 
 1. PocketBase：关闭内置登录方式后，自行签发令牌的接口与令牌失效方式；限速设置能否覆盖自定义路由；请求日志不记录 IP 的配置：已在 T006 完成（§3.1、§3.3、§3.9、§5.4）。
-2. `@vis.gl/react-maplibre` 与 MapLibre v6 的兼容性；MapLibre 在严格 CSP 下的 Worker 加载方式。
+2. `@vis.gl/react-maplibre` 与 MapLibre v6 的兼容性；MapLibre 在严格 CSP 下的 Worker 加载方式：已在 T015 完成（兼容；`default-src 'self'` 即可，见 §4.3、§4.7）。
 3. 每个城市 z10–z15 切片的文件体积：已在 T014 完成（约 10–30 MB）。
 4. passkey 与密码 + TOTP 在 iOS、带谷歌服务的 Android、不带谷歌服务的国产 Android 上的表现（`N6`）。
 5. Apple 地图与 Google 地图在中国大陆境内跳转时需要的坐标系（§4.6）。

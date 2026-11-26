@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 )
@@ -195,11 +196,87 @@ func TestNotFound(t *testing.T) {
 		"/tiles/" + testCity + "/10/512.mvt",
 		"/tiles/" + testCity + "/metadata",
 		"/tiles/" + testCity + "/10/512/511.mvt/x",
-		"/tiles/",
+		"/tiles//",
+		"/tiles/index",
 		"/other/" + testCity + ".json",
 	} {
 		if rec := get(h, target); rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s: status %d, want 404", target, rec.Code)
+		}
+	}
+}
+
+func TestIndex(t *testing.T) {
+	h, dir := newTestHandler(t)
+	writeTestArchive(t, dir, "another-town.pmtiles")
+	// Left out: archives under invalid names (and so not served), unusable archives and other files.
+	writeTestArchive(t, dir, "A.pmtiles")
+	writeTestArchive(t, dir, ".hidden.pmtiles")
+	writeFile(t, dir, "garbage.pmtiles", bytes.Repeat([]byte{0xff}, 4096))
+	writeFile(t, dir, "notes.txt", []byte("not an archive"))
+
+	rec := get(h, "/tiles/")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %q", rec.Code, rec.Body.String())
+	}
+	for name, want := range map[string]string{"Content-Type": "application/json", "Cache-Control": tileJSONCacheControl} {
+		if got := rec.Header().Get(name); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+	var index struct {
+		Cities []struct {
+			ID      string    `json:"id"`
+			Bounds  []float64 `json:"bounds"`
+			Center  []float64 `json:"center"`
+			MinZoom int       `json:"minzoom"`
+			MaxZoom int       `json:"maxzoom"`
+		} `json:"cities"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &index); err != nil {
+		t.Fatal(err)
+	}
+	if len(index.Cities) != 2 || index.Cities[0].ID != "another-town" || index.Cities[1].ID != testCity {
+		t.Fatalf("cities = %+v, want another-town and %s", index.Cities, testCity)
+	}
+
+	// Each entry agrees with the city's TileJSON.
+	var tj struct {
+		Bounds  []float64 `json:"bounds"`
+		Center  []float64 `json:"center"`
+		MinZoom int       `json:"minzoom"`
+		MaxZoom int       `json:"maxzoom"`
+	}
+	if err := json.Unmarshal(get(h, "/tiles/"+testCity+".json").Body.Bytes(), &tj); err != nil {
+		t.Fatal(err)
+	}
+	c := index.Cities[1]
+	if !slices.Equal(c.Bounds, tj.Bounds) || !slices.Equal(c.Center, tj.Center) || c.MinZoom != tj.MinZoom ||
+		c.MaxZoom != tj.MaxZoom || c.MinZoom != int(testMinZoom) || c.MaxZoom != int(testMaxZoom) {
+		t.Errorf("index entry %+v does not match the TileJSON %+v", c, tj)
+	}
+
+	// A city added or removed while the server runs shows in the next index.
+	if err := os.Remove(filepath.Join(dir, "another-town.pmtiles")); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(get(h, "/tiles/").Body.Bytes(), &index); err != nil {
+		t.Fatal(err)
+	}
+	if len(index.Cities) != 1 || index.Cities[0].ID != testCity {
+		t.Errorf("after removing an archive: cities = %+v", index.Cities)
+	}
+}
+
+func TestIndexEmpty(t *testing.T) {
+	for name, dir := range map[string]string{"empty": t.TempDir(), "missing": filepath.Join(t.TempDir(), "absent")} {
+		h, err := NewHandler(dir, "", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := get(h, "/tiles/")
+		if rec.Code != http.StatusOK || rec.Body.String() != `{"cities":[]}` {
+			t.Errorf("%s directory: status %d, body %q", name, rec.Code, rec.Body.String())
 		}
 	}
 }

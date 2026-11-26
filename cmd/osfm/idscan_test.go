@@ -29,6 +29,7 @@ var osfmProbes = map[string][]idscan.Request{
 	},
 	// No tile archive in the test data directory: the tile handler reads only the tile files, never the database.
 	"GET /tiles/{path...}": {
+		{Path: "/tiles/", Status: http.StatusOK}, // the city index, empty here
 		{Path: "/tiles/testcity.json", Status: http.StatusNotFound},
 		{Path: "/tiles/testcity/12/3370/1665.mvt", Status: http.StatusNotFound},
 		{Path: "/tiles/bad..name/1/1/1.mvt", Status: http.StatusNotFound},
@@ -42,7 +43,7 @@ var osfmProbes = map[string][]idscan.Request{
 	"GET /{path...}": {
 		{Path: "/", Status: http.StatusOK},
 		{Path: "/index.html"},
-		{Path: "/map", Status: http.StatusOK},
+		{Path: "/list", Status: http.StatusOK},
 		{Path: "/some/client/route?next=%2Fme", Status: http.StatusOK},
 		{Path: "/manifest.webmanifest"},
 	},

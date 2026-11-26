@@ -1,0 +1,13 @@
+Map glyphs and sprites, served by the instance itself at /map/ (docs/architecture.md §3.6).
+
+Source: https://github.com/protomaps/basemaps-assets at commit 028c18f713baecad011301ff7a69acc39bcc2ae7, the assets of
+the Protomaps basemap style (@protomaps/basemaps 5.x, sprites v4).
+
+fonts/<font>/0-255.pbf
+  Glyphs of Noto Sans Regular, Medium and Italic, Basic Latin and Latin-1 only. Other characters are drawn by the
+  browser with the system's fonts (MapLibre's local glyph rendering), CJK text included.
+  Licence: SIL Open Font License 1.1, fonts/OFL.txt.
+
+sprites/light.{json,png}, sprites/light@2x.{json,png}
+  The icons of the "light" flavour, derived from tangrams/icons.
+  Licence: MIT, sprites/LICENSE.md.
