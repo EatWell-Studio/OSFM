@@ -14,7 +14,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/EatWell-Studio/OSFM/internal/config"
+	"github.com/EatWell-Studio/OSFM/internal/store"
 	"github.com/EatWell-Studio/OSFM/internal/tiles"
+	"github.com/EatWell-Studio/OSFM/migrations"
 	"github.com/EatWell-Studio/OSFM/web"
 )
 
@@ -39,6 +41,11 @@ func main() {
 		}
 		return be.Next()
 	})
+	// Bound after the hook above, so it runs once the data directory is ready: backs up an existing database that has
+	// migrations to apply, bootstraps (PocketBase's system migrations) and applies the OSFM migrations (G6).
+	migrations.Bind(app)
+	// The data model's invariants (uuid, coordinate rounding, append-only collections) for every record save.
+	store.BindHooks(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Basemap tiles from <data>/tiles; with OSFM_PUBLIC_URL set, the TileJSON gives absolute tile URLs. Not behind
