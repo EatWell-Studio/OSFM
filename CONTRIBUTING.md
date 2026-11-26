@@ -42,7 +42,7 @@ pnpm --dir web install
 bin/gate.sh
 ```
 
-`bin/gate.sh` needs Go (version in `go.mod`), golangci-lint v2, Node.js 22+ and pnpm. It stops at the first failing step and shows its last lines; the full output of every step is in `../osfm-gate-output/`.
+`bin/gate.sh` needs Go (version in `go.mod`), golangci-lint v2, Node.js 22+ and pnpm. It stops at the first failing step and shows its last lines; the full output of every step is in `../osfm-gate-output/<checkout directory name>/`.
 
 ## Branches, commits and pull requests
 
