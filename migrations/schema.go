@@ -10,9 +10,6 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
-// uuidPattern accepts a UUIDv7 in canonical lowercase form, as store.NewUUID produces it.
-const uuidPattern = `^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`
-
 // The helpers below describe the collections declaratively. Each migration builds the wanted state onto the existing
 // collection when there is one (fields are replaced by name, indexes by index name), so running an Up migration again
 // changes nothing.
@@ -61,7 +58,7 @@ func superusersOnly(c *core.Collection) {
 
 // addUUID adds the required uuid field and its unique index.
 func addUUID(c *core.Collection) {
-	c.Fields.Add(&core.TextField{Name: store.FieldUUID, Required: true, Min: 36, Max: 36, Pattern: uuidPattern})
+	c.Fields.Add(&core.TextField{Name: store.FieldUUID, Required: true, Min: 36, Max: 36, Pattern: store.UUIDPattern})
 	c.AddIndex("idx_"+c.Name+"_uuid", true, "`"+store.FieldUUID+"`", "")
 }
 

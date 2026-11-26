@@ -3,7 +3,7 @@
 # The OSFM container image: the osfm binary (PocketBase core, OSFM API and the embedded web app) on distroless static.
 # Build from the repository root:
 #
-#   docker buildx build -f deploy/Dockerfile --platform linux/amd64,linux/arm64 .
+#   docker buildx build -f deploy/Dockerfile --platform linux/amd64,linux/arm64 --build-arg VERSION=v1.2.3 .
 #
 # The web app and the Go binary are built on the build machine's own platform and cross-compiled for the target one
 # (no emulation); only the final stage is per target platform, and it runs nothing.
@@ -34,9 +34,13 @@ COPY . .
 COPY --from=web /src/web/dist/app web/dist/app
 ARG TARGETOS
 ARG TARGETARCH
+# The software version (osfm --version, /.well-known/osfm.json), e.g. the release tag v1.2.3. The build context has no
+# .git, so without it the binary reports "dev".
+ARG VERSION=""
 RUN --mount=type=cache,target=/root/.cache/go-build \
 	CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
-	go build -trimpath -ldflags "-s -w" -o /out/osfm ./cmd/osfm \
+	go build -trimpath -ldflags "-s -w -X github.com/EatWell-Studio/OSFM/internal/version.version=${VERSION}" \
+	-o /out/osfm ./cmd/osfm \
 	&& mkdir /out/data
 
 # ---------------------------------------------------------------------------------------------------------------------
