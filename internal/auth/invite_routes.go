@@ -88,20 +88,33 @@ func bindInviteRoutes(se *core.ServeEvent) {
 	Public(se.Router.POST(InviteCheckPath, handleCheckInvite))
 }
 
+// errEmptyBody is returned by [readJSONLimit] for a request without a body.
+var errEmptyBody = errors.New("auth: empty request body")
+
 // readJSON decodes a small JSON body into v; an empty body leaves v as it is.
 func readJSON(e *core.RequestEvent, v any) error {
-	body, err := io.ReadAll(http.MaxBytesReader(e.Response, e.Request.Body, maxInviteBody))
+	if err := readJSONLimit(e, v, maxInviteBody); err != nil && !errors.Is(err, errEmptyBody) {
+		return err
+	}
+	return nil
+}
+
+// readJSONLimit decodes a JSON body of at most limit bytes into v; an empty body is [errEmptyBody].
+func readJSONLimit(e *core.RequestEvent, v any, limit int64) error {
+	body, err := io.ReadAll(http.MaxBytesReader(e.Response, e.Request.Body, limit))
 	if err != nil {
 		return err
 	}
 	if len(body) == 0 {
-		return nil
+		return errEmptyBody
 	}
 	return json.Unmarshal(body, v)
 }
 
 func handleListInvites(e *core.RequestEvent) error {
-	invites, err := store.Query(e.App, store.Invites).OrderBy("created DESC", "id DESC").All()
+	// Newest first; the uuid (UUIDv7, increasing within a millisecond too) orders invites created in the same
+	// millisecond, which the random record IDs did not.
+	invites, err := store.Query(e.App, store.Invites).OrderBy("created DESC", "uuid DESC").All()
 	if err != nil {
 		return e.InternalServerError("", err)
 	}

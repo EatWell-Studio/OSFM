@@ -80,7 +80,8 @@ describe('session', () => {
       expect(router.state.location.pathname).toBe('/login')
     })
     expect(new URLSearchParams(router.state.location.search).get('next')).toBe('/list?city=x')
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(zhCN.pages.login.title)
+    // The location changes before the sign-in page has rendered.
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(zhCN.pages.login.title)
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
     const init = fetchMock.mock.calls[0]?.[1]
     expect(init?.credentials).toBe('same-origin')
@@ -148,7 +149,7 @@ describe('logout', () => {
       expect(router.state.location.pathname).toBe('/login')
     })
     expect(router.state.location.search).toBe('')
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(zhCN.pages.login.title)
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(zhCN.pages.login.title)
     const call = fetchMock.mock.calls.find(([input]) => input === '/api/osfm/logout')
     expect(call?.[1]?.method).toBe('POST')
     expect(new Headers(call?.[1]?.headers).get('X-OSFM')).toBe('1')

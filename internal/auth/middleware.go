@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -71,13 +72,18 @@ type Options struct {
 	// HostPrefix names the session cookie [HostCookieName] instead of [CookieName]. Set it when the instance is served
 	// over HTTPS at a public host name (config.Config.PublicHTTPS).
 	HostPrefix bool
+	// MasterKey returns the instance master key (config.Keys.Master): TOTP secrets are stored encrypted with it, and
+	// the pending registrations and sign-in tickets are sealed with it. It is called when needed, not by Bind, so it
+	// may return a key that is only loaded when the app bootstraps. Without it the password and TOTP routes answer
+	// 500.
+	MasterKey func() []byte
 }
 
 // Bind installs the session layer on app:
 //
 //   - the middlewares (session cookie, default deny, CSRF header) and the routes GET [MePath] and POST [LogoutPath],
 //     when serving;
-//   - the invite routes ([bindInviteRoutes]);
+//   - the invite routes ([bindInviteRoutes]) and the password and TOTP routes ([bindPasswordTOTPRoutes]);
 //   - a hook that deletes a member's sessions and revokes their open invites as soon as they leave, are removed or
 //     are soft-deleted;
 //   - a daily job that deletes expired sessions.
@@ -87,6 +93,9 @@ func Bind(app core.App, opts Options) {
 		name = HostCookieName
 	}
 	app.Store().Set(cookieNameKey, name)
+	if opts.MasterKey != nil {
+		app.Store().Set(masterKeyStoreKey, opts.MasterKey)
+	}
 
 	app.OnRecordUpdate(store.Members).BindFunc(func(e *core.RecordEvent) error {
 		if err := e.Next(); err != nil {
@@ -123,6 +132,9 @@ func Bind(app core.App, opts Options) {
 		se.Router.GET(MePath, handleMe)
 		se.Router.POST(LogoutPath, handleLogout)
 		bindInviteRoutes(se)
+		bindPasswordTOTPRoutes(se)
+		// The first sign-in attempt with an unknown login name would otherwise also pay for the dummy hash.
+		go func() { _ = verifyDummy(context.Background(), "") }()
 		return se.Next()
 	})
 }
