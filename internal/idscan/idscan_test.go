@@ -42,6 +42,8 @@ func TestFind(t *testing.T) {
 		{"token in a cookie", http.Header{"Set-Cookie": {"osfm_session=" + jwt + "; HttpOnly"}}, nil, true},
 		{"token in the body", nil, []byte(`{"token":"` + jwt + `"}`), true},
 		{"gzip", http.Header{"Content-Encoding": {"gzip"}}, gz.Bytes(), true},
+		{"base64url value", nil, []byte(`{"user":{"id":"` + base64.RawURLEncoding.EncodeToString([]byte("x"+id)) + `"}}`), true},
+		{"base64 value", nil, []byte(`{"key":"` + base64.StdEncoding.EncodeToString([]byte("\xff\xfe"+id+"!")) + `"}`), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := idscan.Find(tc.header, tc.body, []string{id})

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -71,6 +72,11 @@ type Options struct {
 	// HostPrefix names the session cookie [HostCookieName] instead of [CookieName]. Set it when the instance is served
 	// over HTTPS at a public host name (config.Config.PublicHTTPS).
 	HostPrefix bool
+
+	// PasskeyRPID is the WebAuthn relying party ID and PasskeyOrigins the origins passkey ceremonies are accepted
+	// from (config.Config.PasskeyRP). When PasskeyRPID is empty, "localhost" with http://localhost:8090 is used.
+	PasskeyRPID    string
+	PasskeyOrigins []string
 }
 
 // Bind installs the session layer on app:
@@ -78,6 +84,7 @@ type Options struct {
 //   - the middlewares (session cookie, default deny, CSRF header) and the routes GET [MePath] and POST [LogoutPath],
 //     when serving;
 //   - the invite routes ([bindInviteRoutes]);
+//   - the passkey registration and sign-in routes ([bindPasskeyRoutes]) for the relying party in opts;
 //   - a hook that deletes a member's sessions and revokes their open invites as soon as they leave, are removed or
 //     are soft-deleted;
 //   - a daily job that deletes expired sessions.
@@ -87,6 +94,20 @@ func Bind(app core.App, opts Options) {
 		name = HostCookieName
 	}
 	app.Store().Set(cookieNameKey, name)
+
+	rpID, origins := opts.PasskeyRPID, opts.PasskeyOrigins
+	if rpID == "" {
+		rpID, origins = "localhost", []string{"http://localhost:8090"}
+	}
+	p, err := newPasskeys(rpID, origins)
+	if err != nil {
+		panic(fmt.Sprintf("auth: passkey setup: %v", err)) // only if the system's random source fails
+	}
+	app.Store().Set(passkeysKey, p)
+	if p.err != nil {
+		app.Logger().Warn("passkeys are not available: the relying party configuration is not valid",
+			"rp_id", rpID, "error", p.err)
+	}
 
 	app.OnRecordUpdate(store.Members).BindFunc(func(e *core.RecordEvent) error {
 		if err := e.Next(); err != nil {
@@ -123,6 +144,7 @@ func Bind(app core.App, opts Options) {
 		se.Router.GET(MePath, handleMe)
 		se.Router.POST(LogoutPath, handleLogout)
 		bindInviteRoutes(se)
+		bindPasskeyRoutes(se)
 		return se.Next()
 	})
 }

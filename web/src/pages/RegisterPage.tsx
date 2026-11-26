@@ -1,10 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router'
 import { PageHeading } from '@/components/PageHeading'
 import { Button } from '@/components/ui/button'
 import { checkInvite, inviteCodeFromHash, isWellFormedInviteCode } from '@/invites/invites'
+import { PasskeyRegistration } from '@/register/PasskeyRegistration'
+import { sessionQueryKey } from '@/session/session'
 
 // The code from the invite link is kept for this tab only, so that reloading the page still finds it after the
 // fragment has been removed from the address bar.
@@ -26,15 +29,28 @@ function storeCode(code: string) {
   }
 }
 
+function forgetCode() {
+  try {
+    sessionStorage.removeItem(storageKey)
+  } catch {
+    // Nothing stored then.
+  }
+}
+
+/** The ways to set up two-step verification at registration (D3). */
+type Method = 'passkey'
+
 /**
  * Registration with an invite (D1). Reads the code from the invite link's fragment (/register#invite=…), removes it
- * from the address bar and asks the server whether it can be used. The registration forms themselves (passkey, or
- * password and TOTP) come with T009 and T010; the server checks the invite again when the member is created.
+ * from the address bar and asks the server whether it can be used, then offers the ways to register: the forms are
+ * components of their own (register/), and the server checks the invite again when the member is created.
  */
 export function RegisterPage() {
   const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [method, setMethod] = useState<Method | null>(null)
   const [code] = useState(() => {
     const fromLink = inviteCodeFromHash(location.hash)
     if (fromLink !== null) {
@@ -69,11 +85,33 @@ export function RegisterPage() {
         {t('pages.register.invalidInvite')}
       </p>
     )
+  } else if (check.data === true && method === 'passkey') {
+    content = (
+      <PasskeyRegistration
+        code={code}
+        onDone={() => {
+          forgetCode()
+          void queryClient.invalidateQueries({ queryKey: sessionQueryKey })
+          void navigate('/', { replace: true })
+        }}
+      />
+    )
   } else if (check.data === true) {
     content = (
       <>
         <p role="status">{t('pages.register.validInvite')}</p>
-        <p className="text-muted-foreground">{t('pages.register.formsPending')}</p>
+        <p>{t('pages.register.chooseMethod')}</p>
+        <Button
+          size="lg"
+          className="self-start"
+          onClick={() => {
+            setMethod('passkey')
+          }}
+        >
+          <KeyRound aria-hidden="true" />
+          {t('pages.register.methodPasskey')}
+        </Button>
+        <p className="text-sm text-muted-foreground">{t('pages.register.methodPasskeyHint')}</p>
       </>
     )
   } else if (check.isError) {

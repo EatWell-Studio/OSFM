@@ -183,6 +183,17 @@ func Find(header http.Header, body []byte, ids []string) []string {
 				}
 			}
 		}
+		// Binary values in JSON (WebAuthn options carry the user handle and credential IDs, the sealed ceremony state)
+		// are base64url or base64: an ID encoded in one would not show as such.
+		for i, token := range base64Pattern.FindAll(data, -1) {
+			trimmed := strings.TrimRight(string(token), "=")
+			for _, enc := range []*base64.Encoding{base64.RawURLEncoding, base64.RawStdEncoding} {
+				if decoded, err := enc.DecodeString(trimmed); err == nil {
+					texts[fmt.Sprintf(" (base64 value %d)", i+1)] = decoded
+					break
+				}
+			}
+		}
 		for _, id := range ids {
 			for label, text := range texts {
 				if id != "" && bytes.Contains(text, []byte(id)) {
@@ -208,6 +219,10 @@ func Find(header http.Header, body []byte, ids []string) []string {
 	}
 	return found
 }
+
+// base64Pattern matches a run of base64 or base64url characters long enough to hold an encoded ID (15 characters
+// encode to 20).
+var base64Pattern = regexp.MustCompile(`[A-Za-z0-9_+/-]{20,}={0,2}`)
 
 // jwtPattern matches a JSON Web Token in compact form: base64url header (always starting with "eyJ", that is `{"`),
 // payload and signature, separated by dots. PocketBase's auth tokens are such tokens and carry the record ID.

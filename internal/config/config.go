@@ -139,6 +139,57 @@ func (c *Config) PublicHTTPS() bool {
 	return err == nil && u.Scheme == "https" && !isLoopbackHost(u.Hostname())
 }
 
+// DevServerOrigin is the origin of the web app's development server (Vite, web/vite.config.ts), which proxies the
+// API to an instance running on the same machine.
+const DevServerOrigin = "http://localhost:5173"
+
+// PasskeyRP returns the WebAuthn relying party ID and the origins passkey ceremonies are accepted from (D3, D4). A
+// passkey is bound to its relying party ID, a host name, and the browser reports the origin of the page that ran the
+// ceremony, which the server checks against the list.
+//
+//   - An instance at a public host name (PublicHTTPS): the ID is that host name and the only origin is PublicURL's,
+//     without a default port. Nothing else is accepted.
+//   - Local development (PublicURL on localhost, a name under .localhost or a loopback address, or unset): browsers do
+//     not accept an IP address as relying party ID, so a loopback address is replaced with localhost, and passkeys
+//     work at http://localhost:<port> but not at http://127.0.0.1:<port>. With PublicURL unset the port is the one of
+//     Listen. The development server's origin, [DevServerOrigin], is accepted besides, when the ID is localhost.
+func (c *Config) PasskeyRP() (rpID string, origins []string) {
+	u, err := url.Parse(c.PublicURL)
+	if c.PublicURL == "" || err != nil {
+		origin := "http://localhost"
+		if _, port, err := net.SplitHostPort(c.Listen); err == nil {
+			origin += ":" + port
+		}
+		return "localhost", withDevServer(origin)
+	}
+	scheme, host, port := strings.ToLower(u.Scheme), strings.ToLower(u.Hostname()), u.Port()
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	local := isLoopbackHost(host)
+	if local && net.ParseIP(host) != nil {
+		host = "localhost"
+	}
+	origin := scheme + "://" + host
+	if strings.Contains(host, ":") { // an IPv6 address, which only a public URL keeps
+		origin = scheme + "://[" + host + "]"
+	}
+	if port != "" {
+		origin += ":" + port
+	}
+	if local && host == "localhost" {
+		return host, withDevServer(origin)
+	}
+	return host, []string{origin}
+}
+
+func withDevServer(origin string) []string {
+	if origin == DevServerOrigin {
+		return []string{origin}
+	}
+	return []string{origin, DevServerOrigin}
+}
+
 // PBDataDir returns the PocketBase data directory, <data>/pb_data.
 func (c *Config) PBDataDir() string { return filepath.Join(c.DataDir, PBDataDirName) }
 

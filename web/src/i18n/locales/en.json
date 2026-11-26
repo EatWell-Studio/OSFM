@@ -64,9 +64,11 @@
       "checking": "Checking the invite…",
       "invalidInvite": "This invite link is invalid or has expired. Ask the person who invited you for a new one.",
       "validInvite": "The invite is valid.",
-      "formsPending": "Registration will open here soon.",
       "checkError": "Could not check the invite. Check your connection and try again.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "chooseMethod": "Choose how you will sign in. Either way, signing in always takes two steps.",
+      "methodPasskey": "Register with a passkey",
+      "methodPasskeyHint": "A passkey is kept on your phone or computer and unlocked with your fingerprint, face or screen lock. No password to remember."
     },
     "notFound": {
       "title": "Page not found"
@@ -97,5 +99,43 @@
       "zoomOut": "Zoom out",
       "toggleAttribution": "Show or hide attribution"
     }
+  },
+  "passkey": {
+    "errors": {
+      "cancelled": "The passkey prompt was cancelled or timed out. Try again.",
+      "address": "Passkeys do not work at this address. Open the app at the address the invite link uses (for local testing: localhost, not 127.0.0.1).",
+      "unsupported": "This browser or device cannot use passkeys. Use a password and an authenticator app instead.",
+      "unavailable": "Passkeys are not available on this instance. Use a password and an authenticator app instead.",
+      "failed": "Something went wrong. Check your connection and try again."
+    },
+    "register": {
+      "loginName": "Login name",
+      "loginNameHint": "3 to 32 characters: letters a–z, digits, _ and -. You cannot change it later.",
+      "displayName": "Display name",
+      "displayNameHint": "What other members see. You can leave it empty to use your login name.",
+      "submit": "Create passkey",
+      "busy": "Creating passkey…",
+      "errors": {
+        "invalidLoginName": "The login name must have 3 to 32 characters: letters a–z, digits, _ and -.",
+        "invalidDisplayName": "The display name can have at most 64 characters and no special control characters.",
+        "loginNameTaken": "This login name is taken. Choose another one.",
+        "invalidInvite": "This invite link is invalid or has expired. Ask the person who invited you for a new one.",
+        "verifyFailed": "The passkey could not be verified. Try again.",
+        "exists": "This device already has a passkey for this account."
+      }
+    },
+    "signIn": {
+      "button": "Sign in with a passkey",
+      "busy": "Signing in…",
+      "errors": {
+        "failed": "Sign-in failed. The passkey may not belong to this instance, or the account is no longer active."
+      }
+    }
+  },
+  "recoveryCodes": {
+    "title": "Your recovery codes",
+    "explain": "If you lose your passkey or authenticator app, each of these codes lets you sign in once. They are shown only now: write them down or save them somewhere safe, away from this device.",
+    "confirm": "I have saved my recovery codes",
+    "continue": "Continue to the map"
   }
 }

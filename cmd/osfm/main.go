@@ -68,8 +68,10 @@ func bind(app core.App, cfg *config.Config) {
 	// Only /api/osfm/*, /api/health and the web app on the main listener; the admin UI on its own listener (AD2).
 	boundary.Bind(app, boundary.Options{AdminUI: cfg.AdminUI, AdminListen: cfg.AdminListen})
 	// Member sessions: /api/osfm/* (except the routes marked public) and /tiles/* need one; GET /api/osfm/me and
-	// POST /api/osfm/logout (AD6, E1); the invite routes under /api/osfm/invites (D1, D2).
-	auth.Bind(app, auth.Options{HostPrefix: cfg.PublicHTTPS()})
+	// POST /api/osfm/logout (AD6, E1); the invite routes under /api/osfm/invites (D1, D2); passkey registration and
+	// sign-in under /api/osfm/passkey (D3, D4), for the relying party OSFM_PUBLIC_URL names.
+	rpID, rpOrigins := cfg.PasskeyRP()
+	auth.Bind(app, auth.Options{HostPrefix: cfg.PublicHTTPS(), PasskeyRPID: rpID, PasskeyOrigins: rpOrigins})
 	// The web app on every path the API does not answer (client-side routes fall back to index.html, missing files get
 	// 404), and the security headers of the main listener (§4.7).
 	webapp.Bind(app, webapp.Options{FS: web.FS(), HSTS: cfg.PublicHTTPS()})

@@ -9,4 +9,9 @@
 // Invites (D1, D2): maintainers create, list and revoke invites under /api/osfm/invites ([RequireMaintainer] guards
 // maintainer routes); POST /api/osfm/invites/check is public and only says whether a code can be used. Registration
 // creates a member only through [RegisterWithInvite], which consumes the invite in the same transaction.
+//
+// Passkeys (D3, D4): the public routes under /api/osfm/passkey/ register a member with an invite and a passkey
+// ([BeginPasskeyRegistration], [FinishPasskeyRegistration]) and sign a member in with a discoverable passkey, without a
+// login name ([BeginPasskeySignIn], [VerifyPasskeySignIn]). Registration hands out the recovery codes
+// ([NewRecoveryCodes]).
 package auth
