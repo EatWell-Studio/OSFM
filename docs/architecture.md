@@ -177,14 +177,53 @@ flowchart LR
 
 ### 3.5 数据模型落地
 
-实体与字段以产品需求文档的数据模型为准，落地方式：
+实体与字段以产品需求文档的数据模型为准。集合由 `migrations/` 中的 Go 迁移创建，集合名与共用字段名定义在 `internal/store/names.go`：
 
-- 每个实体一个 PocketBase 集合；对外引用用 `uuid` 字段（UUIDv7，服务器生成）。
-- **软删除**：`deleted_at` 字段，所有读取默认过滤；导出与联邦预留中删除以墓碑形式出现。
-- **两层分表**：`places` 不含任何成员字段；谁创建了地点、谁确认了营业状态记在 `audit_log`（`F1`）。
-- **修改记录**：`recommendation_revisions` 保存修改前的快照、修改人角色与修改人，只能追加，不提供修改和删除。
-- **地理查询**：`places` 上建 `(lat, lon)` 组合索引，按城市范围和视野框查询；数据量过万后再评估 SQLite R*Tree。
-- **坐标**：只存 WGS-84、5 位小数（`B12` `H3`）；原始输入坐标与坐标系另存于 `source_coord`。
+| 集合 | 内容 | 里程碑 |
+| --- | --- | --- |
+| `members` | 成员（PocketBase 认证集合）：登录名、主名、化名、角色、邀请权与冷静期、邀请人、加入与离开时间 | M1 |
+| `credentials` | passkey，或密码哈希 + 加密的 TOTP 密钥（`D3`） | M1 |
+| `recovery_codes`、`invites`、`reset_links` | 恢复码、邀请码、重置链接，都只存哈希（`N5`） | M1 |
+| `audit_log` | 维护者操作、地点的创建与营业状态确认（只追加） | M1 |
+| `instance_settings` | 实例设置，只有一行 | M1 |
+| `places`、`recommendations` | 地点层与推荐层（`F1`） | M2，字段现在就建好 |
+| `recommendation_revisions`、`reports`、`notices` | 修改记录（只追加）、举报、给成员的通知 | M2，字段现在就建好 |
+
+```mermaid
+erDiagram
+    members ||--o{ credentials : "member"
+    members ||--o{ recovery_codes : "member"
+    members ||--o{ invites : "created_by, used_by"
+    members ||--o{ reset_links : "member, created_by"
+    members |o--o{ members : "invited_by"
+    members |o--o{ audit_log : "actor"
+    members ||--o{ recommendations : "author"
+    places ||--o{ recommendations : "place"
+    recommendations ||--o{ recommendation_revisions : "recommendation"
+    members ||--o{ recommendation_revisions : "editor"
+    recommendations ||--o{ reports : "recommendation"
+    members ||--o{ reports : "reporter"
+    members ||--o{ notices : "member"
+    instance_settings {
+        text id "固定为 instancesetting"
+    }
+```
+
+- **全部集合的访问规则都是 `nil`**（仅超级用户），客户端不能通过 `/api/collections/*` 读写任何集合（AD2）；测试以成员令牌和匿名身份逐一验证列表、查看、新建、修改、删除都被拒绝。
+- **`members` 由 PocketBase 默认的 `users` 集合改名而来**，而不是另建一个认证集合：只保留一个认证集合，沿用 PocketBase 为它生成的令牌配置，已有记录（如果有人在管理后台建过）也随之保留，迁移为它们补上 `uuid`、登录名和主名。`users` 自带的 `name`、`avatar` 字段删除。内置登录方式在这里不动，由认证任务统一关闭（§3.3）。
+- **不收集电子邮箱**：PocketBase 要求认证集合保留系统字段 `email`，但允许它不必填；它的唯一索引只覆盖非空值，所以全部留空没有问题。`password` 字段同样是系统字段，填随机值（§3.3）。
+- **对外 ID**：可被外部引用的实体（`members`、`invites`、`places`、`recommendations`）有 `uuid` 字段：UUIDv7，唯一索引，字段格式只接受小写的 v7。新建记录时若为空，由 `internal/store` 的记录钩子生成；已有记录的 `uuid` 不能修改（AD4）。
+- **软删除**：`members`、`places`、`recommendations` 有 `deleted_at` 字段，为空表示有效；所有读取默认过滤；导出与联邦预留中删除以墓碑形式出现。
+- **两层分表**：`places` 不含任何成员字段（也没有任何指向 `members` 的关联）；谁创建了地点、谁确认了营业状态记在 `audit_log`（`F1`）。
+- **只追加**：`audit_log` 与 `recommendation_revisions` 只有 `created` 时间，`internal/store` 的钩子拒绝修改它们的记录。修改记录保存修改前的快照、修改人角色与修改人。
+- **单行设置**：`instance_settings` 的主键字段只接受固定值 `instancesetting`，因此第二行无论用什么 ID 都写不进去；这一行由迁移创建，带默认值（举报阈值 3、邀请冷静期 30 天）。
+- **坐标**：只存 WGS-84，`internal/store` 的钩子在每次新建和修改时把 `lat`、`lon` 四舍五入到 5 位小数（`B12` `H3`）；原始输入坐标与坐标系另存于 `source_coord`。
+- **地点类别**：`category` 的取值是 OpenStreetMap 的标签值（`amenity=restaurant`、`fast_food`、`cafe`、`food_court`、`ice_cream`、`bar`、`pub`、`biergarten`，`shop=bakery`、`pastry`，以及对应 `street_vendor=yes` 的 `street_vendor`），与 `osm_ref` 关联的地点不需要对照表。
+- **索引**：每个 `uuid` 唯一；`places` 上建 `(lat, lon)` 组合索引，按城市范围和视野框查询，数据量过万后再评估 SQLite R*Tree；另有登录名、各类哈希、passkey 凭据 ID 的唯一索引，举报的 `(recommendation, reporter)` 唯一索引（每人每条一次），以及按成员、邀请人、地点、作者、推荐、`osm_ref`、审计对象和时间查找的普通索引。
+
+**迁移与升级前备份**（`G6`）：迁移随程序注册，每次启动（`--help`、`--version` 除外）自动执行。PocketBase 在启动时打开数据库后立即执行它自己的系统迁移，中间没有可挂接的时机，所以备份在这之前进行：若 `pb_data/data.db` 已存在且有尚未执行的迁移（PocketBase 的或 OSFM 的），先用独立连接以 `VACUUM INTO` 复制数据库，与 `pb_data` 的其余文件一起打包为 `pb_data/backups/premigrate_<UTC 时间>.zip`。格式与 PocketBase 自己的备份相同，出现在它的备份列表中，可以照常恢复。随后 PocketBase 完成启动与系统迁移，紧接着执行 OSFM 的迁移；`serve` 开始监听前已没有待执行的迁移。新建的数据库不备份；如果数据库与最近一次迁移前备份完全相同（例如迁移失败后容器反复重启），不再重复备份。备份失败时程序不启动。
+
+迁移可以重复执行：每个迁移把期望的状态应用到已有集合上（字段按名称、索引按名称替换），再执行一次不改变任何东西；每个迁移都有回退（down）。
 
 ### 3.6 地图瓦片
 
