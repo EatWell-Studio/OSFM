@@ -11,6 +11,10 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
+// PlaceUUID is the uuid of the seeded live place with the member's pseudonym recommendation, which the seeded member
+// and maintainer may see (the place card's probes).
+const PlaceUUID = "0190a1b2-0000-7000-8000-00000000e101"
+
 // Seeded is the made-up data [Seed] writes.
 type Seeded struct {
 	// IDs holds the internal identifiers no response may contain: the PocketBase record ID of every seeded record
@@ -51,8 +55,6 @@ const (
 	// MaintainerUUID is the uuid of the seeded maintainer, LeftMemberUUID of a seeded member who left the circle.
 	MaintainerUUID = "0190a1b2-0000-7000-8000-00000000d002"
 	LeftMemberUUID = "0190a1b2-0000-7000-8000-00000000d003"
-	// PlaceUUID is the uuid of the seeded live place, which the seeded member and maintainer may see.
-	PlaceUUID = "0190a1b2-0000-7000-8000-00000000e001"
 )
 
 // Seed writes made-up records into every OSFM collection of app, a bootstrapped app with the OSFM migrations
