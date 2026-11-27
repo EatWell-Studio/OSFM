@@ -146,6 +146,13 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 
 **实例设置**（`internal/api/settings.go`）：`GET /api/osfm/instance` 对成员返回 `name`、`cities`、`geocoderEnabled`（前端据此隐藏搜索框），对维护者另返回 `reportThreshold`、`inviteCooldownDays`、`geocoderContact`；`POST`（只限维护者、写额度）只修改请求里带的字段，没带的（或为 `null` 的）保留已存的值——管理页的"名称与城市"表单与"举报、邀请与地名搜索"表单各自只发自己的字段。校验：名称与城市同向导（`instance_name_invalid`、`cities_invalid`），举报阈值 1–100（`report_threshold_invalid`），冷静期 0–3650 天（`invite_cooldown_invalid`），联系方式去首尾空白后 ≤ 200 字符且无控制字符（`geocoder_contact_invalid`）；保存与审计 `settings.update` 在同一事务，审计记录名称、城市标识与各项数值，联系方式只记是否设置。各功能用 `settings.LoadCircle` 读取当前值（改设置立即生效）。
 
+**成员资料与化名**（`internal/api/profile.go`，T033）：`GET /api/osfm/me/profile` 返回请求者自己的 `displayName`（主名）、`pseudonym`（没有时为空字符串，前端据此决定能否选择化名署名）、`externalLinks`（`[{url, label?}]`）、`pseudonymInUse`（有未删除的化名推荐，包括私密与被隐藏的）与 `displayNameIsLoginName`（主名等于登录名，多见于 T033 之前留空注册的成员，页面提示修改）；`POST`（写额度）只修改请求里带的字段，`pseudonym` 为空字符串表示清空。没有查看别人资料的接口。规则：
+
+- **名称**：主名与化名去掉首尾空白后 1–64 个字符，不能有控制字符与格式字符，也不能只由 `store.NameKey` 会去掉的字符组成（`store.NormalizeName`，注册时同样适用）；400 `name_invalid`。不能等于自己的登录名（按名称键比较），400 `name_is_login_name`。
+- **唯一性**（M2-Q6）：主名与化名在全体成员（包括已退出与已删除的成员：化名推荐在作者退出后仍显示化名）的主名和化名之间唯一，按名称键比较，所以大小写、全半角、多余空白不同也算同一个名字；自己的化名也不能等于自己的主名。冲突是 409 `name_taken`，`data.field` 只说明是请求里的哪个字段（`displayName` 或 `pseudonym`），不说明撞的是谁、是主名还是化名，撞主名与撞化名的响应逐字节相同。检查在保存名称的同一事务里进行（SQLite 只有一个写连接，两个成员同时要同一个名字时只有一个成功），且只检查有变化的名称：M1 时期已经重名的成员仍能修改资料的其他部分。注册（含首次启动向导的第一个维护者）在开始一步检查一次以便早告诉成员，在创建成员的事务里再检查一次。
+- **化名**：有未删除的化名推荐时不能清空（409 `pseudonym_in_use`），可以修改；署名在读取时由 `domain.ResolveSignature` 解析，所以改名后全部化名推荐立即显示新化名。设置、修改与清空化名写审计 `members.pseudonym_change`（`details` 为修改前后的化名；只有维护者能查审计记录，`E2` 允许维护者知道对应关系）。旧化名改掉之后可以被别人使用。
+- **外部链接**（`D8`）：最多 5 条，每条是带主机名的绝对 `https` 地址（≤ 2000 个字符，不能有空白、用户名或密码），标签可选（≤ 64 个字符，无控制字符）；保存规范化后的地址，不验证内容；400 `external_links_invalid`。只在主名推荐的署名上出现（投影见上），前端的 `web/src/components/SignatureLinks.tsx` 在署名旁边折叠显示，链接在新标签页打开、不带 `Referer`，点击之前不发出任何请求；化名推荐的响应里没有链接，也就没有这个入口（`E3`）。
+
 ### 3.3 认证与会话
 
 使用的库：WebAuthn 用 `github.com/go-webauthn/webauthn`；TOTP 用 `github.com/pquerna/otp`（RFC 6238，30 秒、6 位）；密码哈希用 argon2id（`golang.org/x/crypto/argon2`）。
@@ -264,7 +271,7 @@ flowchart LR
 - **TOTP**（`github.com/pquerna/otp`，RFC 6238）：HMAC-SHA1、30 秒、6 位、160 位密钥（服务器用 `crypto/rand` 生成）。接受当前时间步与前后各一步（±30 秒，手机时钟偏差和输入时间）；每次接受的时间步用条件更新写进 `credentials.totp_last_step`（只在新时间步大于已记录的时才写入），所以同一个验证码不能用两次，两个同时到达的请求也只有一个成功，用过较新的验证码之后较旧的也失效。注册时确认用的那个验证码的时间步同样记为已用。
 - **主密钥派生与加密格式**：主密钥不直接使用，按用途用 HKDF-SHA256 派生三把子密钥（TOTP 密钥存储、待完成的注册、登录票据），一种用途的密文不能冒充另一种。每个密文用 AES-256-GCM、各自随机的 96 位 nonce（`cipher.NewGCMWithRandomNonce`），编码为 base64url（nonce ‖ 密文 ‖ 标签）。`totp_secret_enc` 为 `v1.` 前缀加上述编码（前缀留给以后换格式或换密钥），附加数据是成员的 `uuid`：密文只能为这个成员解开，不能被挪到别人的凭据上。主密钥丢失则所有 TOTP 密钥失效，只能重置（`D5`）；备份要同时包含 `secrets/`（§3.8）。
 - **注册**：
-  1. `POST /api/osfm/register/password/start`，正文 `{"invite", "loginName", "displayName", "password"}`：先检查邀请（任何无效邀请都是同一个 403 `invite_invalid`），再检查登录名（去掉首尾空白并转小写后须为 3–32 个小写字母、数字、`_`、`-`；400 `login_name_invalid`；已被占用——包括已删除成员的登录名，登录名不复用——是 409 `login_name_taken`）、显示名（可空，空时用登录名；最多 64 个字符，不能有控制字符）和密码规则。登录名是否被占用只告诉持有有效邀请的人，所以这不是登录接口那种"登录名是否存在"的探测口。然后计算密码哈希、生成 TOTP 密钥，返回 `{"secret", "otpauthUri", "enrolment", "expiresAt"}`：密钥（base32，手动输入用）、`otpauth://` 地址（二维码与"在本设备的验证器中添加"链接用；发行方是实例名称，没有名称时为 `OSFM`，账户是登录名），以及**待完成的注册**：登录名、显示名、密码哈希、TOTP 密钥、邀请码的哈希和 15 分钟的过期时间，用主密钥封装。这一步什么都不写入数据库，邀请也不消耗。
+  1. `POST /api/osfm/register/password/start`，正文 `{"invite", "loginName", "displayName", "password"}`：先检查邀请（任何无效邀请都是同一个 403 `invite_invalid`），再检查登录名（去掉首尾空白并转小写后须为 3–32 个小写字母、数字、`_`、`-`；400 `login_name_invalid`；已被占用——包括已删除成员的登录名，登录名不复用——是 409 `login_name_taken`）、显示名（即主名，必填：去掉首尾空白后 1–64 个字符，不能有控制字符与格式字符，400 `display_name_invalid`；不能等于自己的登录名，不论大小写与全半角，400 `display_name_is_login_name`；不能与任何成员的主名或化名相同，409 `name_taken`，见"成员资料与化名"；T033 之前留空时用登录名）和密码规则。登录名与显示名是否被占用只告诉持有有效邀请的人，所以这不是登录接口那种"登录名是否存在"的探测口。然后计算密码哈希、生成 TOTP 密钥，返回 `{"secret", "otpauthUri", "enrolment", "expiresAt"}`：密钥（base32，手动输入用）、`otpauth://` 地址（二维码与"在本设备的验证器中添加"链接用；发行方是实例名称，没有名称时为 `OSFM`，账户是登录名），以及**待完成的注册**：登录名、显示名、密码哈希、TOTP 密钥、邀请码的哈希和 15 分钟的过期时间，用主密钥封装。这一步什么都不写入数据库，邀请也不消耗。
   2. `POST /api/osfm/register/password/confirm`，正文 `{"invite", "enrolment", "code"}`：解开待完成的注册（被改动、过期或用别的邀请码开始的都是 400 `enrolment_expired`，前端回到第一步），核对验证码（400 `code_invalid`），然后经 `auth.RegisterWithInvite` 在一个事务里创建成员（`uuid` 事先生成，作为 TOTP 密文的附加数据）、`password_totp` 凭据和 10 个恢复码，并消耗邀请；最后 `auth.SignIn` 建会话，返回 201 `{"me", "recoveryCodes"}`。事务里再查一次登录名（期间被占用则 409，邀请不消耗）。同一份待完成的注册第二次确认时邀请已用，得到 403。
   - **为什么把中间状态交给客户端保管，而不是建一条"待定"记录**：不提前创建成员，也不需要新集合、迁移和清理任务；放弃的注册不留下任何东西；客户端看不到、改不了里面的内容（认证加密），跳过 TOTP 确认就拿不到成员；里面的密码哈希与 TOTP 密钥没有主密钥解不开。代价是 15 分钟内同一份数据可以重复提交确认，但邀请只能消耗一次。
   - **会话在恢复码确认之前签发**：确认验证码的请求创建成员时，两个因素都已绑定，两步验证已经完成（`D3`），所以同一个请求就签发会话；前端随即显示恢复码，勾选"已保存"之后才进入地图。若等"已保存"再签发，需要一个已有成员却没有会话的中间状态，而成员此时已经能用密码 + TOTP 登录，延后签发挡不住什么；恢复码是否保存只有成员自己知道，确认只能是界面上的。
@@ -394,6 +401,7 @@ flowchart LR
 | 凭据：成员只能管理自己的凭据；不能删掉最后一种登录方式；敏感修改要求 10 分钟内再次验证过（`auth.RequireFresh`） | `internal/auth`（§3.3） |
 | 重置链接：只有维护者能生成、查看、撤销；按成员的 `uuid` 生成，要求再次验证；不能为自己、不能为已离开的成员生成；可以为其他维护者生成 | `internal/auth`（§3.3） |
 | 成员列表：只有维护者能查看（`GET /api/osfm/members`）；只含 `uuid`、主名、角色、加入时间、邀请人、邀请权、离开时间、登录方式的个数与待使用的重置链接，不含登录名与化名 | `internal/auth`（§3.3） |
+| 资料：成员只能读取和修改自己的主名、化名与外部链接；主名与化名在全体成员中唯一、不等于自己的登录名，冲突时不透露是谁的名字、是哪一种；化名的修改写审计（M2-Q6，§3.2"成员资料与化名"） | `internal/api` |
 | 维护者操作写审计记录 | `store.WriteAudit`，与操作在同一事务（`auth` 与 `api` 共用） |
 
 ### 3.5 数据模型落地

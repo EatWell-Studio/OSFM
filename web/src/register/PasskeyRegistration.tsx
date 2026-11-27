@@ -18,6 +18,8 @@ import { RecoveryCodes } from './RecoveryCodes'
 const messageKeys = {
   login_name_invalid: 'passkey.register.errors.invalidLoginName',
   display_name_invalid: 'passkey.register.errors.invalidDisplayName',
+  display_name_is_login_name: 'passkey.register.errors.displayNameIsLoginName',
+  name_taken: 'passkey.register.errors.nameTaken',
   login_name_taken: 'passkey.register.errors.loginNameTaken',
   invite_invalid: 'passkey.register.errors.invalidInvite',
   setup_code_invalid: 'setup:errors.codeInvalid',
@@ -103,7 +105,9 @@ export function PasskeyRegistration({
   const fieldError =
     error?.code === 'login_name_invalid' || error?.code === 'login_name_taken'
       ? 'login'
-      : error?.code === 'display_name_invalid'
+      : error?.code === 'display_name_invalid' ||
+          error?.code === 'display_name_is_login_name' ||
+          error?.code === 'name_taken'
         ? 'display'
         : null
 
@@ -157,6 +161,7 @@ export function PasskeyRegistration({
         <input
           id={`${id}-display`}
           name="nickname"
+          required
           maxLength={64}
           autoComplete="nickname"
           value={displayName}

@@ -43,6 +43,101 @@ export const CodeForbidden = "forbidden"; // 403: the caller may not do this
 export const CodeRateLimited = "rate_limited"; // 429: over the budget; Retry-After says when to try again (as auth's)
 
 //////////
+// source: profile.go
+
+/**
+ * ProfilePath is GET ([Profile]) and POST ([ProfileUpdate], answered with the saved [Profile]) of the caller's own
+ * profile.
+ */
+export const ProfilePath = "/api/osfm/me/profile";
+/**
+ * Error codes of the profile. The name errors carry data.field: "displayName" or "pseudonym".
+ */
+export const CodeNameInvalid = "name_invalid"; // 400: empty, too long, or with control or format characters
+/**
+ * Error codes of the profile. The name errors carry data.field: "displayName" or "pseudonym".
+ */
+export const CodeNameIsLoginName = "name_is_login_name"; // 400: the member's own login name
+/**
+ * Error codes of the profile. The name errors carry data.field: "displayName" or "pseudonym".
+ */
+export const CodeNameTaken = "name_taken"; // 409: in use; whose name it is and as what is not said
+/**
+ * Error codes of the profile. The name errors carry data.field: "displayName" or "pseudonym".
+ */
+export const CodePseudonymInUse = "pseudonym_in_use"; // 409: clearing a pseudonym that signs recommendations
+/**
+ * Error codes of the profile. The name errors carry data.field: "displayName" or "pseudonym".
+ */
+export const CodeExternalLinksInvalid = "external_links_invalid"; // 400: too many, not https, or a label too long
+/**
+ * The fields that data.field of a name error names.
+ */
+export const ProfileFieldDisplayName = "displayName";
+/**
+ * The fields that data.field of a name error names.
+ */
+export const ProfileFieldPseudonym = "pseudonym";
+/**
+ * MaxNameLength is the longest main name or pseudonym, in characters (store.MaxNameLength).
+ */
+export const MaxNameLength = 64;
+/**
+ * MaxExternalLinks is the number of external links a member can have (domain.MaxExternalLinks).
+ */
+export const MaxExternalLinks = 5;
+/**
+ * MaxExternalLinkURLLength is the longest link, in characters.
+ */
+export const MaxExternalLinkURLLength = 2000;
+/**
+ * MaxExternalLinkLabelLength is the longest label of a link, in characters.
+ */
+export const MaxExternalLinkLabelLength = 64;
+/**
+ * AuditPseudonymChange is the audit action of setting, changing or clearing a pseudonym; details are the pseudonym
+ * before ("from", empty when there was none) and after ("to", empty when cleared).
+ */
+export const AuditPseudonymChange = "members.pseudonym_change";
+/**
+ * Profile is the caller's own profile.
+ */
+export interface Profile {
+  /**
+   * DisplayName is the main name.
+   */
+  displayName: string;
+  /**
+   * Pseudonym is empty when the member has none: then they cannot sign a recommendation with one (C3).
+   */
+  pseudonym: string;
+  /**
+   * ExternalLinks are shown next to the member's main-name signatures only.
+   */
+  externalLinks: ExternalLink[];
+  /**
+   * PseudonymInUse is true while recommendations of the member (not deleted) are signed with the pseudonym: it can
+   * be changed then, but not cleared.
+   */
+  pseudonymInUse: boolean;
+  /**
+   * DisplayNameIsLoginName is true for a main name that is the member's login name (older versions used the login
+   * name when none was given): the member should change it. An update that sends the main name is refused until it
+   * is another one.
+   */
+  displayNameIsLoginName: boolean;
+}
+/**
+ * ProfileUpdate is the body of POST [ProfilePath]. A field that is absent (or null) keeps its saved value; an empty
+ * pseudonym clears it.
+ */
+export interface ProfileUpdate {
+  displayName?: string;
+  pseudonym?: string;
+  externalLinks?: ExternalLink[];
+}
+
+//////////
 // source: projection.go
 
 /**

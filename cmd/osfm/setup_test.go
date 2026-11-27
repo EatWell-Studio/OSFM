@@ -106,7 +106,7 @@ func TestSetupResponsesHaveNoInternalIDs(t *testing.T) {
 				a := &passkeytest.Authenticator{Origin: "http://localhost:8090"}
 				var options auth.PasskeyOptionsResponse
 				rec := send(http.MethodPost, auth.SetupPasskeyOptionsPath, "", auth.SetupPasskeyOptionsRequest{
-					SetupCode: code, InstanceName: "Test Circle", LoginName: "test_first",
+					SetupCode: code, InstanceName: "Test Circle", LoginName: "test_first", DisplayName: "Test First",
 				}, http.StatusOK)
 				var raw struct {
 					Options json.RawMessage `json:"options"`
