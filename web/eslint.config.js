@@ -7,7 +7,7 @@ import tseslint from 'typescript-eslint'
 import { plainText } from './scripts/lint-plain-text.ts'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'test-results', 'playwright-report']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

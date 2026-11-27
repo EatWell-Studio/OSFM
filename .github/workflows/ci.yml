@@ -183,6 +183,72 @@ jobs:
           done
           echo "The binary serves the embedded web app."
 
+  e2e:
+    name: E2E (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build the web app and the binary
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web run build
+          go build -o osfm ./cmd/osfm
+
+      # Playwright's headless Chromium, cached by Playwright version; the system libraries it needs are installed on
+      # every run (they are not in the cache).
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(pnpm --dir web exec playwright --version | sed 's/^Version //')" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        id: browsers
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-headless-shell
+
+      - name: Install Chromium
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: pnpm --dir web exec playwright install --with-deps --only-shell chromium
+
+      - name: Install Chromium's system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --dir web exec playwright install-deps chromium-headless-shell
+
+      # The binary from an empty data directory, in a mobile viewport (web/e2e, docs/architecture.md §6).
+      - name: End-to-end tests
+        run: pnpm --dir web run e2e
+        env:
+          OSFM_E2E_BINARY: ${{ github.workspace }}/osfm
+          OSFM_E2E_CHANNEL: bundled
+
+      # Traces of every person's browser, screenshots of failed steps and the server log.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-results
+          path: |
+            web/test-results/
+            web/playwright-report/
+          retention-days: 7
+
   docker:
     name: Docker (amd64, arm64)
     runs-on: ubuntu-latest
