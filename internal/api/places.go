@@ -210,14 +210,15 @@ func handleCreatePlace(e *core.RequestEvent) error {
 	if err != nil {
 		return validationError(e, err, "")
 	}
-	rec, err := domain.NormalizeRecommendation(recommendationDraft(*req.Recommendation), hasPseudonym(member),
-		time.Now())
-	if err != nil {
-		return validationError(e, err, "recommendation.")
-	}
 
 	var created CreatedPlace
+	var invalid error
 	err = e.App.RunInTransaction(func(tx core.App) error {
+		rec, err := normalizeRecommendationIn(tx, member, *req.Recommendation)
+		if err != nil {
+			invalid = err
+			return err
+		}
 		var landmark map[string]any
 		if l := place.Landmark; l != nil {
 			landmark = map[string]any{"type": l.Type}
@@ -257,7 +258,10 @@ func handleCreatePlace(e *core.RequestEvent) error {
 		created = CreatedPlace{Place: p.GetString(store.FieldUUID), Recommendation: r.GetString(store.FieldUUID)}
 		return store.WriteAudit(tx, member, AuditPlaceCreate, store.Places, created.Place, nil)
 	})
+	var fe *domain.FieldError
 	switch {
+	case errors.As(invalid, &fe):
+		return validationError(e, invalid, "recommendation.")
 	case errors.Is(err, errLandmarkHidden):
 		return invalidField(e, "landmark.place")
 	case err != nil:
@@ -290,7 +294,7 @@ func handleCreateRecommendation(e *core.RequestEvent) error {
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		rec, err := domain.NormalizeRecommendation(recommendationDraft(req), hasPseudonym(member), time.Now())
+		rec, err := normalizeRecommendationIn(tx, member, req)
 		if err != nil {
 			invalid = err
 			return err
@@ -307,8 +311,9 @@ func handleCreateRecommendation(e *core.RequestEvent) error {
 		return nil
 	})
 	var already *errAlreadyRecommended
+	var fe *domain.FieldError
 	switch {
-	case invalid != nil:
+	case errors.As(invalid, &fe):
 		return validationError(e, invalid, "")
 	case errors.As(err, &already):
 		return failWith(e, http.StatusConflict, CodeAlreadyRecommended,
@@ -387,9 +392,18 @@ func recommendationDraft(req RecommendationInput) domain.RecommendationDraft {
 	return d
 }
 
-// hasPseudonym reports whether member has a pseudonym to sign with.
-func hasPseudonym(member *core.Record) bool {
-	return member != nil && strings.TrimSpace(member.GetString("pseudonym")) != ""
+// normalizeRecommendationIn checks req as domain.NormalizeRecommendation does, inside the transaction tx that saves it:
+// whether member has a pseudonym to sign with is read from the database in tx, not from the record the session loaded,
+// so that a pseudonym cleared in the meantime (which is refused only while pseudonym recommendations exist) cannot end
+// up on a new recommendation. Errors other than a *domain.FieldError are database errors.
+func normalizeRecommendationIn(tx core.App, member *core.Record, req RecommendationInput) (domain.RecommendationDraft,
+	error) {
+	fresh, err := store.Query(tx, store.Members).Where(dbx.HashExp{store.Members + ".id": member.Id}).One()
+	if err != nil {
+		return domain.RecommendationDraft{}, err
+	}
+	hasPseudonym := strings.TrimSpace(fresh.GetString("pseudonym")) != ""
+	return domain.NormalizeRecommendation(recommendationDraft(req), hasPseudonym, time.Now())
 }
 
 // liveRecommendationOf returns member's live recommendation of place, or an error wrapping sql.ErrNoRows.

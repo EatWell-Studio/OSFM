@@ -10,8 +10,11 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/hook"
 
 	"github.com/EatWell-Studio/OSFM/internal/api"
+	"github.com/EatWell-Studio/OSFM/internal/auth"
+	"github.com/EatWell-Studio/OSFM/internal/config"
 	"github.com/EatWell-Studio/OSFM/internal/domain"
 	"github.com/EatWell-Studio/OSFM/internal/ratelimit"
 	"github.com/EatWell-Studio/OSFM/internal/store"
@@ -370,4 +373,73 @@ func TestNearby(t *testing.T) {
 			api.CodeInvalidRequest)
 	}
 	a.CheckNoInternalIDs()
+}
+
+// clearPseudonymHeader makes the middleware of TestPseudonymClearedDuringRequest clear the caller's pseudonym.
+const clearPseudonymHeader = "X-Test-Clear-Pseudonym"
+
+// TestPseudonymClearedDuringRequest: whether the member has a pseudonym is decided from the database inside the
+// transaction that saves the recommendation, not from the member record the session loaded. A middleware clears the
+// pseudonym after the session has loaded the member and before the handler runs, as a profile change committing in
+// between would; a pseudonym signature is then refused with no_pseudonym, and nothing is written.
+func TestPseudonymClearedDuringRequest(t *testing.T) {
+	t.Parallel()
+	a := testapp.Start(t, testapp.Options{Bind: func(app core.App, cfg *config.Config) {
+		store.BindHooks(app)
+		auth.Bind(app, auth.Options{})
+		api.Bind(app, api.Options{Config: cfg})
+		app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+			se.Router.Bind(&hook.Handler[*core.RequestEvent]{
+				Id:       "testClearPseudonym",
+				Priority: api.BudgetMiddlewarePriority + 1,
+				Func: func(e *core.RequestEvent) error {
+					if m := auth.CurrentMember(e); m != nil && e.Request.Header.Get(clearPseudonymHeader) != "" {
+						if m.GetString("pseudonym") == "" {
+							t.Error("the session's member record has no pseudonym to begin with")
+						}
+						if _, err := e.App.DB().Update(store.Members, dbx.Params{"pseudonym": ""},
+							dbx.HashExp{"id": m.Id}).Execute(); err != nil {
+							return err
+						}
+					}
+					return e.Next()
+				},
+			})
+			return se.Next()
+		})
+	}})
+	before, err := store.Query(a, store.Recommendations).IncludeDeleted().Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+	send := func(path string, body any) *testapp.Response {
+		t.Helper()
+		b, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(b)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(auth.CSRFHeader, "1")
+		req.Header.Set(clearPseudonymHeader, "1")
+		return a.As(testapp.Author).Send(req)
+	}
+	place := newPlace("Test Cleared Pen Name", 0.34, 7.06)
+	place.Recommendation.DisplayAs = domain.SignAsPseudonym
+	expectError(t, send(api.PlacesPath, place), http.StatusBadRequest, api.CodeNoPseudonym)
+
+	// The pseudonym again, for the second route: a place of another member's.
+	if _, err := a.DB().Update(store.Members, dbx.Params{"pseudonym": "Test Pen Name"},
+		dbx.HashExp{"id": a.Author.Id}).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	other := a.SeedPlace(testapp.PlaceSeed{Name: "Test Other Stall"})
+	a.SeedRecommendation(testapp.RecommendationSeed{Place: other, Author: a.Member})
+	expectError(t, send(recommendationsPath(other.GetString(store.FieldUUID)), api.RecommendationInput{
+		Attitude: domain.AttitudeGood, Text: "x", DisplayAs: domain.SignAsPseudonym}), http.StatusBadRequest,
+		api.CodeNoPseudonym)
+
+	if after, _ := store.Query(a, store.Recommendations).IncludeDeleted().Count(); after != before+1 {
+		t.Errorf("%d recommendations, want %d (only the seeded one added)", after, before+1)
+	}
 }
