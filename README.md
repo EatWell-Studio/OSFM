@@ -84,7 +84,7 @@ gh attestation verify oci://ghcr.io/eatwell-studio/osfm:latest --repo EatWell-St
 gh attestation verify osfm-linux-amd64 --repo EatWell-Studio/OSFM
 ```
 
-Running an instance for a circle (Docker Compose or systemd, Caddy for HTTPS, backups, upgrades, troubleshooting) is described in [docs/self-hosting.md](docs/self-hosting.md), a draft not yet tried on a real server; example configuration is in [`deploy/`](deploy/).
+Running an instance for a circle (Docker Compose or systemd, Caddy or nginx for HTTPS, Cloudflare, backups, upgrades, troubleshooting) is described in [docs/self-hosting.md](docs/self-hosting.md), a draft not yet tried on a real server; example configuration is in [`deploy/`](deploy/).
 
 ## License
 
