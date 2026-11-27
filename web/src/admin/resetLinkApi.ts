@@ -55,9 +55,9 @@ export async function fetchResetLinks(): Promise<ResetLink[]> {
   return list
 }
 
-/** Creates a reset link for the member with the login name; the token is shown this once. */
-export async function createResetLink(loginName: string): Promise<{ resetLink: ResetLink; token: string }> {
-  const body = await postAuth('/reset-links', { loginName })
+/** Creates a reset link for the member with the uuid (from the member list); the token is shown this once. */
+export async function createResetLink(memberUuid: string): Promise<{ resetLink: ResetLink; token: string }> {
+  const body = await postAuth('/reset-links', { member: memberUuid })
   const resetLink = field(body, 'resetLink')
   const token = field(body, 'token')
   if (!isResetLink(resetLink) || typeof token !== 'string') {

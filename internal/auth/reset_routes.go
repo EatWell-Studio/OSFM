@@ -59,9 +59,10 @@ type ResetLinkList struct {
 	ResetLinks []ResetLinkInfo `json:"resetLinks"`
 }
 
-// CreateResetLinkRequest is the body of POST [ResetLinksPath]: the member's login name.
+// CreateResetLinkRequest is the body of POST [ResetLinksPath]: the member's uuid, from the member list
+// ([MembersPath]).
 type CreateResetLinkRequest struct {
-	LoginName string `json:"loginName"`
+	Member string `json:"member"`
 }
 
 // CreatedResetLink is the response of POST [ResetLinksPath] (201): token is shown this once.
@@ -125,7 +126,7 @@ func resetError(e *core.RequestEvent, err error) error {
 	case errors.Is(err, ErrInvalidResetLink):
 		return authError(e, http.StatusForbidden, CodeResetInvalid, "The reset link is invalid or has expired.")
 	case errors.Is(err, errResetMemberNotFound):
-		return authError(e, http.StatusNotFound, CodeMemberNotFound, "No member who can sign in has this login name.")
+		return authError(e, http.StatusNotFound, CodeMemberNotFound, "No member who can sign in has this uuid.")
 	case errors.Is(err, errResetSelf):
 		return authError(e, http.StatusConflict, CodeResetSelf, "Manage your own credentials on your page.")
 	case errors.Is(err, errResetLinkUsed):
@@ -153,7 +154,7 @@ func handleCreateResetLink(e *core.RequestEvent) error {
 	if err := readJSONLimit(e, &req, maxResetLinkRequestBody); err != nil {
 		return badRequest(e)
 	}
-	token, link, err := CreateResetLink(e.App, CurrentMember(e), req.LoginName)
+	token, link, err := CreateResetLink(e.App, CurrentMember(e), req.Member)
 	if err != nil {
 		return resetError(e, err)
 	}

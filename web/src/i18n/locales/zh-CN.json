@@ -54,10 +54,29 @@
         "expiresAt": "有效至 {{date}}",
         "unknownMember": "（未知成员）"
       },
+      "members": {
+        "title": "成员",
+        "intro": "圈子里的成员和他们的登录方式（不显示登录名）。成员丢失了全部登录方式和恢复码时，在他那一行生成一次性的重置链接（24 小时有效），通过可信的渠道发给他。生成前需要重新验证你的身份。",
+        "loadError": "无法加载成员列表，请检查网络后重试。",
+        "maintainer": "维护者",
+        "you": "（你）",
+        "joined": "加入于 {{date}}",
+        "joinedInvited": "加入于 {{date}}，由 {{name}} 邀请",
+        "leftAt": "离开于 {{date}}",
+        "methods": "登录方式：{{methods}}",
+        "separator": "、",
+        "passwordTotp": "密码 + 验证器 App",
+        "passkeys_one": "{{count}} 个 passkey",
+        "passkeys_other": "{{count}} 个 passkey",
+        "noMethods": "没有",
+        "canInvite": "可以邀请",
+        "cannotInvite": "不能邀请",
+        "pendingReset": "有一个待使用的重置链接，有效至 {{date}}",
+        "left": "已离开的成员"
+      },
       "reset": {
         "title": "重置链接",
-        "intro": "成员丢失了全部登录方式和恢复码时，为他生成一次性的重置链接（24 小时有效），通过可信的渠道发给他。生成前需要重新验证你的身份。",
-        "loginName": "成员的登录名",
+        "intro": "所有重置链接和它们的状态，待使用的链接可以撤销。重置链接在上面的成员列表里生成。",
         "create": "生成重置链接",
         "link": "重置链接",
         "shownOnce": "这个链接只显示这一次，只能使用一次。为同一成员生成新链接时，旧链接会失效。",
@@ -66,9 +85,8 @@
         "for": "{{name}} 的重置链接",
         "usedAt": "使用于 {{date}}",
         "errors": {
-          "notFound": "没有这个登录名的成员，或该成员已离开。",
-          "self": "不能为自己生成重置链接，请在“我的”页管理自己的登录方式。",
-          "missing": "请输入成员的登录名。"
+          "notFound": "这个成员已离开或不存在，请刷新页面。",
+          "self": "不能为自己生成重置链接，请在“我的”页管理自己的登录方式。"
         }
       },
       "instance": {

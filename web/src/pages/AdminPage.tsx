@@ -16,11 +16,12 @@ import {
 } from '@/invites/invites'
 import { useSession } from '@/session/useSession'
 import { InstanceSettings } from '@/admin/InstanceSettings'
+import { Members } from '@/admin/Members'
 import { ResetLinks } from '@/admin/ResetLinks'
 import { ShownOnceLink } from '@/components/ShownOnceLink'
 
 /**
- * Maintainer administration: invites (D1, D2), reset links (D5) and the instance settings. Members who are not
+ * Maintainer administration: invites (D1, D2), the member list with reset links (D5) and the instance settings. Members who are not
  * maintainers see that it is not for them.
  */
 export function AdminPage() {
@@ -33,6 +34,7 @@ export function AdminPage() {
       {isMaintainer ? (
         <div className="flex flex-col gap-8 pb-4">
           <Invites />
+          <Members />
           <ResetLinks />
           <InstanceSettings />
         </div>
