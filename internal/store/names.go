@@ -49,13 +49,13 @@ var PlaceCategories = []string{
 // Reasons a member gives when reporting a recommendation (reports.reason, D11). The values are stable codes: clients
 // translate them, and they appear in exports. ReasonOther needs a note; the others take an optional one.
 const (
-	ReasonAdvertising      = "advertising"          // advertising or a conflict of interest
-	ReasonAbuse            = "abuse"                // personal attacks or discrimination
-	ReasonPoliticalIllegal = "political_or_illegal" // political or illegal content
-	ReasonUnverifiedClaim  = "unverified_claim"     // an unverified accusation, such as about hygiene
-	ReasonFalseOrDuplicate = "false_or_duplicate"   // clearly untrue, or a duplicate
-	ReasonOther            = "other"                // anything else; the note says what
-	MaxReportNoteLength    = 500                    // reports.note, in characters
+	ReasonAdvertising      = "advertising"        // advertising or a conflict of interest
+	ReasonAbuse            = "abuse"              // personal attacks or discrimination
+	ReasonPoliticalIllegal = "political_illegal"  // political or illegal content
+	ReasonUnverifiedClaim  = "unverified_claim"   // an unverified accusation, such as about hygiene
+	ReasonFalseOrDuplicate = "false_or_duplicate" // clearly untrue, or a duplicate
+	ReasonOther            = "other"              // anything else; the note says what
+	MaxReportNoteLength    = 500                  // reports.note, in characters
 )
 
 // ReportReasons lists the report reason codes, the values reports.reason accepts.
@@ -85,3 +85,13 @@ const (
 
 // Resolutions lists the values reports.resolution accepts.
 var Resolutions = []string{ResolutionRestored, ResolutionKeptHidden, ResolutionDeleted}
+
+// Kinds of notices to a member (notices.kind). Clients show them by translation key; ref names the object (a
+// recommendation's uuid). The field itself stays free text so that later kinds need no migration.
+const (
+	NoticeMaintainerEdited   = "maintainer_edited"    // a maintainer edited the member's recommendation
+	NoticeHiddenByMaintainer = "hidden_by_maintainer" // a maintainer hid it
+	NoticeHiddenByReports    = "hidden_by_reports"    // it was hidden automatically after reports
+	NoticeRestored           = "restored"             // it is shown again
+	NoticeViolationDeleted   = "violation_deleted"    // a maintainer deleted it as a violation
+)
