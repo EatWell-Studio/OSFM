@@ -55,7 +55,7 @@ func upM2Model(app core.App) error {
 		if err != nil {
 			return err
 		}
-		if err := addUUIDAndBackfill(app, c); err != nil {
+		if err := addUUIDAndBackfill(app, c, nil); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 	}
@@ -76,20 +76,6 @@ func upM2Recommendations(app core.App, membersID string) error {
 	if err != nil {
 		return err
 	}
-	c.Fields.Add(
-		selectOne("hidden_kind", false, store.HiddenKinds...), // empty while not hidden
-		&core.DateField{Name: "hidden_at"},
-		relation("hidden_by", membersID, false, false), // empty when hidden automatically
-	)
-	if err := app.Save(c); err != nil {
-		return err
-	}
-	// A recommendation hidden before there were hidden kinds can only have been hidden by hand.
-	if _, err := app.DB().Update(store.Recommendations, dbx.Params{"hidden_kind": store.HiddenByMaintainer},
-		dbx.HashExp{"hidden": true, "hidden_kind": ""}).Execute(); err != nil {
-		return err
-	}
-
 	// One live recommendation per member and place. Soft delete leaves deleted_at empty while a record is live
 	// (store.NotDeleted), so the index covers exactly the live records and a deleted one does not block a new one.
 	var pairs int
@@ -102,8 +88,19 @@ func upM2Recommendations(app core.App, membersID string) error {
 		return fmt.Errorf("%d members have more than one live recommendation of the same place; "+
 			"delete all but one of each before upgrading", pairs)
 	}
+	c.Fields.Add(
+		selectOne("hidden_kind", false, store.HiddenKinds...), // empty while not hidden
+		&core.DateField{Name: "hidden_at"},
+		relation("hidden_by", membersID, false, false), // empty when hidden automatically
+	)
 	c.AddIndex(idxRecommendationsPlaceAuthor, true, "`place`, `author`", "`"+store.FieldDeletedAt+"` = ''")
-	return app.Save(c)
+	if err := app.Save(c); err != nil {
+		return err
+	}
+	// A recommendation hidden before there were hidden kinds can only have been hidden by hand.
+	_, err = app.DB().Update(store.Recommendations, dbx.Params{"hidden_kind": store.HiddenByMaintainer},
+		dbx.HashExp{"hidden": true, "hidden_kind": ""}).Execute()
+	return err
 }
 
 func upM2Reports(app core.App, membersID string) error {
@@ -117,24 +114,15 @@ func upM2Reports(app core.App, membersID string) error {
 		&core.DateField{Name: "resolved_at"}, // empty while the report is open
 		relation("resolved_by", membersID, false, false),
 		selectOne("resolution", false, store.Resolutions...),
-		&core.TextField{Name: store.FieldUUID, Required: true, Min: 36, Max: 36, Pattern: store.UUIDPattern},
 	)
-	// First without the unique index on uuid: rows written before this migration have no uuid yet.
-	if err := app.Save(c); err != nil {
+	return addUUIDAndBackfill(app, c, func() error {
+		// Reasons were free text: one that is not a reason code becomes the note of reason "other".
+		_, err := app.DB().Update(store.Reports, dbx.Params{
+			"note":   dbx.NewExp(fmt.Sprintf("substr(trim([[reason]]), 1, %d)", store.MaxReportNoteLength)),
+			"reason": store.ReasonOther,
+		}, dbx.Not(dbx.In("reason", anySlice(store.ReportReasons)...))).Execute()
 		return err
-	}
-	// Reasons were free text: one that is not a reason code becomes the note of reason "other".
-	if _, err := app.DB().Update(store.Reports, dbx.Params{
-		"note":   dbx.NewExp(fmt.Sprintf("substr(trim([[reason]]), 1, %d)", store.MaxReportNoteLength)),
-		"reason": store.ReasonOther,
-	}, dbx.Not(dbx.In("reason", anySlice(store.ReportReasons)...))).Execute(); err != nil {
-		return err
-	}
-	if err := backfillUUIDs(app, store.Reports); err != nil {
-		return err
-	}
-	c.AddIndex("idx_"+c.Name+"_uuid", true, "`"+store.FieldUUID+"`", "")
-	return app.Save(c)
+	})
 }
 
 // reportReasonField is reports.reason as a reason code. It stays a text field, as T005 created it, with a pattern that
@@ -146,17 +134,40 @@ func reportReasonField() *core.TextField {
 	}
 }
 
-// addUUIDAndBackfill adds the uuid field to c, gives every existing row a uuid, and then adds the unique index.
-func addUUIDAndBackfill(app core.App, c *core.Collection) error {
+// addUUIDAndBackfill adds the uuid field and its unique index to c, with the other changes already made to c, and
+// saves it. When the collection has rows without a uuid, it saves first without the index, runs fill (if not nil; the
+// rows then have the new fields), gives every row a uuid and then adds the index. A collection without rows (a new
+// database) is saved only once: every collection save rebuilds indexes, and the migrations run for every test app.
+func addUUIDAndBackfill(app core.App, c *core.Collection, fill func() error) error {
+	hasRows := false
+	if c.Fields.GetByName(store.FieldUUID) == nil {
+		var n int
+		if err := app.DB().Select("COUNT(*)").From(c.Name).Row(&n); err != nil {
+			return err
+		}
+		hasRows = n > 0
+	}
 	c.Fields.Add(&core.TextField{Name: store.FieldUUID, Required: true, Min: 36, Max: 36, Pattern: store.UUIDPattern})
+	index := func() { c.AddIndex("idx_"+c.Name+"_uuid", true, "`"+store.FieldUUID+"`", "") }
+	if !hasRows {
+		index()
+	}
 	if err := app.Save(c); err != nil {
 		return err
+	}
+	if fill != nil {
+		if err := fill(); err != nil {
+			return err
+		}
+	}
+	if !hasRows {
+		return nil
 	}
 	// With SQL, not records: the store hooks reject any update of a recommendation_revisions record.
 	if err := backfillUUIDs(app, c.Name); err != nil {
 		return err
 	}
-	c.AddIndex("idx_"+c.Name+"_uuid", true, "`"+store.FieldUUID+"`", "")
+	index()
 	return app.Save(c)
 }
 
@@ -171,15 +182,12 @@ func upM2Members(app core.App) error {
 	}
 	// No explicit maximum (PocketBase's default, 5000): NFKC can make a 64-character name several times longer.
 	c.Fields.Add(&core.TextField{Name: store.FieldDisplayNameKey}, &core.TextField{Name: store.FieldPseudonymKey})
+	c.AddIndex(idxMembersDisplayNameKey, false, "`"+store.FieldDisplayNameKey+"`", "")
+	c.AddIndex(idxMembersPseudonymKey, false, "`"+store.FieldPseudonymKey+"`", "`"+store.FieldPseudonymKey+"` != ''")
 	if err := app.Save(c); err != nil {
 		return err
 	}
-	if err := backfillNameKeys(app); err != nil {
-		return err
-	}
-	c.AddIndex(idxMembersDisplayNameKey, false, "`"+store.FieldDisplayNameKey+"`", "")
-	c.AddIndex(idxMembersPseudonymKey, false, "`"+store.FieldPseudonymKey+"`", "`"+store.FieldPseudonymKey+"` != ''")
-	return app.Save(c)
+	return backfillNameKeys(app)
 }
 
 // backfillNameKeys sets the name keys of every member whose keys do not match the names.
