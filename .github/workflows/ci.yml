@@ -29,6 +29,19 @@ jobs:
         with:
           version: v2.15.0
 
+      # The TypeScript types of the API (web/src/api/types.gen.ts) are what the Go types generate (tygo.yaml); and
+      # the check does fail when they are not, after a change to a Go type that is not regenerated.
+      - name: API types are up to date
+        run: bin/check-api-types.sh
+      - name: The API types check fails on stale types
+        run: |
+          sed -i 's/json:"geocoderEnabled"/json:"geocoderOn"/' internal/api/settings.go
+          if bin/check-api-types.sh; then
+            echo "check-api-types accepted types that do not match internal/api" >&2
+            exit 1
+          fi
+          git checkout -- internal/api/settings.go web/src/api/types.gen.ts
+
       - name: Test
         run: go test -race ./...
 

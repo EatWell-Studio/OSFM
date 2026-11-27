@@ -209,7 +209,7 @@ func confirmRecoveryPassword(app core.App, ticket, enrolment, code string) (*cor
 			if err != nil {
 				return err
 			}
-			return writeAudit(tx, member, AuditCredentialAdd, store.Members, member.GetString(store.FieldUUID),
+			return store.WriteAudit(tx, member, AuditCredentialAdd, store.Members, member.GetString(store.FieldUUID),
 				map[string]any{"kind": CredentialPasswordTOTP, "credential": cred.GetString(store.FieldUUID),
 					"via": viaRecovery})
 		})

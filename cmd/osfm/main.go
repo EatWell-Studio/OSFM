@@ -14,11 +14,11 @@ import (
 	"github.com/pocketbase/pocketbase/tools/osutils"
 	"github.com/spf13/cobra"
 
+	"github.com/EatWell-Studio/OSFM/internal/api"
 	"github.com/EatWell-Studio/OSFM/internal/auth"
 	"github.com/EatWell-Studio/OSFM/internal/boundary"
 	"github.com/EatWell-Studio/OSFM/internal/config"
 	"github.com/EatWell-Studio/OSFM/internal/federation"
-	"github.com/EatWell-Studio/OSFM/internal/settings"
 	"github.com/EatWell-Studio/OSFM/internal/store"
 	"github.com/EatWell-Studio/OSFM/internal/tiles"
 	"github.com/EatWell-Studio/OSFM/internal/version"
@@ -87,8 +87,9 @@ func bind(app core.App, cfg *config.Config) {
 			}
 			return keys.Master
 		}, SetupCodeFile: setupCodeFile(cfg)})
-	// The instance's name and cities for members, GET /api/osfm/instance.
-	settings.Bind(app)
+	// The OSFM features under /api/osfm/ (internal/api): the instance settings, places and recommendations, and the
+	// rest of M2, one register function per feature.
+	api.Bind(app, api.Options{Config: cfg})
 	// The web app on every path the API does not answer (client-side routes fall back to index.html, missing files get
 	// 404), and the security headers of the main listener (§4.7).
 	webapp.Bind(app, webapp.Options{FS: web.FS(), HSTS: cfg.PublicHTTPS()})

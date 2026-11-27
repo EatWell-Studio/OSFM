@@ -44,6 +44,14 @@ bin/gate.sh
 
 `bin/gate.sh` needs Go (version in `go.mod`), golangci-lint v2, Node.js 22+ and pnpm. It stops at the first failing step and shows its last lines; the full output of every step is in `../osfm-gate-output/<checkout directory name>/`.
 
+### API types
+
+The web app's types of the M2 API, `web/src/api/types.gen.ts`, are generated from the request and response types of `internal/api` by [tygo](https://github.com/gzuidhof/tygo) (a Go tool dependency in `go.mod`, configured in `tygo.yaml`). After changing those Go types, generate the file again and commit it with the change; `bin/check-api-types.sh` (a gate step and a CI step) fails when it is out of date:
+
+```bash
+go tool tygo generate
+```
+
 ### End-to-end tests
 
 The end-to-end tests (`web/e2e/`, Playwright) start the real binary on an empty data directory and walk through the first-start setup, invitations, registration and sign-in with password + TOTP and with a passkey, the map and an ended session, then the credential flows: adding and removing passkeys, new recovery codes, recovery with a recovery code on a new phone, and a reset link from the admin page's member list after a re-verification, in Chromium with a phone-sized viewport. A second instance, set up through the API by the global setup, is shared by the feature specs (`web/e2e/<feature>.e2e.ts`): `web/e2e/support/shared.ts` gives its maintainer, creates members through the API (`inviteMember`) and opens signed-in phones on it (`newSharedPerson`); each spec file adds its own data and leaves the shared maintainer signed in. They take about half a minute (a TOTP sign-in waits for the next 30-second step). CI runs them in the `E2E (Chromium)` job; `bin/gate.sh` runs them only when asked:

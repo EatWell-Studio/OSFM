@@ -175,7 +175,7 @@ func removePasskey(app core.App, member, keep *core.Record, uuid string) error {
 		if err := tx.Delete(r); err != nil {
 			return err
 		}
-		if err := writeAudit(tx, member, AuditCredentialRemove, store.Members, member.GetString(store.FieldUUID),
+		if err := store.WriteAudit(tx, member, AuditCredentialRemove, store.Members, member.GetString(store.FieldUUID),
 			map[string]any{"kind": CredentialPasskey, "credential": uuid}); err != nil {
 			return err
 		}
@@ -204,7 +204,7 @@ func removePassword(app core.App, member, keep *core.Record) error {
 		if err := tx.Delete(cred); err != nil {
 			return err
 		}
-		if err := writeAudit(tx, member, AuditCredentialRemove, store.Members, member.GetString(store.FieldUUID),
+		if err := store.WriteAudit(tx, member, AuditCredentialRemove, store.Members, member.GetString(store.FieldUUID),
 			map[string]any{"kind": CredentialPasswordTOTP, "credential": cred.GetString(store.FieldUUID)}); err != nil {
 			return err
 		}
@@ -226,7 +226,7 @@ func revokeOtherSessions(tx core.App, member, keep *core.Record, reason string) 
 	if err != nil || n == 0 {
 		return err
 	}
-	return writeAudit(tx, member, AuditRevokeOtherSessions, store.Members, member.GetString(store.FieldUUID),
+	return store.WriteAudit(tx, member, AuditRevokeOtherSessions, store.Members, member.GetString(store.FieldUUID),
 		map[string]any{"reason": reason, "sessions": n})
 }
 
@@ -257,7 +257,7 @@ func confirmAddPassword(app core.App, member *core.Record, enrolment, code strin
 		if err != nil {
 			return err
 		}
-		return writeAudit(tx, member, AuditCredentialAdd, store.Members, member.GetString(store.FieldUUID),
+		return store.WriteAudit(tx, member, AuditCredentialAdd, store.Members, member.GetString(store.FieldUUID),
 			map[string]any{"kind": CredentialPasswordTOTP, "credential": cred.GetString(store.FieldUUID),
 				"via": viaSettings})
 	})
@@ -290,7 +290,7 @@ func changePassword(ctx context.Context, app core.App, member, keep *core.Record
 		if err := tx.Save(cred); err != nil {
 			return err
 		}
-		if err := writeAudit(tx, member, AuditPasswordChange, store.Members, member.GetString(store.FieldUUID),
+		if err := store.WriteAudit(tx, member, AuditPasswordChange, store.Members, member.GetString(store.FieldUUID),
 			nil); err != nil {
 			return err
 		}
@@ -328,7 +328,7 @@ func confirmReplaceTOTP(app core.App, member, keep *core.Record, enrolment, code
 		if err := tx.Save(cred); err != nil {
 			return err
 		}
-		if err := writeAudit(tx, member, AuditTOTPReplace, store.Members, member.GetString(store.FieldUUID),
+		if err := store.WriteAudit(tx, member, AuditTOTPReplace, store.Members, member.GetString(store.FieldUUID),
 			nil); err != nil {
 			return err
 		}
@@ -371,7 +371,7 @@ func addPasskey(tx core.App, member *core.Record, cred *webauthn.Credential, han
 	if err != nil {
 		return err
 	}
-	return writeAudit(tx, member, AuditCredentialAdd, store.Members, member.GetString(store.FieldUUID),
+	return store.WriteAudit(tx, member, AuditCredentialAdd, store.Members, member.GetString(store.FieldUUID),
 		map[string]any{"kind": CredentialPasskey, "credential": r.GetString(store.FieldUUID), "via": via})
 }
 
@@ -383,7 +383,7 @@ func regenerateRecoveryCodes(app core.App, member *core.Record) ([]string, error
 		if codes, err = NewRecoveryCodes(tx, member); err != nil {
 			return err
 		}
-		return writeAudit(tx, member, AuditRecoveryCodesRegenerate, store.Members, member.GetString(store.FieldUUID),
+		return store.WriteAudit(tx, member, AuditRecoveryCodesRegenerate, store.Members, member.GetString(store.FieldUUID),
 			nil)
 	})
 	if err != nil {

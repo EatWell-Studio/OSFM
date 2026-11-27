@@ -17,7 +17,6 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/auth"
 	"github.com/EatWell-Studio/OSFM/internal/auth/passkeytest"
 	"github.com/EatWell-Studio/OSFM/internal/ratelimit"
-	"github.com/EatWell-Studio/OSFM/internal/settings"
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
@@ -473,36 +472,5 @@ func checkNoSecretsInAudit(t *testing.T, app core.App, values ...string) {
 				t.Errorf("audit entry %s contains %q", r.GetString("action"), v)
 			}
 		}
-	}
-}
-
-// TestInstanceSettings: maintainers change the instance's name and cities with an audit entry; members cannot.
-func TestInstanceSettings(t *testing.T) {
-	pe := newCredEnv(t)
-	maintainer := pe.member("test_maintainer", auth.RoleMaintainer)
-	member := pe.member("test_member", auth.RoleMember)
-	body := map[string]any{"name": " Test Circle ", "cities": []map[string]any{{"slug": "testtown", "name": "Test Town",
-		"bbox": []float64{1, 1, 2, 2}, "center": []float64{1.5, 1.5}}}}
-	if rec := pe.post(auth.InstanceSettingsPath, pe.session(member), body); rec.Code != http.StatusForbidden {
-		t.Errorf("a member: %d", rec.Code)
-	}
-	expectError(t, "no cities", pe.post(auth.InstanceSettingsPath, pe.session(maintainer),
-		map[string]any{"name": "Test Circle", "cities": []any{}}), http.StatusBadRequest, auth.CodeCitiesInvalid)
-	expectError(t, "no name", pe.post(auth.InstanceSettingsPath, pe.session(maintainer),
-		map[string]any{"name": " ", "cities": body["cities"]}), http.StatusBadRequest, auth.CodeInstanceNameInvalid)
-	rec := pe.post(auth.InstanceSettingsPath, pe.session(maintainer), body)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("update: %d %s", rec.Code, rec.Body.String())
-	}
-	if inst, err := settings.Load(pe.app); err != nil || inst.Name != "Test Circle" || len(inst.Cities) != 1 ||
-		inst.Cities[0].Slug != "testtown" {
-		t.Errorf("instance %+v, %v", inst, err)
-	}
-	audits := pe.audits(auth.AuditSettingsUpdate)
-	if len(audits) != 1 || audits[0].GetString("actor") != maintainer.Id {
-		t.Fatalf("%d settings audit entries", len(audits))
-	}
-	if d := details(t, audits[0]); d["name"] != "Test Circle" {
-		t.Errorf("details %v", d)
 	}
 }

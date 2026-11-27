@@ -87,7 +87,7 @@ func CreateInvite(app core.App, inviter *core.Record, days int) (code string, in
 		if err := tx.Save(invite); err != nil {
 			return err
 		}
-		return writeAudit(tx, inviter, AuditCreateInvite, store.Invites, invite.GetString(store.FieldUUID),
+		return store.WriteAudit(tx, inviter, AuditCreateInvite, store.Invites, invite.GetString(store.FieldUUID),
 			map[string]any{"days": days, "expiresAt": invite.GetDateTime("expires_at").Time().Format(time.RFC3339)})
 	})
 	if err != nil {
@@ -122,7 +122,7 @@ func RevokeInvite(app core.App, invite, actor *core.Record) error {
 		invite.Load(current.FieldsData())
 		switch {
 		case n == 1:
-			return writeAudit(tx, actor, AuditRevokeInvite, store.Invites, invite.GetString(store.FieldUUID), nil)
+			return store.WriteAudit(tx, actor, AuditRevokeInvite, store.Invites, invite.GetString(store.FieldUUID), nil)
 		case !current.GetDateTime("used_at").IsZero():
 			return ErrInviteUsed
 		default:
@@ -287,6 +287,6 @@ func revokeOpenInvites(app core.App, inviter *core.Record, reason string) error 
 	if err != nil || n == 0 {
 		return err
 	}
-	return writeAudit(app, nil, AuditRevokeInvites, store.Members, inviter.GetString(store.FieldUUID),
+	return store.WriteAudit(app, nil, AuditRevokeInvites, store.Members, inviter.GetString(store.FieldUUID),
 		map[string]any{"reason": reason, "invites": n})
 }

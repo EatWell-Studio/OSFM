@@ -1,6 +1,6 @@
 // Package settings reads and writes the instance settings, the single row of instance_settings (architecture §3.5):
-// the instance's name and its cities, which the first-start setup wizard sets (G3, internal/auth), and it serves them
-// to members, GET /api/osfm/instance, for the top bar and the map's city switcher.
+// the instance's name and its cities, which the first-start setup wizard sets (G3, internal/auth), and the circle
+// settings maintainers change later ([Circle]). internal/api serves them, GET and POST /api/osfm/instance.
 //
 // A city is a display name, a slug, a bounding box and a center. The slug is also the name of the city's basemap
 // archive, <data>/tiles/<slug>.pmtiles (internal/tiles), so a city can be entered before its archive exists: the map
@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net/http"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -189,19 +188,87 @@ func SaveName(app core.App, name string) error {
 	return nil
 }
 
-// Bind registers GET [InstancePath] when app serves.
-func Bind(app core.App) {
-	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
-		se.Router.GET(InstancePath, handleInstance)
-		return se.Next()
-	})
+// Circle holds the instance settings besides the name and the cities, which maintainers change on the Admin page
+// (POST /api/osfm/instance, internal/api): the report threshold (D11), the invite cooling-off period for new members
+// (D12) and place search (B7, M2-Q13).
+type Circle struct {
+	// ReportThreshold is the number of open reports that hide a recommendation until a maintainer reviews it.
+	ReportThreshold int
+	// InviteCooldownDays is the number of days after joining before a new member may invite; 0 for none.
+	InviteCooldownDays int
+	// GeocoderEnabled turns place search on; the search terms then go from this server to the search services.
+	GeocoderEnabled bool
+	// GeocoderContact is sent to the search services with each request (their usage policies ask for one); may be
+	// empty.
+	GeocoderContact string
 }
 
-func handleInstance(e *core.RequestEvent) error {
-	inst, err := Load(e.App)
-	if err != nil {
-		return e.InternalServerError("", err)
+// Limits of the circle settings.
+const (
+	MinReportThreshold      = 1
+	MaxReportThreshold      = 100
+	MaxInviteCooldownDays   = 3650
+	MaxGeocoderContactChars = 200 // instance_settings.geocoder_contact, in characters
+)
+
+// Validation errors of [NormalizeCircle].
+var (
+	ErrInvalidReportThreshold = fmt.Errorf("settings: the report threshold is a whole number from %d to %d",
+		MinReportThreshold, MaxReportThreshold)
+	ErrInvalidInviteCooldown = fmt.Errorf("settings: the invite cooling-off period is a whole number of days from 0 to %d",
+		MaxInviteCooldownDays)
+	ErrInvalidGeocoderContact = fmt.Errorf("settings: the search contact has at most %d characters and no control characters",
+		MaxGeocoderContactChars)
+)
+
+// NormalizeCircle checks the circle settings and returns them as stored: the contact trimmed. It returns
+// [ErrInvalidReportThreshold], [ErrInvalidInviteCooldown] or [ErrInvalidGeocoderContact].
+func NormalizeCircle(c Circle) (Circle, error) {
+	if c.ReportThreshold < MinReportThreshold || c.ReportThreshold > MaxReportThreshold {
+		return Circle{}, ErrInvalidReportThreshold
 	}
-	e.Response.Header().Set("Cache-Control", "no-store")
-	return e.JSON(http.StatusOK, inst)
+	if c.InviteCooldownDays < 0 || c.InviteCooldownDays > MaxInviteCooldownDays {
+		return Circle{}, ErrInvalidInviteCooldown
+	}
+	c.GeocoderContact = strings.TrimSpace(c.GeocoderContact)
+	if c.GeocoderContact != "" {
+		contact, ok := normalizeText(c.GeocoderContact, MaxGeocoderContactChars)
+		if !ok {
+			return Circle{}, ErrInvalidGeocoderContact
+		}
+		c.GeocoderContact = contact
+	}
+	return c, nil
+}
+
+// LoadCircle returns the circle settings as stored. Features read them when they need them (T034 the cooling-off
+// period, T036 the report threshold, T039 place search), so that a change applies at once.
+func LoadCircle(app core.App) (Circle, error) {
+	r, err := app.FindRecordById(store.InstanceSettings, store.SettingsID)
+	if err != nil {
+		return Circle{}, fmt.Errorf("settings: %w", err)
+	}
+	return Circle{
+		ReportThreshold:    max(MinReportThreshold, r.GetInt("report_threshold")),
+		InviteCooldownDays: max(0, r.GetInt("invite_cooldown_days")),
+		GeocoderEnabled:    r.GetBool("geocoder_enabled"),
+		GeocoderContact:    strings.TrimSpace(r.GetString("geocoder_contact")),
+	}, nil
+}
+
+// SaveCircle writes the circle settings, which [NormalizeCircle] has checked, into the settings row. It runs in the
+// caller's transaction when app is a transaction's app.
+func SaveCircle(app core.App, c Circle) error {
+	r, err := app.FindRecordById(store.InstanceSettings, store.SettingsID)
+	if err != nil {
+		return fmt.Errorf("settings: %w", err)
+	}
+	r.Set("report_threshold", c.ReportThreshold)
+	r.Set("invite_cooldown_days", c.InviteCooldownDays)
+	r.Set("geocoder_enabled", c.GeocoderEnabled)
+	r.Set("geocoder_contact", c.GeocoderContact)
+	if err := app.Save(r); err != nil {
+		return fmt.Errorf("settings: save: %w", err)
+	}
+	return nil
 }

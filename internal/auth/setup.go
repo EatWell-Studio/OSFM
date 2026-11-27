@@ -284,14 +284,14 @@ func registerFirstMaintainer(app core.App, code, instanceName, method string, re
 		if saved.GetString("role") != RoleMaintainer || saved.GetString("invited_by") != "" || !CanSignIn(saved) {
 			return errors.New("the registration changed the first maintainer's role or inviter")
 		}
-		if err := writeAudit(tx, nil, AuditSetupMaintainer, store.Members, saved.GetString(store.FieldUUID),
+		if err := store.WriteAudit(tx, nil, AuditSetupMaintainer, store.Members, saved.GetString(store.FieldUUID),
 			map[string]any{"method": method}); err != nil {
 			return err
 		}
 		if err := settings.SaveName(tx, name); err != nil {
 			return err
 		}
-		return writeAudit(tx, saved, AuditSettingsUpdate, store.InstanceSettings, "", map[string]any{"name": name})
+		return store.WriteAudit(tx, saved, AuditSettingsUpdate, store.InstanceSettings, "", map[string]any{"name": name})
 	})
 	switch {
 	case errors.Is(err, ErrSetupDone), errors.Is(err, ErrInvalidSetupCode), errors.Is(err, errLoginNameTaken):
@@ -411,11 +411,11 @@ func completeSetup(app core.App, actor *core.Record, in settings.Instance) (sett
 		for _, c := range inst.Cities {
 			slugs = append(slugs, c.Slug)
 		}
-		if err := writeAudit(tx, actor, AuditSettingsUpdate, store.InstanceSettings, "",
+		if err := store.WriteAudit(tx, actor, AuditSettingsUpdate, store.InstanceSettings, "",
 			map[string]any{"name": inst.Name, "cities": slugs}); err != nil {
 			return err
 		}
-		return writeAudit(tx, actor, AuditSetupComplete, store.InstanceSettings, "", nil)
+		return store.WriteAudit(tx, actor, AuditSetupComplete, store.InstanceSettings, "", nil)
 	})
 	if errors.Is(err, ErrSetupDone) {
 		return settings.Instance{}, err

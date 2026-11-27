@@ -7,7 +7,8 @@ import tseslint from 'typescript-eslint'
 import { plainText } from './scripts/lint-plain-text.ts'
 
 export default defineConfig([
-  globalIgnores(['dist', 'test-results', 'playwright-report']),
+  // The API types are generated from Go (tygo.yaml at the repository root); the gate checks they are up to date.
+  globalIgnores(['dist', 'test-results', 'playwright-report', 'src/api/types.gen.ts']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
