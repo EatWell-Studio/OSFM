@@ -19,6 +19,8 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 
 	"github.com/EatWell-Studio/OSFM/internal/auth"
+	"github.com/EatWell-Studio/OSFM/internal/domain"
+	"github.com/EatWell-Studio/OSFM/internal/ratelimit"
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
@@ -86,15 +88,13 @@ func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 
 func past() string { return types.NowDateTime().Add(-time.Hour).String() }
 
-// TestInviteRoutesNeedMaintainer: anonymous callers get 401, members who are not maintainers 403 on every
-// maintainer route; maintainers get through.
-func TestInviteRoutesNeedMaintainer(t *testing.T) {
+// TestInviteRoutesNeedAMember: anonymous callers get 401 on every invite route; maintainers get through.
+func TestInviteRoutesNeedAMember(t *testing.T) {
 	en := newEnv(t)
 	maintainer := en.member("test_maintainer", auth.RoleMaintainer)
-	member := en.member("test_member", auth.RoleMember)
 	_, invite := en.invite(maintainer)
 	revoke := strings.Replace(auth.InviteRevokePath, "{uuid}", invite.GetString(store.FieldUUID), 1)
-	memberToken, maintainerToken := en.session(member), en.session(maintainer)
+	maintainerToken := en.session(maintainer)
 
 	for _, tc := range []struct{ method, path, body string }{
 		{http.MethodGet, auth.InvitesPath, ""},
@@ -104,17 +104,7 @@ func TestInviteRoutesNeedMaintainer(t *testing.T) {
 		if got := en.reqJSON(tc.method, tc.path, "", tc.body).Code; got != http.StatusUnauthorized {
 			t.Errorf("anonymous %s %s: %d", tc.method, tc.path, got)
 		}
-		if got := en.reqJSON(tc.method, tc.path, memberToken, tc.body).Code; got != http.StatusForbidden {
-			t.Errorf("member %s %s: %d", tc.method, tc.path, got)
-		}
 	}
-	if invite = en.reload(invite); auth.InviteState(invite, time.Now()) != auth.InviteActive {
-		t.Error("a member's request changed the invite")
-	}
-	if n, _ := en.app.CountRecords(store.Invites); n != 1 {
-		t.Errorf("%d invites after a member's create request", n)
-	}
-
 	if got := en.reqJSON(http.MethodGet, auth.InvitesPath, maintainerToken, "").Code; got != http.StatusOK {
 		t.Errorf("maintainer list: %d", got)
 	}
@@ -131,6 +121,192 @@ func TestInviteRoutesNeedMaintainer(t *testing.T) {
 	}
 	if auth.IsMaintainer(maintainer) {
 		t.Error("a maintainer who left is still a maintainer")
+	}
+}
+
+// setMember changes a member's columns in SQL.
+func (en *env) setMember(member *core.Record, params dbx.Params) {
+	en.t.Helper()
+	if _, err := en.app.DB().Update(store.Members, params, dbx.HashExp{"id": member.Id}).Execute(); err != nil {
+		en.t.Fatal(err)
+	}
+}
+
+// setCooldownDays sets the invite cooling-off period of the instance settings.
+func (en *env) setCooldownDays(days int) {
+	en.t.Helper()
+	if _, err := en.app.DB().Update(store.InstanceSettings, dbx.Params{"invite_cooldown_days": days},
+		nil).Execute(); err != nil {
+		en.t.Fatal(err)
+	}
+}
+
+// TestMemberInvites: members invite once their permission is on and the cooling-off period is over (D12, M2-Q11);
+// otherwise 403 invite_not_allowed with the reason and the end of the period. They see and revoke only their own
+// invites, have at most domain.MaxActiveInvites active ones (maintainers have no limit), and the members they invite
+// have them as inviter.
+func TestMemberInvites(t *testing.T) {
+	en := newEnv(t)
+	en.setCooldownDays(30)
+	maintainer := en.member("test_maintainer", auth.RoleMaintainer)
+	member := en.member("test_member", auth.RoleMember)
+	token, maintainerToken := en.session(member), en.session(maintainer)
+	_, maintainerInvite := en.invite(maintainer)
+	day := 24 * time.Hour
+
+	notAllowed := func(step, reason string, end time.Time) {
+		t.Helper()
+		rec := en.reqJSON(http.MethodPost, auth.InvitesPath, token, `{"days":7}`)
+		e := decode[auth.AuthError](t, rec)
+		if rec.Code != http.StatusForbidden || e.Code != auth.CodeInviteNotAllowed || e.Data["reason"] != reason ||
+			e.Data["cooldownEndsAt"] != end.UTC().Format(time.RFC3339) {
+			t.Errorf("%s: %d %+v, want 403 %s until %s", step, rec.Code, e, reason, end.UTC().Format(time.RFC3339))
+		}
+	}
+	created := func(step string) auth.InviteInfo {
+		t.Helper()
+		rec := en.reqJSON(http.MethodPost, auth.InvitesPath, token, `{"days":7}`)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("%s: %d %s", step, rec.Code, rec.Body.String())
+		}
+		return decode[auth.CreatedInvite](t, rec).Invite
+	}
+
+	// The permission is off (members from before M2-Q11, or switched off by a maintainer): that is the reason even
+	// during the cooling-off period.
+	joined := time.Now().UTC().Add(-2 * day).Truncate(time.Second)
+	en.setMember(member, dbx.Params{"joined_at": joined.Format(types.DefaultDateLayout)})
+	notAllowed("permission off", "disabled", joined.Add(30*day))
+
+	en.setMember(member, dbx.Params{"can_invite": true})
+	notAllowed("cooling-off period", "cooldown", joined.Add(30*day))
+	// A shorter period applies at once; a longer one too.
+	en.setCooldownDays(1)
+	created("period shortened")
+	en.setCooldownDays(30)
+	notAllowed("period lengthened", "cooldown", joined.Add(30*day))
+	// Opened early by a maintainer.
+	en.setMember(member, dbx.Params{"invite_allowed_from": past()})
+	mine := created("opened early")
+	if mine.CreatedBy == nil || mine.CreatedBy.UUID != member.GetString(store.FieldUUID) {
+		t.Errorf("created by %+v", mine.CreatedBy)
+	}
+	created("third")
+
+	// At most three active invites; a revoked (or used, or expired) one frees a place.
+	rec := en.reqJSON(http.MethodPost, auth.InvitesPath, token, `{"days":7}`)
+	if e := decode[auth.AuthError](t, rec); rec.Code != http.StatusConflict || e.Code != auth.CodeInviteLimitReached ||
+		e.Data["limit"] != float64(domain.MaxActiveInvites) {
+		t.Errorf("fourth invite: %d %+v", rec.Code, e)
+	}
+	revokeMine := strings.Replace(auth.InviteRevokePath, "{uuid}", mine.UUID, 1)
+	if rec := en.reqJSON(http.MethodPost, revokeMine, token, ""); rec.Code != http.StatusOK {
+		t.Errorf("revoking my invite: %d %s", rec.Code, rec.Body.String())
+	}
+	created("after revoking one")
+
+	// Members see only their own invites, maintainers all of them.
+	list := decode[auth.InviteList](t, en.reqJSON(http.MethodGet, auth.InvitesPath, token, "")).Invites
+	if len(list) != 4 {
+		t.Errorf("the member sees %d invites, want their 4", len(list))
+	}
+	for _, inv := range list {
+		if inv.CreatedBy == nil || inv.CreatedBy.UUID != member.GetString(store.FieldUUID) {
+			t.Errorf("the member sees an invite by %+v", inv.CreatedBy)
+		}
+	}
+	if n := len(decode[auth.InviteList](t, en.reqJSON(http.MethodGet, auth.InvitesPath, maintainerToken, "")).Invites); n != 5 {
+		t.Errorf("the maintainer sees %d invites, want 5", n)
+	}
+	// Another member's invite is 404 for a member, as a missing one is; it stays active.
+	revokeOther := strings.Replace(auth.InviteRevokePath, "{uuid}", maintainerInvite.GetString(store.FieldUUID), 1)
+	if rec := en.reqJSON(http.MethodPost, revokeOther, token, ""); rec.Code != http.StatusNotFound {
+		t.Errorf("revoking another member's invite: %d", rec.Code)
+	}
+	if auth.InviteState(en.reload(maintainerInvite), time.Now()) != auth.InviteActive {
+		t.Error("a member revoked another member's invite")
+	}
+	// A maintainer revokes any invite.
+	revokeSecond := strings.Replace(auth.InviteRevokePath, "{uuid}", list[0].UUID, 1)
+	if rec := en.reqJSON(http.MethodPost, revokeSecond, maintainerToken, ""); rec.Code != http.StatusOK {
+		t.Errorf("the maintainer revoking a member's invite: %d", rec.Code)
+	}
+
+	// The member's invite registers a member invited by them, who may invite after their own cooling-off period.
+	code, _, err := auth.CreateInvite(en.app, en.reload(member), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invited, err := auth.RegisterWithInvite(en.app, code, registerAs("test_invited"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	invited = en.reload(invited)
+	if invited.GetString("invited_by") != member.Id || !invited.GetBool("can_invite") ||
+		invited.GetDateTime("joined_at").IsZero() {
+		t.Errorf("invited member: invited_by %q, can_invite %v, joined_at %v", invited.GetString("invited_by"),
+			invited.GetBool("can_invite"), invited.GetDateTime("joined_at"))
+	}
+	right, err := auth.InviteRightOf(en.app, invited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if right.Allowed || right.Reason != domain.InviteReasonCooldown ||
+		!right.CooldownEndsAt.Equal(invited.GetDateTime("joined_at").Time().Add(30*day)) {
+		t.Errorf("the new member's right: %+v", right)
+	}
+
+	// The permission switched off again: the member may still list and revoke their invites, not create one.
+	en.setMember(member, dbx.Params{"can_invite": false})
+	if rec := en.reqJSON(http.MethodPost, auth.InvitesPath, token, ""); rec.Code != http.StatusForbidden {
+		t.Errorf("create with the permission off: %d", rec.Code)
+	}
+	if rec := en.reqJSON(http.MethodGet, auth.InvitesPath, token, ""); rec.Code != http.StatusOK {
+		t.Errorf("list with the permission off: %d", rec.Code)
+	}
+
+	// Maintainers have no limit and no cooling-off period.
+	for i := range domain.MaxActiveInvites + 1 {
+		if rec := en.reqJSON(http.MethodPost, auth.InvitesPath, maintainerToken, ""); rec.Code != http.StatusCreated {
+			t.Errorf("maintainer invite %d: %d", i+1, rec.Code)
+		}
+	}
+}
+
+// TestConcurrentMemberInvites: a member with one place left who sends several create requests at once gets exactly
+// one invite.
+func TestConcurrentMemberInvites(t *testing.T) {
+	en := newEnv(t)
+	en.setCooldownDays(0)
+	member := en.member("test_member", auth.RoleMember)
+	en.setMember(member, dbx.Params{"can_invite": true})
+	member = en.reload(member)
+	for range domain.MaxActiveInvites - 1 {
+		en.invite(member)
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	succeeded, limited := 0, 0
+	for range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, err := auth.CreateInvite(en.app, member, 1)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				succeeded++
+			case errors.Is(err, auth.ErrInviteLimit):
+				limited++
+			default:
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if succeeded != 1 || limited != 4 {
+		t.Errorf("%d created, %d refused", succeeded, limited)
 	}
 }
 
@@ -545,5 +721,29 @@ func TestLeavingRevokesInvites(t *testing.T) {
 	if _, err := en.app.FindFirstRecordByFilter(store.AuditLog, "action = {:a} && target_uuid = {:u}",
 		dbx.Params{"a": auth.AuditRevokeInvites, "u": maintainer.GetString(store.FieldUUID)}); err != nil {
 		t.Errorf("audit entry: %v", err)
+	}
+}
+
+// TestInviteWriteBudget: creating and revoking invites count against the member's write budget, over all their
+// sessions; listing does not.
+func TestInviteWriteBudget(t *testing.T) {
+	en := newEnvWith(t, auth.Options{Limits: &auth.Limits{MemberWrites: ratelimit.Rate{Burst: 2, Every: time.Hour}}})
+	maintainer := en.member("test_maintainer", auth.RoleMaintainer)
+	other := en.member("test_other_maintainer", auth.RoleMaintainer)
+	for range 3 {
+		en.reqJSON(http.MethodGet, auth.InvitesPath, en.session(maintainer), "")
+	}
+	created := decode[auth.CreatedInvite](t, en.reqJSON(http.MethodPost, auth.InvitesPath, en.session(maintainer), ""))
+	revoke := strings.Replace(auth.InviteRevokePath, "{uuid}", created.Invite.UUID, 1)
+	if rec := en.reqJSON(http.MethodPost, revoke, en.session(maintainer), ""); rec.Code != http.StatusOK {
+		t.Errorf("revoke: %d", rec.Code)
+	}
+	rec := en.reqJSON(http.MethodPost, auth.InvitesPath, en.session(maintainer), "")
+	if e := decode[auth.AuthError](t, rec); rec.Code != http.StatusTooManyRequests || e.Code != auth.CodeRateLimited ||
+		rec.Header().Get("Retry-After") == "" {
+		t.Errorf("third write: %d %+v", rec.Code, e)
+	}
+	if rec := en.reqJSON(http.MethodPost, auth.InvitesPath, en.session(other), ""); rec.Code != http.StatusCreated {
+		t.Errorf("another member's write: %d", rec.Code)
 	}
 }

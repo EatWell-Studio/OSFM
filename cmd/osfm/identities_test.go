@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/EatWell-Studio/OSFM/internal/api"
@@ -37,11 +38,21 @@ func TestIdentities(t *testing.T) {
 		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
 		{"the city index of the tiles", func(c *testapp.Client) *testapp.Response { return c.Get("/tiles/") },
 			map[testapp.Identity]int{anon: 401, member: 200, author: 200, maintainer: 200}},
+		// Members see their own invites (T034); the seeded member and author have their invite permission off.
 		{"the invite list", func(c *testapp.Client) *testapp.Response { return c.Get(auth.InvitesPath) },
-			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
+			map[testapp.Identity]int{anon: 401, member: 200, author: 200, maintainer: 200}},
 		{"creating an invite", func(c *testapp.Client) *testapp.Response {
 			return c.Post(auth.InvitesPath, auth.CreateInviteRequest{Days: 1})
 		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 201}},
+		{"whether I may invite", func(c *testapp.Client) *testapp.Response { return c.Get(api.InviteStatusPath) },
+			map[testapp.Identity]int{anon: 401, member: 200, author: 200, maintainer: 200}},
+		{"switching a member's invite permission", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.InvitePermissionPath, "{uuid}", a.Member.GetString(store.FieldUUID), 1),
+				api.InvitePermissionRequest{CanInvite: new(bool)})
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
+		{"opening inviting early", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.InviteEarlyPath, "{uuid}", a.Member.GetString(store.FieldUUID), 1), nil)
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
 		{"the member list", func(c *testapp.Client) *testapp.Response { return c.Get(auth.MembersPath) },
 			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
 		{"creating a reset link for the member", func(c *testapp.Client) *testapp.Response {

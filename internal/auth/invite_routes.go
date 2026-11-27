@@ -11,14 +11,16 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/EatWell-Studio/OSFM/internal/boundary"
+	"github.com/EatWell-Studio/OSFM/internal/domain"
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
 // Paths of the invite routes.
 const (
-	// InvitesPath lists the invites (GET) and creates one (POST); maintainers only.
+	// InvitesPath lists the invites (GET: maintainers all, members their own) and creates one (POST: maintainers, and
+	// members who may invite, domain.CanInvite).
 	InvitesPath = boundary.OSFMPrefix + "invites"
-	// InviteRevokePath revokes an invite (POST); maintainers only.
+	// InviteRevokePath revokes an invite (POST): maintainers any, members their own (others' are 404).
 	InviteRevokePath = boundary.OSFMPrefix + "invites/{uuid}/revoke"
 	// InviteCheckPath tells whether an invite code can be used (POST, public): the registration page asks it before
 	// showing the form.
@@ -28,14 +30,24 @@ const (
 // maxInviteBody bounds the request bodies of the invite routes.
 const maxInviteBody = 1 << 10
 
+// Error codes of creating an invite.
+const (
+	// CodeInviteNotAllowed (403): the member may not invite now. The error's data says why, {"reason":
+	// "cooldown"|"disabled"}, and when the cooling-off period ends, {"cooldownEndsAt": RFC 3339} (D12).
+	CodeInviteNotAllowed = "invite_not_allowed"
+	// CodeInviteLimitReached (409): the member has domain.MaxActiveInvites active invites already; the data has
+	// {"limit"}.
+	CodeInviteLimitReached = "invite_limit_reached"
+)
+
 // MemberRef names a member in a response: the uuid and the main name.
 type MemberRef struct {
 	UUID        string `json:"uuid"`
 	DisplayName string `json:"displayName"`
 }
 
-// InviteInfo is an invite as the maintainers' list shows it. Times are RFC 3339 in UTC; usedBy, usedAt and revokedAt
-// are null while not set. The code is not part of it: only its hash is stored.
+// InviteInfo is an invite as the list shows it. Times are RFC 3339 in UTC; usedBy, usedAt and revokedAt are null
+// while not set. The code is not part of it: only its hash is stored.
 type InviteInfo struct {
 	UUID      string     `json:"uuid"`
 	State     string     `json:"state"` // InviteActive, InviteUsed, InviteExpired or InviteRevoked
@@ -47,7 +59,8 @@ type InviteInfo struct {
 	RevokedAt *time.Time `json:"revokedAt"`
 }
 
-// InviteList is the response of GET [InvitesPath], newest first.
+// InviteList is the response of GET [InvitesPath], newest first: every invite for a maintainer, the member's own for a
+// member.
 type InviteList struct {
 	Invites []InviteInfo `json:"invites"`
 }
@@ -82,9 +95,10 @@ type CheckInviteResponse struct {
 
 // bindInviteRoutes registers the invite routes.
 func bindInviteRoutes(se *core.ServeEvent) {
-	se.Router.GET(InvitesPath, handleListInvites).Bind(RequireMaintainer())
-	se.Router.POST(InvitesPath, handleCreateInvite).Bind(RequireMaintainer())
-	se.Router.POST(InviteRevokePath, handleRevokeInvite).Bind(RequireMaintainer())
+	// Members use these routes too (D12): the handlers decide what each member may see and do.
+	se.Router.GET(InvitesPath, handleListInvites)
+	se.Router.POST(InvitesPath, handleCreateInvite).Bind(MemberWriteBudget())
+	se.Router.POST(InviteRevokePath, handleRevokeInvite).Bind(MemberWriteBudget())
 	Public(se.Router.POST(InviteCheckPath, handleCheckInvite)).Bind(RateLimit(LimitPublic))
 }
 
@@ -114,7 +128,11 @@ func readJSONLimit(e *core.RequestEvent, v any, limit int64) error {
 func handleListInvites(e *core.RequestEvent) error {
 	// Newest first; the uuid (UUIDv7, increasing within a millisecond too) orders invites created in the same
 	// millisecond, which the random record IDs did not.
-	invites, err := store.Query(e.App, store.Invites).OrderBy("created DESC", "uuid DESC").All()
+	q := store.Query(e.App, store.Invites).OrderBy("created DESC", "uuid DESC")
+	if m := CurrentMember(e); !IsMaintainer(m) {
+		q = q.Where(dbx.HashExp{store.Invites + ".created_by": m.Id})
+	}
+	invites, err := q.All()
 	if err != nil {
 		return e.InternalServerError("", err)
 	}
@@ -135,7 +153,18 @@ func handleCreateInvite(e *core.RequestEvent) error {
 		return e.BadRequestError("days must be between 1 and 30.", nil)
 	}
 	code, invite, err := CreateInvite(e.App, CurrentMember(e), req.Days)
-	if err != nil {
+	var notAllowed *InviteNotAllowedError
+	switch {
+	case errors.As(err, &notAllowed):
+		data := map[string]any{"reason": notAllowed.Right.Reason}
+		if t := notAllowed.Right.CooldownEndsAt; !t.IsZero() {
+			data["cooldownEndsAt"] = t.UTC().Format(time.RFC3339)
+		}
+		return authErrorData(e, http.StatusForbidden, CodeInviteNotAllowed, "You may not invite now.", data)
+	case errors.Is(err, ErrInviteLimit):
+		return authErrorData(e, http.StatusConflict, CodeInviteLimitReached, "You have too many active invites.",
+			map[string]any{"limit": domain.MaxActiveInvites})
+	case err != nil:
 		return e.InternalServerError("", err)
 	}
 	infos, err := inviteInfos(e.App, []*core.Record{invite})
@@ -152,10 +181,12 @@ func handleRevokeInvite(e *core.RequestEvent) error {
 		return e.NotFoundError("", nil)
 	}
 	invite, err := store.FindByUUID(e.App, store.Invites, id)
-	if err != nil {
+	m := CurrentMember(e)
+	// Another member's invite answers as a missing one.
+	if err != nil || (!IsMaintainer(m) && invite.GetString("created_by") != m.Id) {
 		return e.NotFoundError("", nil)
 	}
-	switch err := RevokeInvite(e.App, invite, CurrentMember(e)); {
+	switch err := RevokeInvite(e.App, invite, m); {
 	case errors.Is(err, ErrInviteUsed):
 		return e.Error(http.StatusConflict, "The invite has been used.", nil)
 	case err != nil:
@@ -187,8 +218,8 @@ func handleCheckInvite(e *core.RequestEvent) error {
 	return e.JSON(http.StatusOK, CheckInviteResponse{Valid: valid})
 }
 
-// inviteInfos projects invites for the maintainers' list, with the inviter and the new member by uuid and main name.
-// Members are looked up soft-deleted ones included: the list keeps showing who invited and who joined.
+// inviteInfos projects invites for the list, with the inviter and the new member by uuid and main name. Members are
+// looked up soft-deleted ones included: the list keeps showing who invited and who joined.
 func inviteInfos(app core.App, invites []*core.Record) ([]InviteInfo, error) {
 	ids := map[string]bool{}
 	for _, inv := range invites {
@@ -237,4 +268,11 @@ func optionalTime(r *core.Record, field string) *time.Time {
 	}
 	t := d.Time().UTC()
 	return &t
+}
+
+// authErrorData is [authError] with data, for errors that tell the client more than their code.
+func authErrorData(e *core.RequestEvent, status int, code, message string, data map[string]any) error {
+	e.Set(authErrorCodeKey, code)
+	e.Response.Header().Set("Cache-Control", "no-store")
+	return e.JSON(status, AuthError{Status: status, Message: message, Data: data, Code: code})
 }

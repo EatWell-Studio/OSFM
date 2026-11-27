@@ -22,5 +22,23 @@
   "usedBy": "{{name}} 于 {{date}} 使用",
   "revokedAt": "撤销于 {{date}}",
   "expiresAt": "有效至 {{date}}",
-  "unknownMember": "（未知成员）"
+  "unknownMember": "（未知成员）",
+  "errors": {
+    "notAllowed": "你现在还不能邀请，请刷新页面查看原因。",
+    "limit_one": "同时最多只能有 {{count}} 个有效邀请。撤销一个，或等它被使用或过期后再创建。",
+    "limit_other": "同时最多只能有 {{count}} 个有效邀请。撤销一个，或等它被使用或过期后再创建。",
+    "rateLimited": "操作太频繁，请稍后再试。"
+  },
+  "me": {
+    "maintainer": "你是维护者，随时可以邀请新成员，并在管理页查看和撤销全部邀请。",
+    "toAdmin": "查看全部邀请",
+    "loadError": "无法查看你的邀请权限，请检查网络后重试。",
+    "disabled": "维护者关闭了你的邀请权限。你仍然可以查看和撤销自己的邀请。",
+    "cooldown_one": "新成员加入后要等一段时间才能邀请别人：还剩 {{count}} 天，{{date}} 起可以邀请。",
+    "cooldown_other": "新成员加入后要等一段时间才能邀请别人：还剩 {{count}} 天，{{date}} 起可以邀请。",
+    "limitReached_one": "你已有 {{count}} 个有效邀请，达到上限。撤销一个，或等它被使用或过期后再创建。",
+    "limitReached_other": "你已有 {{count}} 个有效邀请，达到上限。撤销一个，或等它被使用或过期后再创建。",
+    "allowed_one": "你可以邀请新成员：每个链接只能注册一人，同时最多 {{count}} 个有效邀请（现有 {{active}} 个）。你邀请的人会记在你名下。",
+    "allowed_other": "你可以邀请新成员：每个链接只能注册一人，同时最多 {{count}} 个有效邀请（现有 {{active}} 个）。你邀请的人会记在你名下。"
+  }
 }

@@ -43,6 +43,92 @@ export const CodeForbidden = "forbidden"; // 403: the caller may not do this
 export const CodeRateLimited = "rate_limited"; // 429: over the budget; Retry-After says when to try again (as auth's)
 
 //////////
+// source: governance_invites.go
+
+/**
+ * Paths of the member invite routes.
+ */
+export const InviteStatusPath = "/api/osfm/me/invite-status";
+/**
+ * Paths of the member invite routes.
+ */
+export const InvitePermissionPath = "/api/osfm/members/{uuid}/invite-permission";
+/**
+ * Paths of the member invite routes.
+ */
+export const InviteEarlyPath = "/api/osfm/members/{uuid}/invite-early";
+/**
+ * Why a member may not invite ([InviteStatus].Reason, and the reason of a 403 invite_not_allowed of the invite route):
+ * the same values as domain.InviteReasonCooldown and domain.InviteReasonDisabled.
+ */
+export const InviteReasonCooldown = "cooldown";
+/**
+ * Why a member may not invite ([InviteStatus].Reason, and the reason of a 403 invite_not_allowed of the invite route):
+ * the same values as domain.InviteReasonCooldown and domain.InviteReasonDisabled.
+ */
+export const InviteReasonDisabled = "disabled";
+/**
+ * MaxActiveInvites is the number of active invites a member who is not a maintainer may have at a time
+ * (domain.MaxActiveInvites).
+ */
+export const MaxActiveInvites = 3;
+/**
+ * InviteStatus is GET [InviteStatusPath]: whether the signed-in member may create an invite now.
+ */
+export interface InviteStatus {
+  /**
+   * Allowed is true when the member may invite now (maintainers always). A member at MaxActiveInvites active
+   * invites is still Allowed, but must wait for one to be used, revoked or expire.
+   */
+  allowed: boolean;
+  /**
+   * Reason is empty when Allowed, otherwise InviteReasonCooldown or InviteReasonDisabled.
+   */
+  reason: string;
+  /**
+   * CooldownEndsAt is when the cooling-off period ends or ended; null for maintainers.
+   */
+  cooldownEndsAt: string | null;
+  /**
+   * ActiveInvites is the number of the member's invites that are neither used, revoked nor expired.
+   */
+  activeInvites: number /* int */;
+  /**
+   * MaxActiveInvites is the limit of ActiveInvites; null for maintainers, who have none.
+   */
+  maxActiveInvites: number | null;
+}
+/**
+ * InvitePermissionRequest is the body of POST [InvitePermissionPath].
+ */
+export interface InvitePermissionRequest {
+  /**
+   * CanInvite switches the member's invite permission on (true) or off (false); required.
+   */
+  canInvite?: boolean;
+}
+/**
+ * MemberInviteRights is the response of POST [InvitePermissionPath] and [InviteEarlyPath]: the member's invite
+ * permission and cooling-off period after the change.
+ */
+export interface MemberInviteRights {
+  uuid: string;
+  /**
+   * CanInvite is the member's invite permission.
+   */
+  canInvite: boolean;
+  /**
+   * Allowed and Reason are as in [InviteStatus].
+   */
+  allowed: boolean;
+  reason: string;
+  /**
+   * CooldownEndsAt is when the cooling-off period ends or ended; null for maintainers.
+   */
+  cooldownEndsAt: string | null;
+}
+
+//////////
 // source: projection.go
 
 /**

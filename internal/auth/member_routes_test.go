@@ -90,11 +90,14 @@ func TestMemberList(t *testing.T) {
 	ref := &auth.MemberRef{UUID: uuid(maintainer), DisplayName: "Head Keeper"}
 
 	if m := byUUID[uuid(maintainer)]; m.Role != auth.RoleMaintainer || !m.CanInvite || m.InvitedBy != nil ||
-		m.Passkeys != 0 || m.PasswordTOTP || m.LeftAt != nil || m.PendingResetLink != nil {
+		m.Passkeys != 0 || m.PasswordTOTP || m.LeftAt != nil || m.PendingResetLink != nil ||
+		m.InviteCooldownEndsAt != nil {
 		t.Errorf("maintainer %+v", m)
 	}
-	if m := byUUID[uuid(pw)]; m.Role != auth.RoleMember || m.CanInvite || *m.InvitedBy != *ref || m.Passkeys != 0 ||
-		!m.PasswordTOTP || m.LeftAt != nil || m.JoinedAt.IsZero() {
+	// A new member may invite after the cooling-off period (30 days by default) from joining (M2-Q11).
+	if m := byUUID[uuid(pw)]; m.Role != auth.RoleMember || !m.CanInvite || *m.InvitedBy != *ref || m.Passkeys != 0 ||
+		!m.PasswordTOTP || m.LeftAt != nil || m.JoinedAt.IsZero() || m.InviteCooldownEndsAt == nil ||
+		!m.InviteCooldownEndsAt.Equal(m.JoinedAt.Add(30*24*time.Hour)) || !m.InviteCooldown {
 		t.Errorf("password member %+v", m)
 	}
 	if m := byUUID[uuid(pk)]; m.Passkeys != 2 || m.PasswordTOTP || m.PendingResetLink == nil ||
