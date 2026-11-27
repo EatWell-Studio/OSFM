@@ -4,6 +4,8 @@
 # with that step's status, and its last lines are shown; the steps after it are not run. CI runs the same checks.
 #
 #   bin/gate.sh                 all steps
+#   bin/gate.sh --e2e           all steps, then the end-to-end tests against the binary the last step built (slower;
+#                               needs Playwright's Chromium or Google Chrome, see CONTRIBUTING.md)
 #   bin/gate.sh <step> ...      only these steps; each step is one shell command line run from the repository root
 #
 # Each step's output goes to its own file, gate-<n>.txt, in OSFM_GATE_OUTPUT (default: ../osfm-gate-output/<name of the
@@ -21,6 +23,11 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${OSFM_GATE_OUTPUT:-$REPO/../osfm-gate-output/$(basename "$REPO")}"
 mkdir -p "$OUT" || exit 1
 
+e2e=0
+if [ "${1:-}" = --e2e ]; then
+	e2e=1
+	shift
+fi
 if [ "$#" -eq 0 ]; then
 	set -- \
 		'bin/check-private-paths.sh' \
@@ -34,6 +41,12 @@ if [ "$#" -eq 0 ]; then
 		'golangci-lint run ./...' \
 		'go test -race ./...' \
 		'go build -o "$OSFM_GATE_BIN" ./cmd/osfm'
+	if [ "$e2e" -eq 1 ]; then
+		set -- "$@" 'OSFM_E2E_BINARY="$OSFM_GATE_BIN" pnpm --dir web run e2e'
+	fi
+elif [ "$e2e" -eq 1 ]; then
+	echo "gate: --e2e runs after all steps; it cannot be combined with a list of steps" >&2
+	exit 2
 fi
 OSFM_GATE_BIN="$OUT/osfm"
 export OSFM_GATE_BIN
