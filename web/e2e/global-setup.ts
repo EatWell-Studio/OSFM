@@ -1,6 +1,7 @@
 // Starts the real binary for the end-to-end tests, as an operator would: `osfm serve` on an empty data directory, with
-// the generated basemap archive in its tiles directory and nothing else configured. The setup code comes from the
-// server log and is checked against `osfm setup-code`. The returned function stops the server and removes the data.
+// the generated basemap archive in its tiles directory and, besides the listen address, only the trusted proxy header
+// configured. The setup code comes from the server log and is checked against `osfm setup-code`. The returned function
+// stops the server and removes the data.
 //
 // The binary is OSFM_E2E_BINARY; without it, the setup builds one with `go build` from the web app already built in
 // dist/app (pnpm run build), into node_modules/.cache/osfm-e2e. The server log goes to test-results/osfm-server.log.
@@ -12,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { FullConfig } from '@playwright/test'
 import { buildArchive } from './support/archive.ts'
-import { city, portVariable, setupCodeVariable } from './support/env.ts'
+import { city, dataDirVariable, portVariable, setupCodeVariable } from './support/env.ts'
 
 const webDir = resolve(import.meta.dirname, '..')
 const repoDir = resolve(webDir, '..')
@@ -42,7 +43,14 @@ function serverEnv(dataDir: string, port: string): NodeJS.ProcessEnv {
     }
   }
   // OSFM_LISTEN rather than --http: the passkey relying party's origin takes its port from it (http://localhost:<port>).
-  return { ...env, OSFM_DATA_DIR: dataDir, OSFM_LISTEN: `127.0.0.1:${port}` }
+  // The client address from X-Forwarded-For, as behind a deployment's reverse proxy: each test phone sends its own
+  // (support/browser.ts), so that the authentication rate limits count the phones separately.
+  return {
+    ...env,
+    OSFM_DATA_DIR: dataDir,
+    OSFM_LISTEN: `127.0.0.1:${port}`,
+    OSFM_TRUSTED_PROXY_HEADERS: 'X-Forwarded-For',
+  }
 }
 
 async function waitFor<T>(what: string, timeoutMs: number, probe: () => Promise<T | undefined>): Promise<T> {
@@ -124,6 +132,7 @@ export default async function globalSetup(config: FullConfig): Promise<() => Pro
       throw new Error(`osfm setup-code printed ${printed}, the log has ${code}`)
     }
     process.env[setupCodeVariable] = code
+    process.env[dataDirVariable] = dataDir
   } catch (e) {
     await stop()
     throw e

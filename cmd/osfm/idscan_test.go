@@ -285,17 +285,24 @@ var osfmProbes = map[string][]idscan.Request{
 		{Method: http.MethodPost, Path: auth.ResetPasskeyPath, Header: csrfHeader, Status: http.StatusBadRequest,
 			Body: `{"token":"` + idscan.ResetToken + `","state":"x","credential":{}}`},
 	},
-	// Maintainers only (maintainerRoutes): reset links and the instance settings.
+	// Maintainers only (maintainerRoutes): the member list, reset links and the instance settings.
+	"GET " + auth.MembersPath: {
+		{Path: auth.MembersPath, Status: http.StatusOK},
+	},
 	"GET " + auth.ResetLinksPath: {
 		{Path: auth.ResetLinksPath, Status: http.StatusOK},
 	},
 	"POST " + auth.ResetLinksPath: {
 		{Method: http.MethodPost, Path: auth.ResetLinksPath, Header: csrfHeader, Status: http.StatusCreated,
-			Body: `{"loginName":"` + idscan.ResetMemberLogin + `"}`},
+			Body: `{"member":"` + idscan.ResetMemberUUID + `"}`},
 		{Method: http.MethodPost, Path: auth.ResetLinksPath, Header: csrfHeader, Status: http.StatusNotFound,
-			Body: `{"loginName":"test_nobody"}`},
+			Body: `{"member":"0190a1b2-0000-7000-8000-00000000ffff"}`},
+		{Method: http.MethodPost, Path: auth.ResetLinksPath, Header: csrfHeader, Status: http.StatusNotFound,
+			Body: `{"member":"` + idscan.LeftMemberUUID + `"}`},
+		{Method: http.MethodPost, Path: auth.ResetLinksPath, Header: csrfHeader, Status: http.StatusNotFound,
+			Body: `{"loginName":"test_reset"}`},
 		{Method: http.MethodPost, Path: auth.ResetLinksPath, Header: csrfHeader, Status: http.StatusConflict,
-			Body: `{"loginName":"test_maintainer"}`},
+			Body: `{"member":"` + idscan.MaintainerUUID + `"}`},
 		{Method: http.MethodPost, Path: auth.ResetLinksPath, Header: csrfHeader, Body: `{`,
 			Status: http.StatusBadRequest},
 	},
@@ -383,6 +390,7 @@ var maintainerRoutes = map[string]bool{
 	"POST " + auth.InvitesPath:          true,
 	"POST " + auth.InviteRevokePath:     true,
 	"POST " + auth.SetupCompletePath:    true,
+	"GET " + auth.MembersPath:           true,
 	"GET " + auth.ResetLinksPath:        true,
 	"POST " + auth.ResetLinksPath:       true,
 	"POST " + auth.ResetLinkRevokePath:  true,

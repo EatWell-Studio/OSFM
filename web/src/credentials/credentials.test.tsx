@@ -213,29 +213,122 @@ describe('the reset page', () => {
   })
 })
 
+/** The index-th item of a list. */
+function rowOf(list: HTMLElement, index: number): HTMLElement {
+  const row = within(list).getAllByRole('listitem')[index]
+  if (!row) {
+    throw new Error(`no row ${String(index)}`)
+  }
+  return row
+}
+
 describe('the admin page', () => {
-  it('creates a reset link and shows it once', async () => {
-    const link = {
-      uuid: '0190a1b2-0000-7000-8000-00000000b001',
-      state: 'active',
-      member: { uuid: member.uuid, displayName: 'Test Member' },
-      createdBy: { uuid: maintainer.uuid, displayName: 'Test Maintainer' },
-      createdAt: '2026-01-01T10:00:00Z',
-      expiresAt: '2026-01-02T10:00:00Z',
-      usedAt: null,
-      revokedAt: null,
-    }
+  // The signed-in maintainer is `maintainer`; the member is someone else.
+  const memberUuid = '0190a1b2-0000-7000-8000-000000000003'
+  const memberRow = {
+    uuid: memberUuid,
+    displayName: 'Test Member',
+    role: 'member',
+    joinedAt: '2026-01-01T10:00:00Z',
+    canInvite: false,
+    invitedBy: { uuid: maintainer.uuid, displayName: 'Test Maintainer' },
+    leftAt: null,
+    passkeys: 2,
+    passwordTotp: false,
+    pendingResetLink: null,
+  }
+  const members = [
+    {
+      ...memberRow,
+      uuid: maintainer.uuid,
+      displayName: 'Test Maintainer',
+      role: 'maintainer',
+      canInvite: true,
+      invitedBy: null,
+      passkeys: 0,
+      passwordTotp: true,
+    },
+    memberRow,
+    {
+      ...memberRow,
+      uuid: '0190a1b2-0000-7000-8000-000000000009',
+      displayName: 'Test Gone',
+      leftAt: '2026-02-01T10:00:00Z',
+      pendingResetLink: null,
+    },
+  ]
+  const link = {
+    uuid: '0190a1b2-0000-7000-8000-00000000b001',
+    state: 'active',
+    member: { uuid: memberUuid, displayName: 'Test Member' },
+    createdBy: { uuid: maintainer.uuid, displayName: 'Test Maintainer' },
+    createdAt: '2026-01-01T10:00:00Z',
+    expiresAt: '2026-01-02T10:00:00Z',
+    usedAt: null,
+    revokedAt: null,
+  }
+  const adminApi = (handlers: Record<string, Handler> = {}) =>
     stubApi(maintainer, {
       'GET /api/osfm/me/credentials': () => Response.json(credentials()),
       'GET /api/osfm/invites': () => Response.json({ invites: [] }),
+      'GET /api/osfm/members': () => Response.json({ members }),
       'GET /api/osfm/reset-links': () => Response.json({ resetLinks: [] }),
       'GET /api/osfm/instance': () => Response.json({ name: 'Test Circle', cities: [] }),
       'POST /api/osfm/reset-links': () => Response.json({ resetLink: link, token }, { status: 201 }),
+      ...handlers,
     })
+
+  it('lists the members with their sign-in methods, those who left apart', async () => {
+    adminApi()
     renderAt('/admin')
-    await userEvent.type(await screen.findByLabelText(zhCN.pages.admin.reset.loginName), 'test_member')
-    await userEvent.click(screen.getByRole('button', { name: zhCN.pages.admin.reset.create }))
+    const list = await screen.findByRole('list', { name: zhCN.pages.admin.members.title })
+    const rows = within(list).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent(`Test Maintainer · ${zhCN.pages.admin.members.maintainer}`)
+    expect(rows[0]).toHaveTextContent(zhCN.pages.admin.members.you)
+    expect(rows[0]).toHaveTextContent(zhCN.pages.admin.members.passwordTotp)
+    // No reset link for oneself.
+    expect(within(rowOf(list, 0)).queryByRole('button')).toBeNull()
+    expect(rows[1]).toHaveTextContent(zhCN.pages.admin.members.passkeys_other.replace('{{count}}', '2'))
+    expect(rows[1]).toHaveTextContent(
+      zhCN.pages.admin.members.joinedInvited.replace(/.*\{\{date\}\}/, '').replace('{{name}}', 'Test Maintainer'),
+    )
+    expect(rows[1]).toHaveTextContent(zhCN.pages.admin.members.cannotInvite)
+    const left = screen.getByRole('list', { name: zhCN.pages.admin.members.left })
+    expect(within(left).getByRole('listitem')).toHaveTextContent('Test Gone')
+    expect(within(left).queryByRole('button')).toBeNull()
+  })
+
+  it('creates a reset link from a member row, by uuid, and shows it once', async () => {
+    const fetchMock = adminApi()
+    renderAt('/admin')
+    const list = await screen.findByRole('list', { name: zhCN.pages.admin.members.title })
+    const row = rowOf(list, 1)
+    await userEvent.click(within(row).getByRole('button', { name: zhCN.pages.admin.reset.create }))
     const shown = await screen.findByRole('textbox', { name: zhCN.pages.admin.reset.link })
     expect(shown).toHaveValue(`${window.location.origin}/reset#token=${token}`)
+    const call = fetchMock.mock.calls.find(([p, init]) => p === '/api/osfm/reset-links' && init?.method === 'POST')
+    expect(body(call?.[1])).toEqual({ member: memberUuid })
+  })
+
+  it('asks for a re-verification when the server says the session is stale', async () => {
+    let calls = 0
+    adminApi({
+      'GET /api/osfm/me/credentials': () =>
+        Response.json(
+          credentials({ passkeys: [], passwordTotp: { createdAt: '2026-01-01T10:00:00Z', lastUsedAt: null } }),
+        ),
+      'POST /api/osfm/reset-links': () => {
+        calls++
+        return Response.json({ status: 403, message: '', data: {}, code: 'reauth_required' }, { status: 403 })
+      },
+    })
+    renderAt('/admin')
+    const list = await screen.findByRole('list', { name: zhCN.pages.admin.members.title })
+    const row = rowOf(list, 1)
+    await userEvent.click(within(row).getByRole('button', { name: zhCN.pages.admin.reset.create }))
+    expect(await screen.findByRole('heading', { name: zhCN.credentials.verify.title })).toBeInTheDocument()
+    expect(screen.getByText(zhCN.credentials.verify.repeat)).toBeInTheDocument()
+    expect(calls).toBe(1)
   })
 })

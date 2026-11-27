@@ -65,8 +65,8 @@ const (
 var (
 	// ErrInvalidResetLink is returned for every token that cannot be used. Deliberately one error.
 	ErrInvalidResetLink = errors.New("auth: invalid or expired reset link")
-	// errResetMemberNotFound: no member who may sign in has the login name.
-	errResetMemberNotFound = errors.New("auth: no member who may sign in has this login name")
+	// errResetMemberNotFound: no member who may sign in has the uuid.
+	errResetMemberNotFound = errors.New("auth: no member who may sign in has this uuid")
 	// errResetSelf: a maintainer asked for a reset link for themselves.
 	errResetSelf = errors.New("auth: no reset link for oneself")
 	// errResetLinkUsed: a used link cannot be revoked.
@@ -108,19 +108,22 @@ func revokePendingResetLinks(tx core.App, member, actor *core.Record, reason str
 	return nil
 }
 
-// CreateResetLink creates a reset link for the member with the login name on behalf of actor, a maintainer, valid for
+// CreateResetLink creates a reset link for the member with the uuid on behalf of actor, a maintainer, valid for
 // [ResetLinkLifetime], revoking the member's earlier pending links, and audits it. It returns the token, which exists
 // only in this return value, and the link record. errResetMemberNotFound, errResetSelf.
-func CreateResetLink(app core.App, actor *core.Record, loginName string) (string, *core.Record, error) {
-	login := NormalizeLoginName(loginName)
-	if !validLoginName(login) {
+func CreateResetLink(app core.App, actor *core.Record, memberUUID string) (string, *core.Record, error) {
+	if !store.IsUUID(memberUUID) {
 		return "", nil, errResetMemberNotFound
 	}
-	member, err := findSignInMember(app, login)
+	member, err := store.Query(app, store.Members).
+		Where(dbx.HashExp{store.Members + "." + store.FieldUUID: memberUUID}).One()
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, errResetMemberNotFound
+	}
 	if err != nil {
 		return "", nil, err
 	}
-	if member == nil {
+	if !CanSignIn(member) {
 		return "", nil, errResetMemberNotFound
 	}
 	if member.Id == actor.Id {

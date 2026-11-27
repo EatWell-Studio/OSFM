@@ -54,10 +54,29 @@
         "expiresAt": "Valid until {{date}}",
         "unknownMember": "(unknown member)"
       },
+      "members": {
+        "title": "Members",
+        "intro": "The members of the circle and how they sign in (login names are not shown). When a member has lost every way to sign in and every recovery code, create a one-time reset link (valid for 24 hours) from their row and send it through a channel you trust. You confirm it is you first.",
+        "loadError": "Could not load the members. Check your connection and try again.",
+        "maintainer": "maintainer",
+        "you": "(you)",
+        "joined": "joined {{date}}",
+        "joinedInvited": "joined {{date}}, invited by {{name}}",
+        "leftAt": "left {{date}}",
+        "methods": "Signs in with: {{methods}}",
+        "separator": ", ",
+        "passwordTotp": "password + authenticator app",
+        "passkeys_one": "{{count}} passkey",
+        "passkeys_other": "{{count}} passkeys",
+        "noMethods": "nothing",
+        "canInvite": "may invite",
+        "cannotInvite": "may not invite",
+        "pendingReset": "A reset link is waiting, valid until {{date}}",
+        "left": "Members who left"
+      },
       "reset": {
         "title": "Reset links",
-        "intro": "When a member has lost every way to sign in and every recovery code, create a one-time reset link for them (valid for 24 hours) and send it through a channel you trust. You confirm it is you first.",
-        "loginName": "Member's login name",
+        "intro": "Every reset link and its state; pending links can be revoked. Reset links are created from the member list above.",
         "create": "Create reset link",
         "link": "Reset link",
         "shownOnce": "This link is shown this once and works once. A new link for the same member makes this one invalid.",
@@ -66,9 +85,8 @@
         "for": "Reset link for {{name}}",
         "usedAt": "used {{date}}",
         "errors": {
-          "notFound": "No member who can sign in has this login name.",
-          "self": "You cannot create a reset link for yourself; manage your own ways to sign in on your page.",
-          "missing": "Enter the member's login name."
+          "notFound": "This member has left or no longer exists. Reload the page.",
+          "self": "You cannot create a reset link for yourself; manage your own ways to sign in on your page."
         }
       },
       "instance": {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/EatWell-Studio/OSFM/internal/auth"
 	"github.com/EatWell-Studio/OSFM/internal/settings"
+	"github.com/EatWell-Studio/OSFM/internal/store"
 	"github.com/EatWell-Studio/OSFM/internal/testapp"
 )
 
@@ -36,6 +37,11 @@ func TestIdentities(t *testing.T) {
 			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
 		{"creating an invite", func(c *testapp.Client) *testapp.Response {
 			return c.Post(auth.InvitesPath, auth.CreateInviteRequest{Days: 1})
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 201}},
+		{"the member list", func(c *testapp.Client) *testapp.Response { return c.Get(auth.MembersPath) },
+			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
+		{"creating a reset link for the member", func(c *testapp.Client) *testapp.Response {
+			return c.Post(auth.ResetLinksPath, auth.CreateResetLinkRequest{Member: a.Member.GetString(store.FieldUUID)})
 		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 201}},
 		{"completing the setup", func(c *testapp.Client) *testapp.Response {
 			return c.Post(auth.SetupCompletePath, settings.Instance{})
