@@ -1,0 +1,42 @@
+# Example Docker Compose file for an OSFM instance behind a reverse proxy on the same host (Caddy, see
+# deploy/Caddyfile.example and docs/self-hosting.md). Copy it to compose.yml in a directory of its own, set the image
+# tag and OSFM_PUBLIC_URL, then run `docker compose up -d`.
+#
+# Not yet verified on a real server.
+
+name: osfm
+
+services:
+  osfm:
+    # Pin a released version (e.g. 1.2.3 or 1.2) and upgrade deliberately; see "Upgrades" in docs/self-hosting.md.
+    # No release has been published yet: until then, build the image yourself
+    # (docker buildx build -f deploy/Dockerfile -t osfm:local --load .) and use osfm:local here.
+    image: ghcr.io/eatwell-studio/osfm:1.2.3
+    container_name: osfm
+    restart: unless-stopped
+    environment:
+      # The URL members open, exactly (with the port if it is not 443). Passkeys, the __Host- session cookie and HSTS
+      # depend on it.
+      OSFM_PUBLIC_URL: https://food.example.org
+      # The proxy puts the client's address in X-Forwarded-For; OSFM takes the rightmost address for the sign-in rate
+      # limits. Safe only because the port below is reachable from this host alone.
+      OSFM_TRUSTED_PROXY_HEADERS: X-Forwarded-For
+      # The PocketBase admin UI, only when needed (docs/self-hosting.md, "Admin UI"); also uncomment its port below.
+      # OSFM_ADMIN_UI: "true"
+      # OSFM_ADMIN_LISTEN: 0.0.0.0:8091
+    ports:
+      # Published on the host's loopback interface only: the reverse proxy reaches it, nobody else does.
+      - "127.0.0.1:8090:8090"
+      # The admin listener, reached through an SSH tunnel; never forwarded by the proxy.
+      # - "127.0.0.1:8091:8091"
+    volumes:
+      # pb_data/ (database), tiles/ (basemaps) and secrets/ (instance keys): back up pb_data/ and secrets/ together.
+      - osfm-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  osfm-data:
