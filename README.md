@@ -67,7 +67,7 @@ deploy/tiles.sh example-town 6.68,0.30,6.76,0.36             # writes ./data/til
 
 City names are lowercase letters, digits and `-`, the same as a city's slug in the setup wizard; a file without a city in the instance settings is shown by its file name (`example-town` as "Example Town"). A file added or removed while the server runs shows up on the next page load. Tile files are never committed.
 
-Before opening a pull request, run `bin/gate.sh` (lint, type checks, tests and builds for both halves, and `pnpm --dir web run check:urls`, which fails when the built web app contains a URL of another origin; see [CONTRIBUTING.md](CONTRIBUTING.md)).
+Before opening a pull request, run `bin/gate.sh` (lint, type checks, tests and builds for both halves, and `pnpm --dir web run check:urls`, which fails when the built web app contains a URL of another origin; `bin/gate.sh --e2e` adds the end-to-end tests; see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Container image
 

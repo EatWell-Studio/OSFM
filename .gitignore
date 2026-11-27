@@ -125,3 +125,6 @@ Thumbs.db
 # Local PocketBase data directory and the built binary
 pb_data/
 /osfm
+# Output of the end-to-end tests (web/playwright.config.ts)
+/web/test-results/
+/web/playwright-report/
