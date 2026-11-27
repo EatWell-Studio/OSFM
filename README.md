@@ -36,6 +36,18 @@ go build -o osfm ./cmd/osfm   # one binary with the web app embedded
 ./osfm serve                  # http://127.0.0.1:8090, data in ./data
 ```
 
+### First start
+
+On its first start, with an empty data directory, the instance has no maintainer yet. It prints a one-time **setup code** to its log:
+
+```
+WARN This instance has no maintainer yet. Open it in a browser and enter this setup code … setup_code=XXXX-XXXX-XXXX-XXXX
+```
+
+(`./osfm setup-code`, or `docker exec osfm osfm setup-code` for the container below, prints it again.) Open the instance in a browser: every page leads to the setup wizard. Enter the setup code, create the first maintainer (password and authenticator app, or a passkey; two-step verification is required as for everyone, and you get recovery codes), then give the instance its name and at least one city. You end up signed in on the map; no configuration file needs editing. The setup code exists so that whoever happens to open a freshly deployed instance first cannot claim it: only someone who can read the server's log can. Each start while there is no maintainer makes a new code; once the first maintainer exists, the code and the wizard are gone. Further members join with invites from the maintainer.
+
+What the wizard cannot do for you is place the basemap files: each city's basemap is a file in `tiles/` (see [Basemap tiles](#basemap-tiles)). The wizard offers the files already there and, for a city added without one, shows the `deploy/tiles.sh` command that extracts it; until the file is in place, the map shows that the city has no basemap yet.
+
 `./data` holds `pb_data/` (database), `tiles/` (map tiles) and `secrets/` (instance keys, generated on first start; keep them in your backups). Settings come from environment variables: `OSFM_DATA_DIR` (default `./data`), `OSFM_LISTEN` (default `127.0.0.1:8090`; `serve --http` overrides it), `OSFM_PUBLIC_URL` (must be `https://`, except for `localhost` or a loopback address: the session cookie is `Secure`; set it in production: with an `https://` URL on a real host name, OSFM also sends HSTS and names the session cookie `__Host-osfm_session`), `OSFM_ADMIN_UI` (default `false`) and `OSFM_ADMIN_LISTEN` (default `127.0.0.1:8091`). The effective configuration is printed at startup.
 
 Without a session, only the sign-in pages, `/api/health` and `/.well-known/osfm.json` answer; the rest of `/api/osfm/*` and the tiles return 401. Clients only use `/api/osfm/*`: PocketBase's own APIs and its admin UI are never served on the main listener (every other `/api/` path answers with a JSON 404). With `OSFM_ADMIN_UI=true`, the admin UI and PocketBase's APIs are served on a separate listener at `OSFM_ADMIN_LISTEN`, which your reverse proxy should not forward; reach it through an SSH tunnel (`ssh -L 8091:127.0.0.1:8091 your-server`, then open `http://127.0.0.1:8091/_/`). In a container, set `OSFM_ADMIN_LISTEN=0.0.0.0:8091` and publish the port on the host's loopback only (`-p 127.0.0.1:8091:8091`). Superusers are created with `osfm superuser upsert EMAIL PASS`.
@@ -44,14 +56,14 @@ For frontend work, run `./osfm serve` and `pnpm --dir web dev` side by side; the
 
 ### Basemap tiles
 
-The map's basemap is one PMTiles file per city in `<data>/tiles/` (`OSFM_DATA_DIR`, default `./data`), served as `/tiles/<city>/{z}/{x}/{y}.mvt` and `/tiles/<city>.json`; `/tiles/` lists the cities, and the map page offers exactly those. To get one for local development, install the [`pmtiles` CLI](https://github.com/protomaps/go-pmtiles/releases) and extract your city's bounding box from the latest [Protomaps](https://protomaps.com/) OpenStreetMap build; only the needed parts are downloaded, typically 10–30 MB per city:
+The map's basemap is one PMTiles file per city in `<data>/tiles/` (`OSFM_DATA_DIR`, default `./data`), served as `/tiles/<city>/{z}/{x}/{y}.mvt` and `/tiles/<city>.json`; `/tiles/` lists the cities. The map page offers the instance's cities (set in the setup wizard, by their display names) and any other city that has a file. To get one for local development, install the [`pmtiles` CLI](https://github.com/protomaps/go-pmtiles/releases) and extract your city's bounding box from the latest [Protomaps](https://protomaps.com/) OpenStreetMap build; only the needed parts are downloaded, typically 10–30 MB per city:
 
 ```bash
 deploy/tiles.sh --dry-run example-town 6.68,0.30,6.76,0.36   # estimate the size
 deploy/tiles.sh example-town 6.68,0.30,6.76,0.36             # writes ./data/tiles/example-town.pmtiles
 ```
 
-City names are lowercase letters, digits and `-`; until the instance settings give cities their display names, the map shows the file name (`example-town` as "Example Town"). A file added or removed while the server runs shows up on the next page load. Tile files are never committed.
+City names are lowercase letters, digits and `-`, the same as a city's slug in the setup wizard; a file without a city in the instance settings is shown by its file name (`example-town` as "Example Town"). A file added or removed while the server runs shows up on the next page load. Tile files are never committed.
 
 Before opening a pull request, run `bin/gate.sh` (lint, type checks, tests and builds for both halves, and `pnpm --dir web run check:urls`, which fails when the built web app contains a URL of another origin; see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
@@ -63,7 +75,7 @@ Each release publishes a multi-arch image (linux/amd64, linux/arm64) to the GitH
 docker run -d --name osfm -p 127.0.0.1:8090:8090 -v osfm-data:/data ghcr.io/eatwell-studio/osfm:latest
 ```
 
-The instance then answers on http://127.0.0.1:8090; put a reverse proxy with HTTPS in front of it to reach it from elsewhere, and set `OSFM_PUBLIC_URL` (`-e OSFM_PUBLIC_URL=https://food.example.org`). OSFM sends its own security headers (content security policy, `Referrer-Policy`, `Permissions-Policy` and others; see [docs/architecture.md](docs/architecture.md) §4.7), and `Strict-Transport-Security` for this host only when `OSFM_PUBLIC_URL` is `https://`: the proxy should pass them through unchanged and add no CORS headers. Add `includeSubDomains` or `preload` to HSTS at the proxy only if the whole domain is served over HTTPS. All data lives in the `/data` volume (`pb_data/`, later also `tiles/` and `secrets/`). The container runs as user 65532; a named volume as above gets the right owner automatically, a host directory mounted instead must be writable by that user. To build the image yourself: `docker buildx build -f deploy/Dockerfile .` (add `--build-arg VERSION=v1.2.3` to set the version that `osfm --version` reports; it is `dev` otherwise). Every image and binary carries a signed build provenance attestation:
+The instance then answers on http://127.0.0.1:8090 and leads to the setup wizard (see [First start](#first-start); the setup code is in `docker logs osfm`); put a reverse proxy with HTTPS in front of it to reach it from elsewhere, and set `OSFM_PUBLIC_URL` (`-e OSFM_PUBLIC_URL=https://food.example.org`). OSFM sends its own security headers (content security policy, `Referrer-Policy`, `Permissions-Policy` and others; see [docs/architecture.md](docs/architecture.md) §4.7), and `Strict-Transport-Security` for this host only when `OSFM_PUBLIC_URL` is `https://`: the proxy should pass them through unchanged and add no CORS headers. Add `includeSubDomains` or `preload` to HSTS at the proxy only if the whole domain is served over HTTPS. All data lives in the `/data` volume (`pb_data/`, later also `tiles/` and `secrets/`). The container runs as user 65532; a named volume as above gets the right owner automatically, a host directory mounted instead must be writable by that user. To build the image yourself: `docker buildx build -f deploy/Dockerfile .` (add `--build-arg VERSION=v1.2.3` to set the version that `osfm --version` reports; it is `dev` otherwise). Every image and binary carries a signed build provenance attestation:
 
 ```bash
 gh attestation verify oci://ghcr.io/eatwell-studio/osfm:latest --repo EatWell-Studio/OSFM

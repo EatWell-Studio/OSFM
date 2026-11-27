@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/pocketbase/pocketbase/core"
 )
 
 // TestMain lowers the argon2id parameters for every test of the package: hashing with the production parameters
@@ -30,3 +32,16 @@ var HashRecoveryCode = hashRecoveryCode
 
 // OpenTOTPSecret exposes the decryption of a stored TOTP secret.
 var OpenTOTPSecret = openTOTPSecret
+
+// NewSetupCode replaces the app's setup code with a new one and returns it.
+func NewSetupCode(t testing.TB, app core.App) string {
+	t.Helper()
+	code, err := setupCodeOf(app).generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return code
+}
+
+// RegisterFirstMaintainer exposes the creation of the first maintainer.
+var RegisterFirstMaintainer = registerFirstMaintainer

@@ -1,6 +1,8 @@
-// The cities the map can show: one per basemap archive on the server, listed by GET /tiles/ (docs/architecture.md
-// §3.6, §4.3). Each comes with the bounds, center and zoom levels of its TileJSON.
+// The cities the map can show (docs/architecture.md §3.6, §4.3): those of the instance settings, by their display
+// names, and every basemap archive on the server, listed by GET /tiles/ with the bounds, center and zoom levels of its
+// TileJSON. A city of the settings without an archive has no tiles yet.
 
+import type { InstanceCity } from '@/instance/instance'
 import { ApiError } from '@/lib/api'
 
 /** minLon, minLat, maxLon, maxLat in WGS-84 degrees. */
@@ -67,10 +69,10 @@ export async function fetchCities(signal?: AbortSignal): Promise<City[]> {
 }
 
 /**
- * The name a city is shown by. The instance settings will give cities their display names (setup wizard); until then
- * it is the city's id with each word capitalised ("example-town" → "Example Town").
+ * The name an archive without a city in the instance settings is shown by: its id with each word capitalised
+ * ("example-town" → "Example Town").
  */
-export function cityLabel(city: City): string {
+export function cityLabel(city: { id: string }): string {
   return city.id
     .split('-')
     .filter((word) => word !== '')
@@ -83,7 +85,34 @@ export function contains(bounds: Bounds, lon: number, lat: number): boolean {
   return lon >= bounds[0] && lon <= bounds[2] && lat >= bounds[1] && lat <= bounds[3]
 }
 
+/** A city the map offers: its id (the slug), the name it is shown by, and its tiles, unless it has none yet. */
+export interface MapCity {
+  id: string
+  label: string
+  tiles?: City
+}
+
+/**
+ * The cities to offer: those of the instance settings in their order, with their display names, then the archives
+ * that no city of the settings names, with names made from their ids.
+ */
+export function mergeCities(archives: City[], configured: InstanceCity[]): MapCity[] {
+  const byId = new Map(archives.map((a) => [a.id, a]))
+  const result: MapCity[] = configured.map((c) => ({ id: c.slug, label: c.name, tiles: byId.get(c.slug) }))
+  const named = new Set(configured.map((c) => c.slug))
+  for (const a of archives) {
+    if (!named.has(a.id)) {
+      result.push({ id: a.id, label: cityLabel(a), tiles: a })
+    }
+  }
+  return result
+}
+
 /** The city to show: the requested one if it exists, else the remembered one, else the first. */
-export function pickCity(cities: City[], requested: string | null, remembered: string | null): City | undefined {
+export function pickCity<T extends { id: string }>(
+  cities: T[],
+  requested: string | null,
+  remembered: string | null,
+): T | undefined {
   return cities.find((c) => c.id === requested) ?? cities.find((c) => c.id === remembered) ?? cities[0]
 }

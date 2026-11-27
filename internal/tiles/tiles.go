@@ -43,6 +43,12 @@ const (
 // cityPattern is what a city name may look like.
 var cityPattern = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
 
+// ValidCityName reports whether name can name a city's archive, <dir>/<name>.pmtiles: 1 to 64 lowercase letters,
+// digits and '-'. The instance settings use the same names for their cities (internal/settings).
+func ValidCityName(name string) bool {
+	return cityPattern.MatchString(name)
+}
+
 // Handler serves the PMTiles archives of one directory as z/x/y tiles and TileJSON; see the package documentation.
 type Handler struct {
 	dir       string

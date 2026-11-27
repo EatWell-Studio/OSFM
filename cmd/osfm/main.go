@@ -2,8 +2,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"log/slog"
+	"path/filepath"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -16,6 +18,7 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/boundary"
 	"github.com/EatWell-Studio/OSFM/internal/config"
 	"github.com/EatWell-Studio/OSFM/internal/federation"
+	"github.com/EatWell-Studio/OSFM/internal/settings"
 	"github.com/EatWell-Studio/OSFM/internal/store"
 	"github.com/EatWell-Studio/OSFM/internal/tiles"
 	"github.com/EatWell-Studio/OSFM/internal/version"
@@ -41,6 +44,7 @@ func main() {
 	// The same commands as app.Start registers, with the serve command's listen address taken from the configuration.
 	app.RootCmd.AddCommand(cmd.NewSuperuserCommand(app))
 	app.RootCmd.AddCommand(newServeCommand(app, cfg))
+	app.RootCmd.AddCommand(newSetupCodeCommand(app, cfg))
 	if err := app.Execute(); err != nil {
 		log.Fatal(err)
 	}
@@ -71,6 +75,8 @@ func bind(app core.App, cfg *config.Config) {
 	// POST /api/osfm/logout (AD6, E1); the invite routes under /api/osfm/invites (D1, D2).
 	// Registration and sign-in with password and TOTP; the master key is read once the app has bootstrapped.
 	// Passkey registration and sign-in under /api/osfm/passkey (D3, D4), for the relying party OSFM_PUBLIC_URL names.
+	// The first-start setup wizard under /api/osfm/setup (G3): while there is no maintainer, the setup code goes to the
+	// log and to the secrets directory.
 	rpID, rpOrigins := cfg.PasskeyRP()
 	auth.Bind(app, auth.Options{HostPrefix: cfg.PublicHTTPS(), PasskeyRPID: rpID, PasskeyOrigins: rpOrigins,
 		MasterKey: func() []byte {
@@ -78,7 +84,9 @@ func bind(app core.App, cfg *config.Config) {
 				return nil
 			}
 			return keys.Master
-		}})
+		}, SetupCodeFile: setupCodeFile(cfg)})
+	// The instance's name and cities for members, GET /api/osfm/instance.
+	settings.Bind(app)
 	// The web app on every path the API does not answer (client-side routes fall back to index.html, missing files get
 	// 404), and the security headers of the main listener (§4.7).
 	webapp.Bind(app, webapp.Options{FS: web.FS(), HSTS: cfg.PublicHTTPS()})
@@ -100,6 +108,30 @@ func bind(app core.App, cfg *config.Config) {
 		}
 		return se.Next()
 	})
+}
+
+// setupCodeFile is where the server writes the setup code while the instance has no maintainer.
+func setupCodeFile(cfg *config.Config) string {
+	return filepath.Join(cfg.SecretsDir(), auth.SetupCodeFileName)
+}
+
+// newSetupCodeCommand returns the setup-code command: it prints the setup code that the running (or last started)
+// server generated, for operators who cannot easily read its log.
+func newSetupCodeCommand(app core.App, cfg *config.Config) *cobra.Command {
+	return &cobra.Command{
+		Use:          "setup-code",
+		Short:        "Prints the setup code of an instance that has no maintainer yet",
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(c *cobra.Command, _ []string) error {
+			code, err := auth.ReadSetupCode(app, setupCodeFile(cfg))
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(c.OutOrStdout(), code)
+			return err
+		},
+	}
 }
 
 // newServeCommand returns PocketBase's serve command with the default of its --http flag taken from cfg

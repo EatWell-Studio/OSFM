@@ -18,4 +18,8 @@
 // ([BeginPasskeyRegistration], [FinishPasskeyRegistration]) and sign a member in with a discoverable passkey, without a
 // login name ([BeginPasskeySignIn], [VerifyPasskeySignIn]). Registration hands out the recovery codes
 // ([NewRecoveryCodes]).
+//
+// First-start setup (G3): while no maintainer exists, the routes under /api/osfm/setup create the first one, the only
+// member created without an invite, with the setup code the server prints when it starts; the new maintainer then
+// saves the instance's name and cities. See setup.go.
 package auth

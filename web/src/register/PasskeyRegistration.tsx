@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { type Entitlement, registrationPaths } from '@/lib/entitlement'
 import {
   creationOptionsFromJSON,
   PasskeyError,
@@ -18,6 +19,8 @@ const messageKeys = {
   display_name_invalid: 'passkey.register.errors.invalidDisplayName',
   login_name_taken: 'passkey.register.errors.loginNameTaken',
   invite_invalid: 'passkey.register.errors.invalidInvite',
+  setup_code_invalid: 'setup.errors.codeInvalid',
+  setup_done: 'setup.errors.done',
   passkey_failed: 'passkey.register.errors.verifyFailed',
   passkeys_unavailable: 'passkey.errors.unavailable',
   cancelled: 'passkey.errors.cancelled',
@@ -37,9 +40,18 @@ function messageKey(e: PasskeyError) {
 /**
  * Registration with a passkey (D3): login name and display name, then the browser creates a passkey, the server
  * creates the member with it and signs them in; the recovery codes are shown once and must be confirmed before
- * onDone is called. code is the invite code; it is used only when the passkey has been created.
+ * onDone is called. entitlement is the invite (or, for the first maintainer, the setup code).
  */
-export function PasskeyRegistration({ code, onDone }: { code: string; onDone: () => void }) {
+export function PasskeyRegistration({
+  entitlement,
+  onDone,
+  continueLabel,
+}: {
+  entitlement: Entitlement
+  onDone: () => void
+  /** The label of the button after the recovery codes, when it does not lead to the map. */
+  continueLabel?: string
+}) {
   const { t } = useTranslation()
   const id = useId()
   const [loginName, setLoginName] = useState('')
@@ -49,7 +61,7 @@ export function PasskeyRegistration({ code, onDone }: { code: string; onDone: ()
   const [codes, setCodes] = useState<string[] | null>(null)
 
   if (codes !== null) {
-    return <RecoveryCodes codes={codes} onConfirmed={onDone} />
+    return <RecoveryCodes codes={codes} onConfirmed={onDone} continueLabel={continueLabel} />
   }
   if (!passkeysSupported()) {
     return (
@@ -60,8 +72,9 @@ export function PasskeyRegistration({ code, onDone }: { code: string; onDone: ()
   }
 
   async function register() {
+    const paths = registrationPaths(entitlement)
     const start = await readCeremonyStart(
-      await postJson('/passkey/register/options', { invite: code, loginName, displayName }),
+      await postJson(paths.passkeyOptions, { ...entitlement, loginName, displayName }),
     )
     let credential: Credential | null
     try {
@@ -72,8 +85,8 @@ export function PasskeyRegistration({ code, onDone }: { code: string; onDone: ()
     if (!(credential instanceof PublicKeyCredential)) {
       throw new PasskeyError('failed')
     }
-    const response = await postJson('/passkey/register', {
-      invite: code,
+    const response = await postJson(paths.passkey, {
+      ...entitlement,
       state: start.state,
       credential: registrationToJSON(credential),
     })

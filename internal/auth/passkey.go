@@ -136,7 +136,7 @@ func (u *passkeyUser) WebAuthnCredentials() []webauthn.Credential { return u.cre
 
 // registrationState is what the first request of a registration decided, sealed into its state.
 type registrationState struct {
-	InviteHash  string               `json:"i"` // SHA-256 of the invite code: the second request must bring the same
+	InviteHash  string               `json:"i"` // SHA-256 of the invite or setup code: the second request brings the same
 	LoginName   string               `json:"l"`
 	DisplayName string               `json:"n"`
 	UserHandle  []byte               `json:"h"`
@@ -167,6 +167,15 @@ func BeginPasskeyRegistration(app core.App, code, loginName, displayName string)
 	if !ok {
 		return nil, "", ErrInvalidInvite
 	}
+	return beginPasskeyEnrolment(app, p, ceremonyRegister, hashToken(code), loginName, displayName)
+}
+
+// beginPasskeyEnrolment is the first request of a passkey registration after the right to register has been checked
+// (an invite, or the setup code for the first maintainer: setup.go) and the names normalised: it checks that the login
+// name is free and returns the creation options with the state sealed for the ceremony kind, binding bindHash, the
+// hash of the invite or setup code.
+func beginPasskeyEnrolment(app core.App, p *passkeys, kind, bindHash, loginName, displayName string) (
+	options *protocol.CredentialCreation, state string, err error) {
 	if taken, err := loginNameTaken(app, loginName); err != nil {
 		return nil, "", err
 	} else if taken {
@@ -182,8 +191,8 @@ func BeginPasskeyRegistration(app core.App, code, loginName, displayName string)
 	if err != nil {
 		return nil, "", fmt.Errorf("auth: begin passkey registration: %w", err)
 	}
-	state, err = p.states.seal(ceremonyRegister, ceremonyTTL, registrationState{
-		InviteHash: hashToken(code), LoginName: loginName, DisplayName: displayName, UserHandle: handle,
+	state, err = p.states.seal(kind, ceremonyTTL, registrationState{
+		InviteHash: bindHash, LoginName: loginName, DisplayName: displayName, UserHandle: handle,
 		Session: *session,
 	})
 	if err != nil {
@@ -203,11 +212,26 @@ func FinishPasskeyRegistration(app core.App, code, state string, response []byte
 	if err != nil {
 		return nil, nil, err
 	}
+	register, codes, err := passkeyRegistration(p, ceremonyRegister, hashToken(code), state, response)
+	if err != nil {
+		return nil, nil, err
+	}
+	if member, err = RegisterWithInvite(app, code, register); err != nil {
+		return nil, nil, err
+	}
+	return member, *codes, nil
+}
+
+// passkeyRegistration verifies the second request of a passkey registration of the ceremony kind, begun with the
+// invite or setup code whose hash is bindHash, and returns the [Registration] that saves the member with the passkey
+// and new recovery codes, and where it leaves the codes.
+func passkeyRegistration(p *passkeys, kind, bindHash, state string, response []byte) (Registration, *[]string,
+	error) {
 	var st registrationState
-	if err := p.states.open(ceremonyRegister, state, &st); err != nil {
+	if err := p.states.open(kind, state, &st); err != nil {
 		return nil, nil, ErrPasskeyFailed
 	}
-	if subtle.ConstantTimeCompare([]byte(st.InviteHash), []byte(hashToken(code))) != 1 {
+	if subtle.ConstantTimeCompare([]byte(st.InviteHash), []byte(bindHash)) != 1 {
 		return nil, nil, ErrPasskeyFailed
 	}
 	// The verification needs no database and runs before the registration transaction (see [Registration]).
@@ -221,7 +245,8 @@ func FinishPasskeyRegistration(app core.App, code, state string, response []byte
 		return nil, nil, fmt.Errorf("%w: %w", ErrPasskeyFailed, err)
 	}
 
-	member, err = RegisterWithInvite(app, code, func(tx core.App, m *core.Record) error {
+	var recoveryCodes []string
+	return func(tx core.App, m *core.Record) error {
 		if taken, err := loginNameTaken(tx, st.LoginName); err != nil {
 			return err
 		} else if taken {
@@ -236,13 +261,10 @@ func FinishPasskeyRegistration(app core.App, code, state string, response []byte
 		if err := savePasskey(tx, m, cred); err != nil {
 			return err
 		}
+		var err error
 		recoveryCodes, err = NewRecoveryCodes(tx, m)
 		return err
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return member, recoveryCodes, nil
+	}, &recoveryCodes, nil
 }
 
 // errCredentialExists: the credential ID is registered already.

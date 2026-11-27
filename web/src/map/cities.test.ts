@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type City, cityLabel, contains, parseCities, pickCity } from './cities'
+import { type City, cityLabel, contains, mergeCities, parseCities, pickCity } from './cities'
 
 const town: City = {
   id: 'example-town',
@@ -40,7 +40,7 @@ describe('pickCity', () => {
     expect(pickCity(cities, 'village2', 'example-town')).toBe(village)
     expect(pickCity(cities, 'elsewhere', 'village2')).toBe(village)
     expect(pickCity(cities, null, 'elsewhere')).toBe(town)
-    expect(pickCity([], null, null)).toBeUndefined()
+    expect(pickCity<City>([], null, null)).toBeUndefined()
   })
 })
 
@@ -57,5 +57,20 @@ describe('contains', () => {
     expect(contains(town.bounds, 6.68, 0.36)).toBe(true)
     expect(contains(town.bounds, 6.67, 0.33)).toBe(false)
     expect(contains(town.bounds, 6.7, 0.37)).toBe(false)
+  })
+})
+
+describe('mergeCities', () => {
+  it('offers the cities of the settings by name, then the other archives', () => {
+    const configured = [
+      { slug: 'test-village', name: 'Test Village', bbox: [7.1, 0.2, 7.2, 0.3], center: [7.15, 0.25] },
+      { slug: 'example-town', name: 'Test Town', bbox: town.bounds, center: [town.center[0], town.center[1]] },
+    ] satisfies Parameters<typeof mergeCities>[1]
+    expect(mergeCities([town, village], configured)).toEqual([
+      { id: 'test-village', label: 'Test Village', tiles: undefined },
+      { id: 'example-town', label: 'Test Town', tiles: town },
+      { id: 'village2', label: 'Village2', tiles: village },
+    ])
+    expect(mergeCities([], [])).toEqual([])
   })
 })

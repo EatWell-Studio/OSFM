@@ -10,11 +10,13 @@ import (
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/router"
 
 	"github.com/EatWell-Studio/OSFM/internal/auth"
 	"github.com/EatWell-Studio/OSFM/internal/config"
 	"github.com/EatWell-Studio/OSFM/internal/federation"
 	"github.com/EatWell-Studio/OSFM/internal/idscan"
+	"github.com/EatWell-Studio/OSFM/internal/settings"
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
@@ -127,6 +129,43 @@ var osfmProbes = map[string][]idscan.Request{
 		{Method: http.MethodPost, Path: auth.PasskeySignInPath, Header: csrfHeader, Status: http.StatusBadRequest,
 			Body: `{`},
 	},
+	// The setup wizard. The seeded instance has a maintainer and cities, so every setup route answers 404 (members get
+	// 403 from the maintainer-only one first); the setup itself is scanned by TestSetupResponsesHaveNoInternalIDs.
+	"GET " + auth.SetupPath: {
+		{Path: auth.SetupPath, Status: http.StatusNotFound},
+	},
+	"POST " + auth.SetupCheckPath: {
+		{Method: http.MethodPost, Path: auth.SetupCheckPath, Header: csrfHeader, Body: `{"code":"0000-0000-0000-0000"}`,
+			Status: http.StatusNotFound},
+		{Method: http.MethodPost, Path: auth.SetupCheckPath, Header: csrfHeader, Body: `{`, Status: http.StatusNotFound},
+	},
+	"POST " + auth.SetupPasswordStartPath: {
+		{Method: http.MethodPost, Path: auth.SetupPasswordStartPath, Header: csrfHeader, Status: http.StatusNotFound,
+			Body: `{"setupCode":"0000-0000-0000-0000","loginName":"test_scan","password":"test scan password"}`},
+	},
+	"POST " + auth.SetupPasswordConfirmPath: {
+		{Method: http.MethodPost, Path: auth.SetupPasswordConfirmPath, Header: csrfHeader, Status: http.StatusNotFound,
+			Body: `{"setupCode":"0000-0000-0000-0000","enrolment":"x","code":"123456"}`},
+	},
+	"POST " + auth.SetupPasskeyOptionsPath: {
+		{Method: http.MethodPost, Path: auth.SetupPasskeyOptionsPath, Header: csrfHeader, Status: http.StatusNotFound,
+			Body: `{"setupCode":"0000-0000-0000-0000","loginName":"test_probe"}`},
+	},
+	"POST " + auth.SetupPasskeyPath: {
+		{Method: http.MethodPost, Path: auth.SetupPasskeyPath, Header: csrfHeader, Status: http.StatusNotFound,
+			Body: `{"setupCode":"0000-0000-0000-0000","state":"x","credential":{}}`},
+	},
+	// Maintainers only (maintainerRoutes).
+	"POST " + auth.SetupCompletePath: {
+		{Method: http.MethodPost, Path: auth.SetupCompletePath, Header: csrfHeader, Status: http.StatusNotFound,
+			Body: `{"name":"Test Circle","cities":[{"slug":"testtown","name":"Test Town","bbox":[1,1,2,2],"center":[1.5,1.5]}]}`},
+		{Method: http.MethodPost, Path: auth.SetupCompletePath, Header: csrfHeader, Body: `{`,
+			Status: http.StatusBadRequest},
+	},
+	// The instance's name and cities, for members.
+	"GET " + settings.InstancePath: {
+		{Path: settings.InstancePath, Status: http.StatusOK},
+	},
 	// No tile archive in the test data directory: the tile handler reads only the tile files, never the database.
 	"GET /tiles/{path...}": {
 		{Path: "/tiles/", Status: http.StatusOK}, // the city index, empty here
@@ -165,14 +204,21 @@ var publicRoutes = map[string]bool{
 	"POST " + auth.PasskeyRegisterPath:         true,
 	"POST " + auth.PasskeySignInOptionsPath:    true,
 	"POST " + auth.PasskeySignInPath:           true,
+	"GET " + auth.SetupPath:                    true,
+	"POST " + auth.SetupCheckPath:              true,
+	"POST " + auth.SetupPasswordStartPath:      true,
+	"POST " + auth.SetupPasswordConfirmPath:    true,
+	"POST " + auth.SetupPasskeyOptionsPath:     true,
+	"POST " + auth.SetupPasskeyPath:            true,
 }
 
 // maintainerRoutes are the OSFM routes only maintainers may use (auth.RequireMaintainer): the member identity's
 // probes of them must get 403, whatever their Status says.
 var maintainerRoutes = map[string]bool{
-	"GET " + auth.InvitesPath:       true,
-	"POST " + auth.InvitesPath:      true,
-	"POST " + auth.InviteRevokePath: true,
+	"GET " + auth.InvitesPath:        true,
+	"POST " + auth.InvitesPath:       true,
+	"POST " + auth.InviteRevokePath:  true,
+	"POST " + auth.SetupCompletePath: true,
 }
 
 func revokePath(uuid string) string {
@@ -210,34 +256,7 @@ func sessionHeader(t testing.TB, app core.App, member *core.Record) (http.Header
 func bootForScan(t *testing.T) (app core.App, seeded *idscan.Seeded, pbRoutes, osfmRoutes []idscan.Route,
 	h http.Handler) {
 	t.Helper()
-	dir := t.TempDir()
-	cfg, err := config.Parse(func(name string) (string, bool) {
-		if name == config.EnvDataDir {
-			return dir, true
-		}
-		return "", false
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	app = core.NewBaseApp(core.BaseAppConfig{DataDir: cfg.PBDataDir()})
-	bind(app, cfg)
-	if err := app.Bootstrap(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = app.ClearBootstrap() })
-
-	seeded = idscan.Seed(t, app)
-
-	// What apis.Serve does, without listening: PocketBase's router, then the OnServe hooks, where OSFM registers its
-	// routes (and PocketBase a few of its own).
-	r, err := apis.NewRouter(app)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := app.OnServe().Trigger(&core.ServeEvent{App: app, Router: r}, noNext); err != nil {
-		t.Fatal(err)
-	}
+	app, _, seeded, r := bootServed(t, true)
 
 	// PocketBase's own routes are the ones the same steps register on an app without OSFM.
 	plain := core.NewBaseApp(core.BaseAppConfig{DataDir: t.TempDir()})
@@ -265,6 +284,44 @@ func bootForScan(t *testing.T) (app core.App, seeded *idscan.Seeded, pbRoutes, o
 		t.Fatal(err)
 	}
 	return app, seeded, pbRoutes, osfmRoutes, mux
+}
+
+// bootServed boots an app on a new data directory through bind and runs the OnServe hooks on a new router, as
+// `osfm serve` does without listening. With seed, made-up records are written into every collection first (so the
+// instance has a maintainer and cities); without, the instance starts unconfigured and generates a setup code.
+func bootServed(t *testing.T, seed bool) (app core.App, cfg *config.Config, seeded *idscan.Seeded,
+	r *router.Router[*core.RequestEvent]) {
+	t.Helper()
+	dir := t.TempDir()
+	cfg, err := config.Parse(func(name string) (string, bool) {
+		if name == config.EnvDataDir {
+			return dir, true
+		}
+		return "", false
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app = core.NewBaseApp(core.BaseAppConfig{DataDir: cfg.PBDataDir()})
+	bind(app, cfg)
+	if err := app.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.ClearBootstrap() })
+
+	if seed {
+		seeded = idscan.Seed(t, app)
+	}
+
+	// What apis.Serve does, without listening: PocketBase's router, then the OnServe hooks, where OSFM registers its
+	// routes (and PocketBase a few of its own).
+	if r, err = apis.NewRouter(app); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.OnServe().Trigger(&core.ServeEvent{App: app, Router: r}, noNext); err != nil {
+		t.Fatal(err)
+	}
+	return app, cfg, seeded, r
 }
 
 func noNext(*core.ServeEvent) error { return nil }

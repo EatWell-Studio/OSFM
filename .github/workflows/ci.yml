@@ -134,6 +134,12 @@ jobs:
           done
           curl -s http://127.0.0.1:8090/api/osfm/me | grep -q '"status":401'
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'X-OSFM: 1' http://127.0.0.1:8090/api/osfm/logout)" = 401
+          # A fresh instance has no maintainer (G3): the setup wizard's status is public, and the setup code is in the
+          # log and printed again by `osfm setup-code`.
+          curl -fsS http://127.0.0.1:8090/api/osfm/setup | grep -q '"step":"maintainer"'
+          code="$(./osfm setup-code --dir "$data" 2>/dev/null)"
+          test -n "$code"
+          grep -q "setup_code=$code" "$data/log.txt"
           # The instance metadata: public JSON with the instance key and the version the binary reports.
           ./osfm --version
           version="$(./osfm --version | sed 's/.* version //')"
@@ -172,7 +178,7 @@ jobs:
           for path in assets/missing.js map/ 'map/fonts/Noto%20Sans%20Regular/256-511.pbf' favicon.ico; do
             test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8090/$path")" = 404 || { echo "/$path is not 404" >&2; exit 1; }
           done
-          for path in list me admin login register some/client/route; do
+          for path in list me admin login register setup some/client/route; do
             curl -fsS "http://127.0.0.1:8090/$path" | grep -q '/assets/index-'
           done
           echo "The binary serves the embedded web app."

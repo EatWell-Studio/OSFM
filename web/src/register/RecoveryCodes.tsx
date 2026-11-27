@@ -9,7 +9,16 @@ const fileName = 'osfm-recovery-codes.txt'
  * The recovery codes of a new member (D3): shown once, with copy and download, and a confirmation that they were saved
  * before the member goes on. Used after registering with password and TOTP and after registering a passkey.
  */
-export function RecoveryCodes({ codes, onConfirmed }: { codes: string[]; onConfirmed: () => void }) {
+export function RecoveryCodes({
+  codes,
+  onConfirmed,
+  continueLabel,
+}: {
+  codes: string[]
+  onConfirmed: () => void
+  /** The label of the button that continues, when it does not lead to the map. */
+  continueLabel?: string
+}) {
   const { t } = useTranslation()
   const headingId = useId()
   const savedId = useId()
@@ -91,7 +100,7 @@ export function RecoveryCodes({ codes, onConfirmed }: { codes: string[]; onConfi
         <span>{t('recoveryCodes.confirm')}</span>
       </label>
       <Button size="lg" disabled={!saved} onClick={onConfirmed} className="self-start">
-        {t('recoveryCodes.continue')}
+        {continueLabel ?? t('recoveryCodes.continue')}
       </Button>
     </section>
   )
