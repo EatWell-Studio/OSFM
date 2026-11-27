@@ -6,14 +6,18 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/EatWell-Studio/OSFM/internal/pbtest"
 )
 
 // TestMain lowers the argon2id parameters for every test of the package: hashing with the production parameters
 // under the race detector would make the tests slow. The hashes record their parameters, so verification works the
-// same way.
+// same way. Test apps are copies of one migrated data directory (internal/pbtest), removed at the end.
 func TestMain(m *testing.M) {
 	passwordParams = PasswordParams{Memory: 256, Time: 1, Threads: 1}
-	os.Exit(m.Run())
+	code := m.Run()
+	pbtest.RemoveTemplate()
+	os.Exit(code)
 }
 
 // SetNow replaces the session clock for the rest of the test.

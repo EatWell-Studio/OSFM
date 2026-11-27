@@ -19,8 +19,8 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/auth"
 	"github.com/EatWell-Studio/OSFM/internal/boundary"
 	"github.com/EatWell-Studio/OSFM/internal/idscan"
+	"github.com/EatWell-Studio/OSFM/internal/pbtest"
 	"github.com/EatWell-Studio/OSFM/internal/store"
-	_ "github.com/EatWell-Studio/OSFM/migrations" // the OSFM collections
 )
 
 // Test routes, besides the session layer's own: a protected one, a public one and a public sign-in stand-in.
@@ -49,11 +49,7 @@ func newEnv(t *testing.T, prepare ...func(core.App)) *env {
 // newEnvWith is newEnv with the session layer bound with opts.
 func newEnvWith(t *testing.T, opts auth.Options, prepare ...func(core.App)) *env {
 	t.Helper()
-	app, err := tests.NewTestApp(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(app.Cleanup)
+	app := pbtest.NewApp(t)
 	store.BindHooks(app)
 	boundary.Bind(app, boundary.Options{})
 	auth.Bind(app, opts)
