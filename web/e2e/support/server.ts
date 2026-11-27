@@ -1,6 +1,6 @@
 // Runs the real binary as an operator would: `osfm serve` on a data directory with the generated basemap archive in its
-// tiles directory and, besides the listen address, only the trusted proxy header configured. Used by the global setup
-// for each instance the tests need.
+// tiles directory and, besides the listen address, only the trusted proxy header and the place search's upstream
+// services (a fake, support/geocoder.ts) configured. Used by the global setup for each instance the tests need.
 
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
@@ -10,7 +10,7 @@ import { buildArchive } from './archive.ts'
 import { city } from './env.ts'
 
 /** The environment of the server: the caller's, without any OSFM setting that would change the instance. */
-function serverEnv(dataDir: string, port: string): NodeJS.ProcessEnv {
+function serverEnv(dataDir: string, port: string, extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const [k, v] of Object.entries(process.env)) {
     if (!k.startsWith('OSFM_')) {
@@ -25,6 +25,7 @@ function serverEnv(dataDir: string, port: string): NodeJS.ProcessEnv {
     OSFM_DATA_DIR: dataDir,
     OSFM_LISTEN: `127.0.0.1:${port}`,
     OSFM_TRUSTED_PROXY_HEADERS: 'X-Forwarded-For',
+    ...extra,
   }
 }
 
@@ -50,14 +51,21 @@ export interface Server {
 
 /**
  * Starts the binary on an empty data directory (created here, with the made-up city's basemap archive) and waits for
- * its health check and its setup code. The server log goes to logFile.
+ * its health check and its setup code. The server log goes to logFile; extraEnv adds OSFM_* settings (the fake search
+ * services).
  */
-export async function startServer(bin: string, port: string, dataDir: string, logFile: string): Promise<Server> {
+export async function startServer(
+  bin: string,
+  port: string,
+  dataDir: string,
+  logFile: string,
+  extraEnv: Record<string, string> = {},
+): Promise<Server> {
   mkdirSync(join(dataDir, 'tiles'), { recursive: true })
   writeFileSync(join(dataDir, 'tiles', `${city.slug}.pmtiles`), buildArchive(city.archive))
   const log = createWriteStream(logFile)
   let output = ''
-  const env = serverEnv(dataDir, port)
+  const env = serverEnv(dataDir, port, extraEnv)
   const server = spawn(bin, ['serve'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
   for (const stream of [server.stdout, server.stderr]) {
     stream.on('data', (chunk: Buffer) => {

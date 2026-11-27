@@ -1,3 +1,13 @@
 {
-  "title": "Place search"
+  "title": "Place search",
+  "label": "Search for a place or address",
+  "placeholder": "Search for a place or address",
+  "submit": "Search",
+  "searching": "Searching…",
+  "results": "Search results",
+  "noResults": "No matching place found in this city.",
+  "unavailable": "Search is unavailable right now. You can still drag the map to place the pin.",
+  "rateLimited_one": "Too many searches. Try again in {{count}} minute, or drag the map to place the pin.",
+  "rateLimited_other": "Too many searches. Try again in {{count}} minutes, or drag the map to place the pin.",
+  "marker": "Search result: {{name}}"
 }

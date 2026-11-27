@@ -31,6 +31,11 @@ const (
 	// EnvTrustedProxyHeaders names the request headers, comma-separated, from which the client's address is taken
 	// behind a reverse proxy (usually X-Forwarded-For).
 	EnvTrustedProxyHeaders = "OSFM_TRUSTED_PROXY_HEADERS"
+	// EnvGeocoderPhotonURL and EnvGeocoderNominatimURL are the search endpoints of the place search's upstream
+	// services (internal/geocode): Photon first, Nominatim when Photon fails. Set them to use an instance of one's own,
+	// or a fake in tests.
+	EnvGeocoderPhotonURL    = "OSFM_GEOCODER_PHOTON_URL"
+	EnvGeocoderNominatimURL = "OSFM_GEOCODER_NOMINATIM_URL"
 )
 
 // Defaults for unset environment variables.
@@ -42,6 +47,11 @@ const (
 	// DefaultAdminListen is loopback-only: the admin UI is reached through an SSH tunnel, never through the reverse
 	// proxy.
 	DefaultAdminListen = "127.0.0.1:8091"
+	// DefaultGeocoderPhotonURL is komoot's public Photon instance, DefaultGeocoderNominatimURL the OpenStreetMap
+	// Foundation's public Nominatim (architecture §3.7). Both are used within their usage policies: identified,
+	// cached, rate-limited, no search as you type.
+	DefaultGeocoderPhotonURL    = "https://photon.komoot.io/api"
+	DefaultGeocoderNominatimURL = "https://nominatim.openstreetmap.org/search"
 )
 
 // Names of the subdirectories of the data directory.
@@ -70,6 +80,10 @@ type Config struct {
 	// it is. Set it only when every request comes through a reverse proxy that sets the header: anyone who can reach
 	// the listener directly could put any address in it.
 	TrustedProxyHeaders []string
+	// GeocoderPhotonURL and GeocoderNominatimURL are the search endpoints of the place search (an absolute http(s)
+	// URL each, without a fragment; a query in them is kept and the search parameters are added to it).
+	GeocoderPhotonURL    string
+	GeocoderNominatimURL string
 
 	// listenSet records whether OSFM_LISTEN was given, as opposed to the default.
 	listenSet bool
@@ -143,6 +157,24 @@ func Parse(lookup func(string) (string, bool)) (*Config, error) {
 			}
 			cfg.TrustedProxyHeaders = append(cfg.TrustedProxyHeaders, http.CanonicalHeaderKey(h))
 		}
+	}
+
+	for _, u := range []struct {
+		name, fallback string
+		dst            *string
+	}{
+		{EnvGeocoderPhotonURL, DefaultGeocoderPhotonURL, &cfg.GeocoderPhotonURL},
+		{EnvGeocoderNominatimURL, DefaultGeocoderNominatimURL, &cfg.GeocoderNominatimURL},
+	} {
+		raw := get(u.name)
+		if raw == "" {
+			*u.dst = u.fallback
+			continue
+		}
+		if err := validateServiceURL(raw); err != nil {
+			errs = append(errs, fmt.Errorf("%s=%q: %w", u.name, raw, err))
+		}
+		*u.dst = raw
 	}
 
 	if err := errors.Join(errs...); err != nil {
@@ -261,6 +293,25 @@ func validateListen(addr string) error {
 	}
 	if n, err := strconv.ParseUint(port, 10, 16); err != nil || n == 0 {
 		return errors.New("port must be a number from 1 to 65535")
+	}
+	return nil
+}
+
+// validateServiceURL checks the URL of an upstream service: absolute http:// or https://, with a host, without user
+// information (it would go into every request) or a fragment.
+func validateServiceURL(raw string) error {
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil:
+		return errors.New("not a valid URL")
+	case u.Scheme != "http" && u.Scheme != "https":
+		return errors.New("must be an absolute http:// or https:// URL")
+	case u.Host == "" || u.Hostname() == "":
+		return errors.New("must include a host name")
+	case u.User != nil:
+		return errors.New("must not contain user information")
+	case u.Fragment != "":
+		return errors.New("must not contain a fragment")
 	}
 	return nil
 }
