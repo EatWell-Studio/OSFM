@@ -11,11 +11,12 @@
 //   const maintainer = sharedInstance().maintainer
 //   const alice = await inviteMember()
 //   const phone = await newSharedPerson(browser, 'alice', alice)   // signed in, at sharedInstance().baseURL
-//   await createPlace(alice, { name: 'Test Noodles', ... })        // after T026
+//   await createPlace(alice, { name: 'Test Noodles', lat, lon, recommendation: { attitude: 'good', text: '…' } })
 
 import { readFileSync } from 'node:fs'
 import type { Browser, BrowserContext } from '@playwright/test'
 import { devices } from '@playwright/test'
+import type { CreatePlaceRequest } from '../../src/api/types.gen.ts'
 import { newPerson, type Person } from './browser.ts'
 import { city, sharedPortVariable, sharedStateVariable } from './env.ts'
 import { AuthenticatorApp } from './totp.ts'
@@ -292,32 +293,21 @@ export async function newSharedPerson(
   return person
 }
 
-/** A made-up place with its first recommendation, as POST /api/osfm/places takes it (T026). */
-export interface FakePlace {
-  name: string
-  lat: number
-  lon: number
-  precision?: 'exact' | 'approx' | 'area'
-  category?: string
-  cuisine?: string[]
-  positionNote?: string
-  recommendation: {
-    attitude: 'must_try' | 'good' | 'ok' | 'avoid'
-    text: string
-    timeSlots?: string[]
-    displayAs?: 'main' | 'pseudonym'
-    visibility?: 'private' | 'circle'
-  }
-}
+/**
+ * A made-up place with its first recommendation: the body of POST /api/osfm/places (CreatePlaceRequest). Only name, lat,
+ * lon and the recommendation's attitude and text are required; lat and lon must be inside the shared instance's city
+ * (support/env.ts: city).
+ */
+export type FakePlace = CreatePlaceRequest
 
 /**
- * Creates a made-up place with its first recommendation on the shared instance, as the member, through the API.
- * Returns the UUIDs of both.
+ * Creates a made-up place with its first recommendation on the shared instance, as the member, through the API
+ * (POST /api/osfm/places). Returns the UUIDs of both; an ApiFailure carries the error code when the server refuses.
  */
-export function createPlace(member: TestMember, place: FakePlace): Promise<{ place: string; recommendation: string }> {
-  // POST /api/osfm/places does not exist yet: T026 adds it and fills in this helper (shape and fields as in FakePlace,
-  // to be aligned with the endpoint).
-  return Promise.reject(
-    new Error(`e2e: createPlace (${place.name} by ${member.displayName}) is not implemented until T026`),
-  )
+export async function createPlace(
+  member: TestMember,
+  place: FakePlace,
+): Promise<{ place: string; recommendation: string }> {
+  const created = await apiAs(member).post('/places', place)
+  return { place: field(created, 'place', isString), recommendation: field(created, 'recommendation', isString) }
 }

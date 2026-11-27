@@ -38,15 +38,9 @@ const SettingsID = "instancesetting"
 // AppendOnly lists the collections whose records are never updated once written.
 var AppendOnly = []string{AuditLog, RecommendationRevisions}
 
-// PlaceCategories is the food whitelist for places.category. The values are OpenStreetMap tag values, so that a place
-// linked to OSM (osm_ref) maps to a category without a translation table: amenity=restaurant, fast_food, cafe,
-// food_court, ice_cream, bar, pub and biergarten; shop=bakery and shop=pastry; street_vendor for stalls and carts,
-// which OSM tags with street_vendor=yes rather than with an amenity or shop value of their own. Bars, pubs and beer
-// gardens are included because they are commonly recommended for their food too.
-var PlaceCategories = []string{
-	"restaurant", "fast_food", "cafe", "food_court", "ice_cream", "bakery", "pastry", "street_vendor", "bar", "pub",
-	"biergarten",
-}
+// PlaceCategories is the food whitelist for places.category: [domain.PlaceCategories], OpenStreetMap tag values (B5,
+// H1).
+var PlaceCategories = domain.PlaceCategories
 
 // Reasons a member gives when reporting a recommendation (reports.reason, D11). The values are stable codes: clients
 // translate them, and they appear in exports. ReasonOther needs a note; the others take an optional one.
