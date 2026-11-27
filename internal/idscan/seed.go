@@ -51,6 +51,8 @@ const (
 	// MaintainerUUID is the uuid of the seeded maintainer, LeftMemberUUID of a seeded member who left the circle.
 	MaintainerUUID = "0190a1b2-0000-7000-8000-00000000d002"
 	LeftMemberUUID = "0190a1b2-0000-7000-8000-00000000d003"
+	// PlaceUUID is the uuid of the seeded live place, which the seeded member and maintainer may see.
+	PlaceUUID = "0190a1b2-0000-7000-8000-00000000e001"
 )
 
 // Seed writes made-up records into every OSFM collection of app, a bootstrapped app with the OSFM migrations
@@ -139,8 +141,8 @@ func Seed(t testing.TB, app core.App) *Seeded {
 	save(store.Sessions, map[string]any{"member": maintainer.Id, "token_hash": strings.Repeat("0b", 32),
 		"expires_at": "2020-01-01 00:00:00Z"})
 
-	place := save(store.Places, map[string]any{"name": "Test Noodle Bar", "lat": 31.23, "lon": 121.47,
-		"precision": "exact", "category": "restaurant", "status": "open"})
+	place := save(store.Places, map[string]any{store.FieldUUID: PlaceUUID, "name": "Test Noodle Bar", "lat": 31.23,
+		"lon": 121.47, "precision": "exact", "category": "restaurant", "status": "open"})
 	gone := save(store.Places, map[string]any{"name": "Test Closed Cafe", "lat": 31.24, "lon": 121.48,
 		"precision": "approx", "category": "cafe", "status": "closed"})
 	deleted(gone)

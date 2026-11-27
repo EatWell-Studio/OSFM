@@ -43,6 +43,173 @@ export const CodeForbidden = "forbidden"; // 403: the caller may not do this
 export const CodeRateLimited = "rate_limited"; // 429: over the budget; Retry-After says when to try again (as auth's)
 
 //////////
+// source: map.go
+
+/**
+ * MapPlacesPath is GET with ?city=<slug> and optional bbox and filters: []MapPlace, sorted by name, then uuid.
+ */
+export const MapPlacesPath = "/api/osfm/places";
+/**
+ * PlaceCardPath is GET of one place: [PlaceCard]; 404 when the caller may not see the place, as when it does not
+ * exist.
+ */
+export const PlaceCardPath = "/api/osfm/places/{uuid}";
+/**
+ * SignaturesPath is GET with ?city=<slug>: []string, the signatures to filter the map by.
+ */
+export const SignaturesPath = "/api/osfm/signatures";
+/**
+ * MapParamCity is the city's slug (required).
+ */
+export const MapParamCity = "city";
+/**
+ * MapParamBBox is minLon,minLat,maxLon,maxLat in WGS-84 degrees; it is clipped to the city, and the whole city
+ * when absent. A box that does not overlap the city is refused (400 outside_city).
+ */
+export const MapParamBBox = "bbox";
+/**
+ * MapParamSlots keeps the places with a counted recommendation for one of these time slots.
+ */
+export const MapParamSlots = "slots";
+/**
+ * MapParamCategory keeps the places of one of these categories (places without a category never match).
+ */
+export const MapParamCategory = "category";
+/**
+ * MapParamCuisine keeps the places with one of these cuisines (lowercase OSM cuisine values).
+ */
+export const MapParamCuisine = "cuisine";
+/**
+ * MapParamBy keeps the places with a counted recommendation signed with exactly one of these names (repeat the
+ * parameter for several; names are not split at commas). A main name does not match its member's pseudonym
+ * recommendations, and no name matches the main-name recommendations of a member who left.
+ */
+export const MapParamBy = "by";
+/**
+ * MapParamMustTry, set to 1, keeps the places where someone says must try (counts.mustTry > 0).
+ */
+export const MapParamMustTry = "mustTry";
+/**
+ * MapParamNoAvoid, set to 1, leaves out the places where someone says avoid (keeps counts.avoid == 0).
+ */
+export const MapParamNoAvoid = "noAvoid";
+/**
+ * CodeMapUnknownCity: the city parameter names no city of the instance.
+ */
+export const CodeMapUnknownCity = "unknown_city";
+/**
+ * CodeMapOutsideCity: the bbox does not overlap the city.
+ */
+export const CodeMapOutsideCity = "outside_city";
+/**
+ * MapPlace is a place on the map (architecture §3.2): the minimal fields to draw and filter it. It carries no member
+ * information and no average.
+ */
+export interface MapPlace {
+  uuid: string;
+  name: string;
+  lat: number /* float64 */;
+  lon: number /* float64 */;
+  /**
+   * Precision is exact, approx or area: approx and area places are drawn as circles, not pins (H3).
+   */
+  precision: string;
+  /**
+   * Category is one of the place categories, "" when the place has none.
+   */
+  category: string;
+  counts: PlaceCounts;
+  /**
+   * TimeSlots are the time slots of the counted recommendations, in the order breakfast, lunch, afternoon, dinner,
+   * late_night.
+   */
+  timeSlots: string[];
+}
+/**
+ * PlaceCounts is the number of people per attitude at a place (A4): only the recommendations the caller may see that
+ * are not hidden count, each author once. Numbers only.
+ */
+export interface PlaceCounts {
+  mustTry: number /* int */;
+  good: number /* int */;
+  ok: number /* int */;
+  avoid: number /* int */;
+}
+/**
+ * PlaceCard is GET [PlaceCardPath]: the place's fields, its counts and every recommendation the caller may see,
+ * newest first. Hidden recommendations are listed for those who may see them (their author, maintainers) with
+ * hidden set, but never counted.
+ */
+export interface PlaceCard {
+  uuid: string;
+  name: string;
+  aliases: string[];
+  lat: number /* float64 */;
+  lon: number /* float64 */;
+  /**
+   * Precision is exact, approx or area (H3).
+   */
+  precision: string;
+  positionNote: string;
+  /**
+   * Landmark is absent when the place has none, or when it names a place the caller may not see.
+   */
+  landmark?: PlaceLandmark;
+  /**
+   * Category is one of the place categories, "" when the place has none.
+   */
+  category: string;
+  cuisine: string[];
+  /**
+   * Status (open, maybe_closed, closed) and when it was last confirmed, absent when nobody confirmed one.
+   */
+  status?: string;
+  statusConfirmedAt?: string /* RFC 3339 */;
+  /**
+   * City is the slug of the first city of the instance whose bounding box holds the place; "" when none does.
+   */
+  city: string;
+  counts: PlaceCounts;
+  recommendations: RecommendationView[];
+}
+/**
+ * Kinds of [PlaceLandmark].
+ */
+export const LandmarkKindPlace = "place";
+/**
+ * Kinds of [PlaceLandmark].
+ */
+export const LandmarkKindText = "text";
+/**
+ * PlaceLandmark is what a place's position is described by (B4): another place of the instance, or a text.
+ */
+export interface PlaceLandmark {
+  /**
+   * Type is LandmarkKindPlace or LandmarkKindText.
+   */
+  type: string;
+  /**
+   * Place is the landmark place, for LandmarkKindPlace.
+   */
+  place?: LandmarkPlace;
+  /**
+   * Text is the landmark text, for LandmarkKindText; shown as plain text.
+   */
+  text?: string;
+}
+/**
+ * LandmarkPlace is a landmark place, which the caller may see: its uuid (for a link to its card) and name.
+ */
+export interface LandmarkPlace {
+  uuid: string;
+  name: string;
+}
+
+//////////
+// source: map_query.go
+
+
+//////////
 // source: projection.go
 
 /**

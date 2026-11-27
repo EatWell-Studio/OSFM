@@ -146,6 +146,18 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 
 **实例设置**（`internal/api/settings.go`）：`GET /api/osfm/instance` 对成员返回 `name`、`cities`、`geocoderEnabled`（前端据此隐藏搜索框），对维护者另返回 `reportThreshold`、`inviteCooldownDays`、`geocoderContact`；`POST`（只限维护者、写额度）只修改请求里带的字段，没带的（或为 `null` 的）保留已存的值——管理页的"名称与城市"表单与"举报、邀请与地名搜索"表单各自只发自己的字段。校验：名称与城市同向导（`instance_name_invalid`、`cities_invalid`），举报阈值 1–100（`report_threshold_invalid`），冷静期 0–3650 天（`invite_cooldown_invalid`），联系方式去首尾空白后 ≤ 200 字符且无控制字符（`geocoder_contact_invalid`）；保存与审计 `settings.update` 在同一事务，审计记录名称、城市标识与各项数值，联系方式只记是否设置。各功能用 `settings.LoadCircle` 读取当前值（改设置立即生效）。
 
+**地图数据与地点卡片**（`internal/api/map.go`、`map_query.go`，T027）：
+
+- `GET /api/osfm/places?city=<标识>&bbox=<minLon,minLat,maxLon,maxLat>`：返回地点数组 `[{uuid, name, lat, lon, precision, category, counts: {mustTry, good, ok, avoid}, timeSlots}]`，按店名、再按 `uuid` 排序，从不按态度排序。`city` 必填（不是实例的城市时 400 `unknown_city`）；`bbox` 可省略（取整个城市），给出时裁到城市范围之内，与城市不相交时 400 `outside_city`，格式不对 400 `invalid_request`。可选筛选：`slots`、`category`、`cuisine`（可重复，也可逗号分隔）、`by`（署名，可重复，不按逗号拆分）、`mustTry=1`、`noAvoid=1`；不同条件之间为"且"，同一条件的多个值为"或"，空值忽略。
+- **哪些推荐参与计数**只在一处决定（`countedOn`）：请求者可见（`store.RecommendationVisibleTo`）、未隐藏（`store.Shown`，维护者也不例外）、态度有效，并且每个作者在每个地点只取最新的一条——即 `domain.CountAttitudes` 的 SQL 形式。人数、时段集合、"有人强推"（`counts.mustTry > 0`）、"排除有人避雷"（`counts.avoid == 0`）、时段与推荐人筛选、署名候选都基于这同一组推荐，所以筛选结果与人数一致，也不随请求者的角色变化。地点是否出现另由 `store.HasVisibleRecommendation` 决定（M2-Q3）：作者与维护者能看到只有一条被隐藏推荐的地点，人数为 0。
+- 人数与时段在一次分组查询里算出：`places` 按 `(lat, lon)` 索引取范围，左连接参与计数的推荐，`GROUP BY` 地点；"每个作者只取最新一条"用部分唯一索引 `(place, author)` 查找。类别与菜系是地点上的条件，强推、避雷、时段、推荐人是分组后的条件。
+- **推荐人筛选**按署名字符串精确匹配：哪个"（作者，署名方式）"对应哪个名字只由 `domain.ResolveSignature` 决定，再把匹配的组合作为查询条件。因此主名不命中同一成员的化名推荐；已退出成员的主名推荐没有名字，任何名字都不命中它，空名不构成筛选。
+- `GET /api/osfm/signatures?city=<标识>`：该城市里参与计数的推荐的署名，去重，按名称（不区分大小写）排序，只是字符串数组，不标注主名或化名、不带 `uuid`，不含空名。
+- `GET /api/osfm/places/{uuid}`：地点卡片 `{uuid, name, aliases, lat, lon, precision, positionNote, landmark?, category, cuisine, status?, statusConfirmedAt?, city, counts, recommendations}`。请求者看不到的地点与不存在的地点同为 404。`landmark` 为 `{type: "place", place: {uuid, name}}` 或 `{type: "text", text}`；参照地点对请求者不可见时整个 `landmark` 省略。`city` 是第一个范围包含该地点的城市标识，没有时为空。推荐按创建时间倒序，经 `api.RecommendationViews` 投影（被隐藏的推荐只给作者与维护者，带 `hidden`）；人数用 `domain.CountAttitudes` 计算，与地图的分组查询一致（集成测试以随机数据逐条重算对照）。
+- **缓存**：地点数组与署名候选 `Cache-Control: private, no-cache`、`Vary: Cookie`，带按响应内容计算的 `ETag`，`If-None-Match` 相同时 304（配合前端的"网络优先"）；卡片与错误响应 `no-store`。
+- 路由：`GET /api/osfm/places/nearby`（新建地点的重名提示）与卡片的 `GET /api/osfm/places/{uuid}` 并存时，PocketBase 的路由（Go 的 `ServeMux`）按"字面量优先于通配段"选择，与注册顺序无关（`TestPlaceRoutesPrecedence`）。
+- 耗时（开发机 Apple M4，1000 个地点、50 名成员的 5000 条推荐，经完整的会话中间件，`internal/api` 的 `BenchmarkMap`）：整个城市约 20 ms（响应约 238 KB），一个视野约 5 ms，带筛选约 17 ms，署名候选约 11 ms，卡片约 0.4 ms。
+
 ### 3.3 认证与会话
 
 使用的库：WebAuthn 用 `github.com/go-webauthn/webauthn`；TOTP 用 `github.com/pquerna/otp`（RFC 6238，30 秒、6 位）；密码哈希用 argon2id（`golang.org/x/crypto/argon2`）。
