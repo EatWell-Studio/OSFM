@@ -10,6 +10,7 @@ import {
   readCeremonyStart,
   registrationToJSON,
 } from '@/lib/webauthn'
+import { rateLimitMessage } from '@/lib/rateLimit'
 import { RecoveryCodes } from './RecoveryCodes'
 
 /** The error messages of the registration form, by server error code or ceremony failure. */
@@ -158,7 +159,7 @@ export function PasskeyRegistration({ code, onDone }: { code: string; onDone: ()
       </div>
       {error !== null && (
         <p role="alert" className="text-destructive">
-          {t(messageKey(error))}
+          {error.code === 'rate_limited' ? rateLimitMessage(t, error.retryAfter) : t(messageKey(error))}
         </p>
       )}
       <Button type="submit" size="lg" disabled={busy} className="self-start">

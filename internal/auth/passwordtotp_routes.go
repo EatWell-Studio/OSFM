@@ -115,14 +115,18 @@ type SignedInResponse struct {
 }
 
 func bindPasswordTOTPRoutes(se *core.ServeEvent) {
-	Public(se.Router.POST(RegisterPasswordStartPath, handleRegisterPasswordStart))
-	Public(se.Router.POST(RegisterPasswordConfirmPath, handleRegisterPasswordConfirm))
-	Public(se.Router.POST(SignInPasswordPath, handleSignInPassword))
-	Public(se.Router.POST(SignInTOTPPath, handleSignInTOTP))
-	Public(se.Router.POST(SignInRecoveryPath, handleSignInRecovery))
+	Public(se.Router.POST(RegisterPasswordStartPath, handleRegisterPasswordStart)).
+		Bind(RateLimit(LimitRegistration("")))
+	Public(se.Router.POST(RegisterPasswordConfirmPath, handleRegisterPasswordConfirm)).
+		Bind(RateLimit(LimitRegistration(MethodPasswordTOTP)))
+	Public(se.Router.POST(SignInPasswordPath, handleSignInPassword)).Bind(RateLimit(LimitSignInPassword))
+	Public(se.Router.POST(SignInTOTPPath, handleSignInTOTP)).Bind(RateLimit(LimitSignInTOTP))
+	Public(se.Router.POST(SignInRecoveryPath, handleSignInRecovery)).Bind(RateLimit(LimitSignInRecovery))
 }
 
+// authError answers an [AuthError] and records its code for [RateLimit].
 func authError(e *core.RequestEvent, status int, code, message string) error {
+	e.Set(authErrorCodeKey, code)
 	e.Response.Header().Set("Cache-Control", "no-store")
 	return e.JSON(status, AuthError{Status: status, Message: message, Data: map[string]any{}, Code: code})
 }

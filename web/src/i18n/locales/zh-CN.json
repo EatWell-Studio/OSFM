@@ -211,5 +211,10 @@
     "confirm": "我已经保存好这些恢复码",
     "continue": "进入地图",
     "fileHeader": "OSFM 恢复码（每个只能用一次）"
+  },
+  "rateLimit": {
+    "wait_one": "尝试次数太多，请 {{count}} 分钟后再试。",
+    "wait_other": "尝试次数太多，请 {{count}} 分钟后再试。",
+    "later": "尝试次数太多，请稍后再试。"
   }
 }

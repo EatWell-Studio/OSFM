@@ -65,8 +65,10 @@ func bind(app core.App, cfg *config.Config) {
 	migrations.Bind(app)
 	// The data model's invariants (uuid, coordinate rounding, append-only collections) for every record save.
 	store.BindHooks(app)
-	// Only /api/osfm/*, /api/health and the web app on the main listener; the admin UI on its own listener (AD2).
-	boundary.Bind(app, boundary.Options{AdminUI: cfg.AdminUI, AdminListen: cfg.AdminListen})
+	// Only /api/osfm/*, /api/health and the web app on the main listener; the admin UI on its own listener (AD2). The
+	// client address behind a reverse proxy comes from OSFM_TRUSTED_PROXY_HEADERS (rate limits).
+	boundary.Bind(app, boundary.Options{AdminUI: cfg.AdminUI, AdminListen: cfg.AdminListen,
+		TrustedProxyHeaders: cfg.TrustedProxyHeaders})
 	// Member sessions: /api/osfm/* (except the routes marked public) and /tiles/* need one; GET /api/osfm/me and
 	// POST /api/osfm/logout (AD6, E1); the invite routes under /api/osfm/invites (D1, D2).
 	// Registration and sign-in with password and TOTP; the master key is read once the app has bootstrapped.

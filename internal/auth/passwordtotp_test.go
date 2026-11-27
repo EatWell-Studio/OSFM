@@ -36,6 +36,12 @@ type pwEnv struct {
 
 func newPWEnv(t *testing.T) *pwEnv {
 	t.Helper()
+	return newPWEnvWith(t, nil)
+}
+
+// newPWEnvWith is newPWEnv with the given rate limits (nil: the defaults); prepare runs before the router is built.
+func newPWEnvWith(t *testing.T, limits *auth.Limits, prepare ...func(core.App)) *pwEnv {
+	t.Helper()
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		t.Fatal(err)
@@ -43,7 +49,7 @@ func newPWEnv(t *testing.T) *pwEnv {
 	// A time 5 s into a TOTP step, so that a step lasts for the whole test unless the test moves the clock.
 	pe := &pwEnv{clock: time.Unix(1_800_000_000/30*30+5, 0).UTC()}
 	auth.SetNow(t, func() time.Time { return pe.clock })
-	pe.env = newEnvWith(t, auth.Options{MasterKey: func() []byte { return key }})
+	pe.env = newEnvWith(t, auth.Options{MasterKey: func() []byte { return key }, Limits: limits}, prepare...)
 	return pe
 }
 
@@ -552,7 +558,9 @@ func TestSecondFactorOnceUnderConcurrency(t *testing.T) {
 	for _, c := range []struct {
 		path, code string
 	}{{auth.SignInTOTPPath, pe.code(secret, 0)}, {auth.SignInRecoveryPath, codes[0]}} {
-		const n = 6
+		// No more than the per-member TOTP threshold: a sixth concurrent attempt would be refused by the rate limit
+		// (429) before reaching the code check that this test is about.
+		const n = 5
 		tickets := make([]string, n)
 		for i := range tickets {
 			tickets[i] = pe.ticket(newLogin, testPassword)

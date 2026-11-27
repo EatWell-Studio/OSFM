@@ -211,5 +211,10 @@
     "confirm": "I have saved these recovery codes",
     "continue": "Open the map",
     "fileHeader": "OSFM recovery codes (each works once)"
+  },
+  "rateLimit": {
+    "wait_one": "Too many attempts. Try again in {{count}} minute.",
+    "wait_other": "Too many attempts. Try again in {{count}} minutes.",
+    "later": "Too many attempts. Try again later."
   }
 }

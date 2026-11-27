@@ -1,6 +1,10 @@
 package boundary
 
-import "github.com/pocketbase/pocketbase/core"
+import (
+	"slices"
+
+	"github.com/pocketbase/pocketbase/core"
+)
 
 // LogMaxDays is how long PocketBase keeps request and application log entries (§3.9).
 const LogMaxDays = 7
@@ -18,5 +22,22 @@ func ApplyLogSettings(app core.App) error {
 	s.Logs.MaxDays = LogMaxDays
 	s.Logs.LogIP = false
 	s.Logs.LogAuthId = false
+	return app.Save(s)
+}
+
+// ApplyTrustedProxy sets PocketBase's trusted proxy headers to headers, taking the rightmost valid address of the
+// header (the one the nearest proxy added; addresses further left come from the client and could be anything), and
+// saves the settings if they differ. With no headers it leaves the settings alone, so a value set in the admin UI
+// stays. The client address it yields (RealIP) is what PocketBase's and OSFM's rate limits count by.
+func ApplyTrustedProxy(app core.App, headers []string) error {
+	if len(headers) == 0 {
+		return nil
+	}
+	s := app.Settings()
+	if slices.Equal(s.TrustedProxy.Headers, headers) && !s.TrustedProxy.UseLeftmostIP {
+		return nil
+	}
+	s.TrustedProxy.Headers = slices.Clone(headers)
+	s.TrustedProxy.UseLeftmostIP = false
 	return app.Save(s)
 }
