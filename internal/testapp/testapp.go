@@ -58,6 +58,26 @@ type Options struct {
 	Unconfigured bool
 }
 
+// UnreachableSearchURL is where the place search's upstream services are in every app [Start] boots, unless
+// Options.Env sets them (to a fake, httptest): a port on the loopback interface that nothing listens on, so that no
+// test can ever send a search to the public Photon or Nominatim. A search then fails at once (503).
+const UnreachableSearchURL = "http://127.0.0.1:1/unreachable"
+
+// UnreachableSearch wraps lookup, a configuration lookup as config.Parse takes it, so that the place search's
+// upstream URLs are [UnreachableSearchURL] unless lookup sets them. Test harnesses that parse a configuration
+// themselves (cmd/osfm) use it too.
+func UnreachableSearch(lookup func(string) (string, bool)) func(string) (string, bool) {
+	return func(name string) (string, bool) {
+		if v, ok := lookup(name); ok {
+			return v, ok
+		}
+		if name == config.EnvGeocoderPhotonURL || name == config.EnvGeocoderNominatimURL {
+			return UnreachableSearchURL, true
+		}
+		return "", false
+	}
+}
+
 // Identity is a kind of caller of the permission tests.
 type Identity string
 
@@ -119,13 +139,13 @@ func Start(t testing.TB, opts Options) *App {
 		t.Fatal("testapp: Options.Bind is required")
 	}
 	dir := t.TempDir()
-	cfg, err := config.Parse(func(name string) (string, bool) {
+	cfg, err := config.Parse(UnreachableSearch(func(name string) (string, bool) {
 		if name == config.EnvDataDir {
 			return dir, true
 		}
 		v, ok := opts.Env[name]
 		return v, ok
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
