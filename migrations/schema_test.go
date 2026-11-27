@@ -51,7 +51,9 @@ var wantCollections = map[string]collectionSpec{
 		"joined_at": tDate, "left_at": tDate, "deleted_at": tDate, "created": tAutodate, "updated": tAutodate,
 		"email": core.FieldTypeEmail, "password": core.FieldTypePassword, "tokenKey": tText,
 		"emailVisibility": tBool, "verified": tBool, "passkey_user_handle": tText,
-	}), indexes: []string{"idx_members_uuid", "idx_members_login_name", "idx_members_passkey_user_handle"}},
+		"display_name_key": tText, "pseudonym_key": tText,
+	}), indexes: []string{"idx_members_uuid", "idx_members_login_name", "idx_members_passkey_user_handle",
+		"idx_members_display_name_key", "idx_members_pseudonym_key"}},
 	store.Credentials: {fields: fields(map[string]string{
 		"member": tRelation, "kind": tSelect, "credential_id": tText, "public_key": tText, "sign_count": tNumber,
 		"device_name": tText, "password_hash": tText, "totp_secret_enc": tText, "totp_last_step": tNumber,
@@ -76,7 +78,7 @@ var wantCollections = map[string]collectionSpec{
 	}), indexes: []string{"idx_audit_log_created", "idx_audit_log_target", "idx_audit_log_actor"}},
 	store.InstanceSettings: {fields: fields(map[string]string{
 		"name": tText, "cities": tJSON, "report_threshold": tNumber, "invite_cooldown_days": tNumber,
-		"geocoder_contact": tText, "created": tAutodate, "updated": tAutodate,
+		"geocoder_contact": tText, "geocoder_enabled": tBool, "created": tAutodate, "updated": tAutodate,
 	})},
 	store.Sessions: {fields: fields(map[string]string{
 		"uuid": tText, "member": tRelation, "token_hash": tText, "expires_at": tDate, "last_seen_at": tDate,
@@ -93,17 +95,20 @@ var wantCollections = map[string]collectionSpec{
 		"visibility": tSelect, "text": tText, "dishes": tJSON, "time_slots": tSelect, "season": tText,
 		"sources": tJSON, "visited_on": tDate, "hidden": tBool, "hidden_reason": tText,
 		"edited_by_maintainer_at": tDate, "deleted_at": tDate, "created": tAutodate, "updated": tAutodate,
-	}), indexes: []string{"idx_recommendations_uuid", "idx_recommendations_place", "idx_recommendations_author"}},
+		"hidden_kind": tSelect, "hidden_at": tDate, "hidden_by": tRelation,
+	}), indexes: []string{"idx_recommendations_uuid", "idx_recommendations_place", "idx_recommendations_author",
+		"idx_recommendations_place_author"}},
 	store.RecommendationRevisions: {fields: fields(map[string]string{
 		"recommendation": tRelation, "editor_role": tSelect, "editor": tRelation, "snapshot": tJSON,
-		"created": tAutodate,
-	}), indexes: []string{"idx_recommendation_revisions_recommendation"}},
+		"created": tAutodate, "uuid": tText,
+	}), indexes: []string{"idx_recommendation_revisions_recommendation", "idx_recommendation_revisions_uuid"}},
 	store.Reports: {fields: fields(map[string]string{
-		"recommendation": tRelation, "reporter": tRelation, "reason": tText, "created": tAutodate,
-	}), indexes: []string{"idx_reports_recommendation_reporter"}},
+		"recommendation": tRelation, "reporter": tRelation, "reason": tText, "created": tAutodate, "uuid": tText,
+		"note": tText, "resolved_at": tDate, "resolved_by": tRelation, "resolution": tSelect,
+	}), indexes: []string{"idx_reports_recommendation_reporter", "idx_reports_uuid"}},
 	store.Notices: {fields: fields(map[string]string{
-		"member": tRelation, "kind": tText, "ref": tText, "read_at": tDate, "created": tAutodate,
-	}), indexes: []string{"idx_notices_member"}},
+		"member": tRelation, "kind": tText, "ref": tText, "read_at": tDate, "created": tAutodate, "uuid": tText,
+	}), indexes: []string{"idx_notices_member", "idx_notices_uuid"}},
 }
 
 // uniqueIndexes must be UNIQUE.
@@ -112,6 +117,7 @@ var uniqueIndexes = []string{
 	"idx_invites_uuid", "idx_invites_code_hash", "idx_reset_links_code_hash", "idx_places_uuid",
 	"idx_recommendations_uuid", "idx_reports_recommendation_reporter", "idx_sessions_uuid", "idx_sessions_token_hash",
 	"idx_members_passkey_user_handle", "idx_credentials_uuid", "idx_reset_links_uuid",
+	"idx_recommendations_place_author", "idx_reports_uuid", "idx_recommendation_revisions_uuid", "idx_notices_uuid",
 }
 
 func newApp(t *testing.T) *tests.TestApp {
@@ -217,9 +223,11 @@ func checkSchema(t *testing.T, app core.App) {
 	if err != nil {
 		t.Fatalf("settings row: %v", err)
 	}
-	if settings.GetInt("report_threshold") != 3 || settings.GetInt("invite_cooldown_days") != 30 {
-		t.Errorf("settings defaults: report_threshold %d, invite_cooldown_days %d",
-			settings.GetInt("report_threshold"), settings.GetInt("invite_cooldown_days"))
+	if settings.GetInt("report_threshold") != 3 || settings.GetInt("invite_cooldown_days") != 30 ||
+		!settings.GetBool("geocoder_enabled") {
+		t.Errorf("settings defaults: report_threshold %d, invite_cooldown_days %d, geocoder_enabled %v",
+			settings.GetInt("report_threshold"), settings.GetInt("invite_cooldown_days"),
+			settings.GetBool("geocoder_enabled"))
 	}
 }
 

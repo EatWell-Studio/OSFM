@@ -54,7 +54,8 @@ func seedRecords(t *testing.T, app core.App) (ids map[string]string, memberToken
 		"attitude": "good", "visibility": "circle", "text": "Test text"})
 	save(store.RecommendationRevisions, map[string]any{"recommendation": rec.Id, "editor_role": "author",
 		"editor": m, "snapshot": map[string]any{"text": "Old text"}})
-	save(store.Reports, map[string]any{"recommendation": rec.Id, "reporter": m, "reason": "test"})
+	save(store.Reports, map[string]any{"recommendation": rec.Id, "reporter": m, "reason": store.ReasonOther,
+		"note": "Test note"})
 	save(store.Notices, map[string]any{"member": m, "kind": "test"})
 
 	var err error
