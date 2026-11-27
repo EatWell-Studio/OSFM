@@ -3,6 +3,7 @@
 
 export const loginPath = '/login'
 export const registerPath = '/register'
+export const resetPath = '/reset'
 export const setupPagePath = '/setup'
 
 const fallback = '/'
@@ -40,7 +41,7 @@ export function sanitizeNext(raw: string | null | undefined): string {
     return fallback
   }
   // Returning to the sign-in or registration page after signing in would loop.
-  if (url.pathname === loginPath || url.pathname === registerPath) {
+  if (url.pathname === loginPath || url.pathname === registerPath || url.pathname === resetPath) {
     return fallback
   }
   return url.pathname + url.search + url.hash

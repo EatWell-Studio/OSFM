@@ -53,6 +53,30 @@
         "revokedAt": "Revoked on {{date}}",
         "expiresAt": "Valid until {{date}}",
         "unknownMember": "(unknown member)"
+      },
+      "reset": {
+        "title": "Reset links",
+        "intro": "When a member has lost every way to sign in and every recovery code, create a one-time reset link for them (valid for 24 hours) and send it through a channel you trust. You confirm it is you first.",
+        "loginName": "Member's login name",
+        "create": "Create reset link",
+        "link": "Reset link",
+        "shownOnce": "This link is shown this once and works once. A new link for the same member makes this one invalid.",
+        "loadError": "Could not load the reset links. Check your connection and try again.",
+        "empty": "No reset links yet.",
+        "for": "Reset link for {{name}}",
+        "usedAt": "used {{date}}",
+        "errors": {
+          "notFound": "No member who can sign in has this login name.",
+          "self": "You cannot create a reset link for yourself; manage your own ways to sign in on your page.",
+          "missing": "Enter the member's login name."
+        }
+      },
+      "instance": {
+        "title": "Instance settings",
+        "intro": "Cities: a city you untick or remove no longer appears on the map; its basemap file is not deleted.",
+        "save": "Save settings",
+        "saved": "Saved.",
+        "nameHint": "Shown in the top bar. Entries already in authenticator apps keep their old name."
       }
     },
     "login": {
@@ -289,5 +313,96 @@
     "wait_one": "Too many attempts. Try again in {{count}} minute.",
     "wait_other": "Too many attempts. Try again in {{count}} minutes.",
     "later": "Too many attempts. Try again later."
+  },
+  "credentials": {
+    "title": "Ways to sign in",
+    "loadError": "Could not load your ways to sign in. Check your connection and try again.",
+    "cancel": "Cancel",
+    "done": "Done",
+    "save": "Save",
+    "remove": "Remove",
+    "confirmRemove": "Yes, remove",
+    "removed": "Removed. You were signed out on your other devices.",
+    "added": "Added.",
+    "lastUsed": "last used {{date}}",
+    "neverUsed": "not used yet",
+    "lastCredentialHint": "This is your only way to sign in. Add another one before removing it.",
+    "password": {
+      "since": "Set up {{date}}",
+      "none": "Not set up.",
+      "add": "Set up a password and authenticator app",
+      "change": "Change password",
+      "new": "New password",
+      "changed": "Password changed. You were signed out on your other devices.",
+      "replaceTotp": "Replace authenticator app",
+      "totpReplaced": "Authenticator app replaced; codes from the old one no longer work. You were signed out on your other devices."
+    },
+    "passkeys": {
+      "title": "Passkeys",
+      "none": "No passkeys yet.",
+      "add": "Add a passkey",
+      "unnamed": "Unnamed passkey",
+      "added": "added {{date}}",
+      "rename": "Rename",
+      "deviceName": "Device name",
+      "deviceNameHint": "Optional, for example “my phone”."
+    },
+    "recovery": {
+      "title": "Recovery codes",
+      "left_one": "{{count}} unused recovery code left.",
+      "left_other": "{{count}} unused recovery codes left.",
+      "regenerate": "Generate new recovery codes",
+      "regenerated": "New recovery codes saved; the old ones no longer work.",
+      "hint": "Generating new codes makes all the old ones invalid."
+    },
+    "verify": {
+      "title": "Confirm it is you",
+      "explanation": "To protect your account, this needs you to confirm it is you once more (valid for 10 minutes).",
+      "repeat": "Your confirmation has expired. Confirm it is you, then do the last step again.",
+      "method": "How to confirm",
+      "withPassword": "Password + code",
+      "withPasskey": "Passkey",
+      "code": "Code or recovery code",
+      "codeHint": "The 6 digits from your authenticator app, or a recovery code (used up).",
+      "submit": "Confirm",
+      "passkeyButton": "Confirm with a passkey",
+      "required": "Confirm it is you first."
+    },
+    "errors": {
+      "network": "Something went wrong. Check your connection and try again.",
+      "codeInvalid": "The code is wrong or was used already.",
+      "passwordWrong": "Wrong password.",
+      "expired": "This took too long. Start again.",
+      "lastCredential": "This is your only way to sign in. Add another one before removing it.",
+      "notFound": "This way to sign in no longer exists. Reload the page.",
+      "noPassword": "You have not set up a password.",
+      "noPasskey": "You have no passkey.",
+      "passwordExists": "A password is set up already.",
+      "deviceName": "A device name has at most 64 characters and no control characters."
+    },
+    "enrol": {
+      "method": "New way to sign in",
+      "password": "New password"
+    },
+    "recover": {
+      "title": "Recover your account",
+      "entry": "I only use passkeys and lost them",
+      "explanation": "Enter your login name and one recovery code; the code is used up. Then set up a new passkey or a password with an authenticator app right away before you get to the map.",
+      "enrol": "The recovery code is right. Set up a new way to sign in within 15 minutes.",
+      "toMe": "Check my passkeys",
+      "back": "Back to sign-in",
+      "checkPasskeys": "You have a new way to sign in, and you were signed out everywhere else. Your earlier passkeys are still listed below: remove any that was on a lost device.",
+      "errors": {
+        "failed": "Wrong login name or recovery code.",
+        "usePassword": "This account has a password: sign in with “password + authenticator app” and use the recovery code in the second step.",
+        "expired": "The recovery has expired. Start again with another recovery code."
+      }
+    },
+    "reset": {
+      "title": "Reset your sign-in",
+      "invalid": "This link is invalid or has expired. Ask a maintainer for a new one.",
+      "account": "Account to reset: {{displayName}} (login name {{loginName}})",
+      "explanation": "Once you set up a new way to sign in, your old passkeys, password, authenticator app and recovery codes stop working, and you are signed out on every device."
+    }
   }
 }

@@ -3,7 +3,7 @@ import { type SyntheticEvent, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Field } from '@/components/Field'
 import { Button } from '@/components/ui/button'
-import { type InstanceCity, instanceQuery } from '@/instance/instance'
+import { type Instance, type InstanceCity, instanceQuery } from '@/instance/instance'
 import { authErrorCode, authRetryAfter, rateLimitedCode } from '@/lib/authApi'
 import { rateLimitMessage } from '@/lib/rateLimit'
 import { type Bounds, citiesQueryKey, cityLabel, fetchCities } from '@/map/cities'
@@ -26,11 +26,14 @@ function validName(name: string): boolean {
   return trimmed !== '' && Array.from(trimmed).length <= maxCityName
 }
 
-/** A city entered by hand, for a basemap that may not be on the server yet. */
+/** A city entered by hand, for a basemap that may not be on the server yet (or, when editing, a saved city without
+ * one). */
 interface ManualCity {
   slug: string
   name: string
   bbox: Bounds
+  /** The saved center, kept when editing; otherwise the middle of the box. */
+  center?: [number, number]
 }
 
 /**
@@ -41,25 +44,63 @@ interface ManualCity {
  * basemap, and a button to look for the archives again. At least one city; then the setup is complete. Reached again
  * after signing in when the wizard was left before this step.
  */
-export function CitiesStep({ onDone }: { onDone: () => void }) {
+export function CitiesStep({
+  onDone,
+  save: saveInstance = completeSetup,
+  editing = false,
+  finishLabel,
+}: {
+  onDone: (saved: Instance) => void
+  /** Saves the settings; the setup's last step by default. */
+  save?: (instance: Instance) => Promise<Instance>
+  /** Editing the saved settings later (the administration page): the saved cities are the starting point. */
+  editing?: boolean
+  finishLabel?: string
+}) {
   const { t } = useTranslation()
   const instance = useQuery(instanceQuery)
   // The name as edited here; null while it is the saved one.
   const [name, setName] = useState<string | null>(null)
   const archives = useQuery({ queryKey: citiesQueryKey, queryFn: ({ signal }) => fetchCities(signal) })
-  // Per archive id: whether it is used and under which name; archives not in here are used under their label.
+  // Per archive id: whether it is used and under which name; archives not in here are used under their label (when
+  // editing: as saved, and not used when they are not among the saved cities).
   const [edits, setEdits] = useState<Record<string, { use: boolean; name: string }>>({})
-  const [manual, setManual] = useState<ManualCity[]>([])
+  const [added, setAdded] = useState<ManualCity[]>([])
+  // When editing: the slugs of saved cities without an archive that were removed here.
+  const [removed, setRemoved] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
 
-  const manualSlugs = new Set(manual.map((m) => m.slug))
+  const savedCities = editing ? (instance.data?.cities ?? []) : []
+  const saved = new Map(savedCities.map((c) => [c.slug, c]))
   const archiveIds = new Set((archives.data ?? []).map((a) => a.id))
+  const manual: ManualCity[] = [
+    ...savedCities
+      .filter((c) => !archiveIds.has(c.slug) && !removed.has(c.slug))
+      .map((c) => ({ slug: c.slug, name: c.name, bbox: c.bbox, center: c.center })),
+    ...added,
+  ]
+  const setManual = (update: (all: ManualCity[]) => ManualCity[]) => {
+    const next = update(manual)
+    const kept = new Set(next.map((m) => m.slug))
+    setRemoved(new Set([...removed, ...savedCities.map((c) => c.slug).filter((slug) => !kept.has(slug))]))
+    setAdded(next.filter((m) => !saved.has(m.slug)))
+  }
+  const manualSlugs = new Set(manual.map((m) => m.slug))
   // An archive that appeared for a city added by hand belongs to that city.
-  const offered = (archives.data ?? []).filter((a) => !manualSlugs.has(a.id))
-  const edit = (id: string) => edits[id] ?? { use: true, name: cityLabel({ id }) }
+  const offered = (archives.data ?? []).filter((a) => !manualSlugs.has(a.id) || saved.has(a.id))
+  const edit = (id: string) => {
+    const savedCity = saved.get(id)
+    return (
+      edits[id] ??
+      (editing ? { use: savedCity !== undefined, name: savedCity?.name ?? cityLabel({ id }) } : null) ?? {
+        use: true,
+        name: cityLabel({ id }),
+      }
+    )
+  }
 
   const save = useMutation({
-    mutationFn: completeSetup,
+    mutationFn: saveInstance,
     onSuccess: onDone,
     onError: (err) => {
       switch (authErrorCode(err)) {
@@ -89,7 +130,12 @@ export function CitiesStep({ onDone }: { onDone: () => void }) {
     }
     for (const m of manual) {
       const [minLon, minLat, maxLon, maxLat] = m.bbox
-      cities.push({ slug: m.slug, name: m.name, bbox: m.bbox, center: [(minLon + maxLon) / 2, (minLat + maxLat) / 2] })
+      cities.push({
+        slug: m.slug,
+        name: m.name,
+        bbox: m.bbox,
+        center: m.center ?? [(minLon + maxLon) / 2, (minLat + maxLat) / 2],
+      })
     }
     if (cities.length === 0) {
       setError(t('setup.cities.errors.none'))
@@ -104,14 +150,15 @@ export function CitiesStep({ onDone }: { onDone: () => void }) {
       return
     }
     setError(null)
-    save.mutate({ name: name?.trim() ?? '', cities })
+    // In the setup an empty name keeps the one saved with the maintainer; later the name is always sent.
+    save.mutate({ name: name?.trim() ?? (editing ? (instance.data?.name ?? '') : ''), cities })
   }
 
   return (
     <div className="flex flex-col gap-4">
       <Field
         label={t('setup.name.label')}
-        hint={t('setup.cities.nameHint')}
+        hint={editing ? t('pages.admin.instance.nameHint') : t('setup.cities.nameHint')}
         name="instance-name"
         autoComplete="off"
         maxLength={100}
@@ -120,7 +167,7 @@ export function CitiesStep({ onDone }: { onDone: () => void }) {
           setName(e.target.value)
         }}
       />
-      <p>{t('setup.cities.intro')}</p>
+      <p>{editing ? t('pages.admin.instance.intro') : t('setup.cities.intro')}</p>
 
       <section className="flex flex-col gap-3">
         <h3 className="font-medium">{t('setup.cities.archives')}</h3>
@@ -193,8 +240,12 @@ export function CitiesStep({ onDone }: { onDone: () => void }) {
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button size="lg" disabled={save.isPending} onClick={finish}>
-          {save.isPending ? t('setup.cities.working') : t('setup.cities.finish')}
+        <Button
+          size="lg"
+          disabled={save.isPending || (editing && (archives.isPending || instance.isPending))}
+          onClick={finish}
+        >
+          {save.isPending ? t('setup.cities.working') : (finishLabel ?? t('setup.cities.finish'))}
         </Button>
       </div>
     </div>
