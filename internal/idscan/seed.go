@@ -93,7 +93,7 @@ func Seed(t testing.TB, app core.App) *Seeded {
 	member := save(store.Members, map[string]any{"login_name": "test_member", "display_name": "Test Member", // #nosec G101 -- made up
 		"pseudonym": "Test Alias", "role": "member", "invited_by": maintainer.Id,
 		"passkey_user_handle": "dGVzdC11c2VyLWhhbmRsZS1ub3QtYS1yZWFsLW9uZSE"})
-	save(store.Members, map[string]any{store.FieldUUID: ResetMemberUUID, "login_name": "test_reset",
+	reset := save(store.Members, map[string]any{store.FieldUUID: ResetMemberUUID, "login_name": "test_reset",
 		"display_name": "Test Reset", "role": "member", "invited_by": maintainer.Id})
 	save(store.Members, map[string]any{store.FieldUUID: LeftMemberUUID, "login_name": "test_gone_away",
 		"display_name": "Test Gone Away", "role": "member", "invited_by": maintainer.Id, "left_at": "2026-01-03 00:00:00Z"})
@@ -149,10 +149,20 @@ func Seed(t testing.TB, app core.App) *Seeded {
 	private := save(store.Recommendations, map[string]any{"place": place.Id, "author": maintainer.Id,
 		"display_as": "main", "attitude": "ok", "visibility": "private", "text": "Test private text"})
 	deleted(private)
+	save(store.Recommendations, map[string]any{"place": place.Id, "author": reset.Id, "display_as": "main",
+		"attitude": "avoid", "visibility": "circle", "text": "Test hidden text", "hidden": true,
+		"hidden_kind": store.HiddenByMaintainer, "hidden_at": "2026-01-04 00:00:00Z", "hidden_by": maintainer.Id,
+		"hidden_reason": "Test hidden reason"})
 	save(store.RecommendationRevisions, map[string]any{"recommendation": rec.Id, "editor_role": "author",
 		"editor": m, "snapshot": map[string]any{"text": "Test old text"}})
-	save(store.Reports, map[string]any{"recommendation": rec.Id, "reporter": maintainer.Id, "reason": "test"})
+	// An open report and one a maintainer resolved.
+	save(store.Reports, map[string]any{"recommendation": rec.Id, "reporter": maintainer.Id,
+		"reason": store.ReasonAdvertising, "note": "Test report note"})
+	save(store.Reports, map[string]any{"recommendation": rec.Id, "reporter": reset.Id, "reason": store.ReasonOther,
+		"note": "Test other note", "resolved_at": "2026-01-05 00:00:00Z", "resolved_by": maintainer.Id,
+		"resolution": store.ResolutionRestored})
 	save(store.Notices, map[string]any{"member": m, "kind": "test"})
+	save(store.Notices, map[string]any{"member": m, "kind": "test", "read_at": "2026-01-06 00:00:00Z"})
 
 	// The single settings row exists from the migration; give it a made-up name and city.
 	settings, err := app.FindRecordById(store.InstanceSettings, store.SettingsID)

@@ -377,14 +377,14 @@ flowchart LR
 
 | 集合 | 内容 | 里程碑 |
 | --- | --- | --- |
-| `members` | 成员（PocketBase 认证集合）：登录名、主名、化名、角色、邀请权与冷静期、邀请人、加入与离开时间；passkey 的用户句柄（§3.3） | M1 |
+| `members` | 成员（PocketBase 认证集合）：登录名、主名、化名、角色、邀请权与冷静期、邀请人、加入与离开时间；passkey 的用户句柄（§3.3）；主名与化名的规范化键（`display_name_key`、`pseudonym_key`，T023） | M1 |
 | `credentials` | passkey，或密码哈希（argon2id，PHC 字符串）+ 加密的 TOTP 密钥 + 最近一次接受的时间步（`D3`，§3.3）。每行有 `uuid` 与最近一次使用的日期（`last_used_at`，只记 UTC 日期，T012）；passkey 一行：凭据 ID 与 COSE 公钥（base64url）、签名计数、认证器型号 AAGUID、传输方式、备份资格与备份状态、用户验证标志、证明类型与格式、设备名称（由成员填写，T012） | M1 |
 | `recovery_codes`、`invites`、`reset_links` | 恢复码、邀请码、重置链接，都只存哈希（`N5`）；邀请另有邀请人、过期、使用者与使用时间、撤销时间；重置链接另有 `uuid`、成员、生成它的维护者、过期、使用时间与撤销时间（§3.3） | M1 |
 | `audit_log` | 维护者操作、认证事件（注册、登录、退出、第二步失败、锁定，§3.3）、地点的创建与营业状态确认（只追加） | M1 |
-| `instance_settings` | 实例设置，只有一行：实例名称、城市列表（首次启动向导写入，之后维护者在"管理"页修改，§3.3）、举报阈值、邀请冷静期、搜索服务的联系方式 | M1 |
+| `instance_settings` | 实例设置，只有一行：实例名称、城市列表（首次启动向导写入，之后维护者在"管理"页修改，§3.3）、举报阈值、邀请冷静期、地名搜索的开关（`geocoder_enabled`，默认开启，T023）与联系方式 | M1 |
 | `sessions` | 登录会话：成员、cookie 令牌的 SHA-256、过期时间、最近一次使用的日期、最近一次证明身份的时间（`verified_at`，再次验证，T012）；不记 IP 与 User-Agent（§3.3） | M1 |
-| `places`、`recommendations` | 地点层与推荐层（`F1`） | M2，字段现在就建好 |
-| `recommendation_revisions`、`reports`、`notices` | 修改记录（只追加）、举报、给成员的通知 | M2，字段现在就建好 |
+| `places`、`recommendations` | 地点层与推荐层（`F1`）；推荐另有隐藏状态：`hidden`、隐藏类型 `hidden_kind`、`hidden_reason`、`hidden_at`、`hidden_by`（T023） | M1 建结构，M2 补字段 |
+| `recommendation_revisions`、`reports`、`notices` | 修改记录（只追加）、举报（原因代码与说明、处理结果）、给成员的通知；三者都有 `uuid`（T023） | M1 建结构，M2 补字段 |
 
 ```mermaid
 erDiagram
@@ -401,6 +401,8 @@ erDiagram
     members ||--o{ recommendation_revisions : "editor"
     recommendations ||--o{ reports : "recommendation"
     members ||--o{ reports : "reporter"
+    members |o--o{ reports : "resolved_by"
+    members |o--o{ recommendations : "hidden_by"
     members ||--o{ notices : "member"
     instance_settings {
         text id "固定为 instancesetting"
@@ -410,24 +412,31 @@ erDiagram
 - **全部集合的访问规则都是 `nil`**（仅超级用户），客户端不能通过 `/api/collections/*` 读写任何集合（AD2）；测试以成员令牌和匿名身份逐一验证列表、查看、新建、修改、删除都被拒绝。
 - **`members` 由 PocketBase 默认的 `users` 集合改名而来**，而不是另建一个认证集合：只保留一个认证集合，沿用 PocketBase 为它生成的令牌配置，已有记录（如果有人在管理后台建过）也随之保留，迁移为它们补上 `uuid`、登录名和主名。`users` 自带的 `name`、`avatar` 字段删除。内置登录方式由后面的迁移 `1795600200_boundary` 关闭（§3.1）。
 - **不收集电子邮箱**：PocketBase 要求认证集合保留系统字段 `email`，但允许它不必填；它的唯一索引只覆盖非空值，所以全部留空没有问题。`password` 字段同样是系统字段，填随机值（§3.3）。
-- **对外 ID**：可被外部引用的实体（`members`、`invites`、`reset_links`、`credentials`（只对成员本人列出）、`places`、`recommendations`，以及目前还没有对外的 `sessions`）有 `uuid` 字段：UUIDv7，唯一索引，字段格式只接受小写的 v7。新建记录时若为空，由 `internal/store` 的记录钩子生成（`store.NewUUID`）；已有记录的 `uuid` 不能修改（AD4）。接口收到的 ID 先用 `store.IsUUID` 检查格式。
+- **对外 ID**：可被外部引用的实体（`members`、`invites`、`reset_links`、`credentials`（只对成员本人列出）、`places`、`recommendations`、`recommendation_revisions`、`reports`、`notices`，以及目前还没有对外的 `sessions`）有 `uuid` 字段：UUIDv7，唯一索引，字段格式只接受小写的 v7。新建记录时若为空，由 `internal/store` 的记录钩子生成（`store.NewUUID`）；已有记录的 `uuid` 不能修改（AD4）。接口收到的 ID 先用 `store.IsUUID` 检查格式。
 - **软删除**：`members`、`places`、`recommendations`（`store.SoftDeleted`）有 `deleted_at` 字段，为空表示有效。约定：
   - 删除只写 `deleted_at`（`store.SoftDelete`），记录作为墓碑留下，带着它的 `uuid`；导出与以后的联邦据此得知删除，而不是对象悄悄消失。这些集合的硬删除被 `internal/store` 的钩子拒绝，不论哪段代码发起。
   - 读取经 `store.Query(app, 集合)` 与 `store.FindByUUID`，默认过滤已删除的记录；需要墓碑的代码（导出、维护）显式调用 `.IncludeDeleted()`。查询条件一律以 AND 组合，无法用 `Where` 或 `OrWhere` 意外替换或绕过过滤条件；联表查询用 `store.NotDeleted(表名)`（列名带表名）。直接用 PocketBase 的查找函数会跳过过滤，只留给自己处理墓碑的代码。
   - 墓碑保留还是抹去正文（成员退出、作者删除推荐时的隐私要求）由做删除的业务规则决定，不在 `store` 层。
+- **地点必填项**：只有店名、坐标和精度必填；`category` 与 `status` 可以为空（T023）：未分类的地点在按类别筛选时不出现，没人确认过的营业状态为空，而不是"营业中"。
 - **两层分表**：`places` 不含任何成员字段（也没有任何指向 `members` 的关联）；谁创建了地点、谁确认了营业状态记在 `audit_log`（`F1`）。
 - **只追加**：`audit_log` 与 `recommendation_revisions` 只有 `created` 时间，`internal/store` 的钩子拒绝修改它们的记录。修改记录保存修改前的快照、修改人角色与修改人。
-- **单行设置**：`instance_settings` 的主键字段只接受固定值 `instancesetting`，因此第二行无论用什么 ID 都写不进去；这一行由迁移创建，带默认值（举报阈值 3、邀请冷静期 30 天）。
+- **单行设置**：`instance_settings` 的主键字段只接受固定值 `instancesetting`，因此第二行无论用什么 ID 都写不进去；这一行由迁移创建，带默认值（举报阈值 3、邀请冷静期 30 天、地名搜索开启）。
 - **实例名称与城市**（`internal/settings`，T013）：`name` 为 1–100 个字符、不能有控制字符；`cities` 是 JSON 列表，每个城市 `{"slug", "name", "bbox": [最小经度, 最小纬度, 最大经度, 最大纬度], "center": [经度, 纬度]}`，1–32 个。`slug` 是 1–64 个小写字母、数字或 `-`，各城市不同，**同时也是城市底图文件的名字**（`tiles/<slug>.pmtiles`，§3.6）；`name` 为显示名称（1–64 个字符）；`bbox` 必须最小值小于最大值且在经纬度范围内，`center` 在 `bbox` 之内。城市可以在底图文件放好之前就录入。不新增迁移：字段在 T005 就已建好。成员通过 `GET /api/osfm/instance`（需要登录，`no-store`）读取名称与城市，不合规的城市（例如在管理后台改坏的）被略去。设置完成的判断是"有维护者且城市列表不为空"，不另设标记。
 - **坐标**：只存 WGS-84，`internal/store` 的钩子在每次新建和修改时把 `lat`、`lon` 四舍五入到 5 位小数（`B12` `H3`）；原始输入坐标与坐标系另存于 `source_coord`。
 - **地点类别**：`category` 的取值是 OpenStreetMap 的标签值（`amenity=restaurant`、`fast_food`、`cafe`、`food_court`、`ice_cream`、`bar`、`pub`、`biergarten`，`shop=bakery`、`pastry`，以及对应 `street_vendor=yes` 的 `street_vendor`），与 `osm_ref` 关联的地点不需要对照表。
-- **索引**：每个 `uuid` 唯一；`places` 上建 `(lat, lon)` 组合索引，按城市范围和视野框查询，数据量过万后再评估 SQLite R*Tree；另有登录名、各类哈希、passkey 凭据 ID、passkey 用户句柄（只覆盖非空值）的唯一索引，举报的 `(recommendation, reporter)` 唯一索引（每人每条一次），以及按成员、邀请人、地点、作者、推荐、`osm_ref`、审计对象和时间查找的普通索引。
+- **一人一地一条推荐**：`recommendations` 上有部分唯一索引 `(place, author) WHERE deleted_at = ''`：每个成员在每个地点最多一条未删除的推荐，不论用主名还是化名署名（这样按作者去重的人数不会透露两个署名是同一个人）。条件与软删除的约定一致（未删除即 `deleted_at` 为空字符串），软删除之后可以再写一条。已有数据违反这一点时迁移失败并说明原因，不会只执行一半。
+- **隐藏**：`hidden` 为真时 `hidden_kind` 说明原因类型：`maintainer`（维护者隐藏，`C6`）、`reports`（未处理的举报达到阈值后自动隐藏，`D11`）、`member_removed`（维护者移出作者并选择隐藏，`D7`）；未隐藏时为空。`hidden_by` 是隐藏它（或移出作者）的维护者，自动隐藏时为空；`hidden_at` 是隐藏时间，`hidden_reason` 是维护者写的原因。取值常量在 `internal/store/names.go`。
+- **举报**：`reason` 是原因代码，只接受 `advertising`（广告或利益相关）、`abuse`（人身攻击或歧视）、`political_or_illegal`（政治或违法内容）、`unverified_claim`（未经证实的指控）、`false_or_duplicate`（明显不实或重复）、`other`（其他，须写说明；由业务层检查）；`note` 是可选说明（≤ 500 字符）。`resolved_at`、`resolved_by`、`resolution`（`restored` 恢复、`kept_hidden` 维持隐藏、`deleted` 违规删除）在维护者处理后填写，为空表示未处理；只有未处理的举报计入自动隐藏的阈值。`reason` 仍是文本字段（带只接受这些代码的格式），因为 PocketBase 不能修改字段类型。举报人只在这里，任何响应都不带（§3.4）。
+- **名称键**：`members.display_name_key`、`pseudonym_key` 是主名与化名经 `store.NameKey` 规范化后的形式：NFKC、大小写折叠后再 NFKC，去掉不可见字符（格式字符如零宽空格与连接符、控制字符、变体选择符、韩文填充符），连续空白合并为一个空格，去掉首尾空白；空名称的键为空。`internal/store` 的钩子在每次新建和修改成员时按名称重算（直接写 SQL 的代码要自己维护）。主名与化名要在全体成员的主名和化名之间唯一，跨两列的唯一性无法用单列唯一索引表达（一人的主名等于另一人的化名），M1 时期的成员也可能已经重名，所以两个键只建普通索引（化名键只覆盖非空值），唯一性由修改资料的代码在事务中检查。改变 `NameKey` 的规则需要一个重算这两列的迁移。
+- **索引**：每个 `uuid` 唯一；`places` 上建 `(lat, lon)` 组合索引，按城市范围和视野框查询，数据量过万后再评估 SQLite R*Tree；另有登录名、各类哈希、passkey 凭据 ID、passkey 用户句柄（只覆盖非空值）的唯一索引，举报的 `(recommendation, reporter)` 唯一索引（每人每条一次，处理之后也不能再举报同一条），推荐的 `(place, author)` 部分唯一索引（见上），以及按成员、邀请人、地点、作者、推荐、`osm_ref`、审计对象、时间与名称键查找的普通索引。
 
 **迁移与升级前备份**（`G6`）：迁移随程序注册，每次启动（`--help`、`--version` 除外）自动执行。PocketBase 在启动时打开数据库后立即执行它自己的系统迁移，中间没有可挂接的时机，所以备份在这之前进行：若 `pb_data/data.db` 已存在且有尚未执行的迁移（PocketBase 的或 OSFM 的），先用独立连接以 `VACUUM INTO` 复制数据库，与 `pb_data` 的其余文件一起打包为 `pb_data/backups/premigrate_<UTC 时间>.zip`。格式与 PocketBase 自己的备份相同，出现在它的备份列表中，可以照常恢复。随后 PocketBase 完成启动与系统迁移，紧接着执行 OSFM 的迁移；`serve` 开始监听前已没有待执行的迁移。新建的数据库不备份；如果数据库与最近一次迁移前备份完全相同（例如迁移失败后容器反复重启），不再重复备份。备份失败时程序不启动。
 
 迁移 `1795600500_passkeys`（T010）给 `members` 加 `passkey_user_handle`，给 `credentials` 加 `uuid` 与上表的 passkey 字段，并为已有的凭据补上 `uuid`。
 
 迁移 `1795600600_credential_management`（T012）给 `credentials` 加 `last_used_at`，给 `sessions` 加 `verified_at`，给 `reset_links` 加 `uuid`（为已有的行补上，再建唯一索引）与 `revoked_at`。
+
+迁移 `1795602300_m2_model`（T023）补上 M2 业务需要的字段：`recommendations` 的 `hidden_kind`、`hidden_at`、`hidden_by` 与 `(place, author)` 部分唯一索引；`reports` 的 `uuid`、原因代码与 `note`、`resolved_at`、`resolved_by`、`resolution`；`recommendation_revisions` 与 `notices` 的 `uuid`；`members` 的两个名称键；`places` 的 `category`、`status` 改为非必填；`instance_settings` 的 `geocoder_enabled`（新加时设为开启，再次执行时保留维护者的设置）。已有的行补上 `uuid` 与名称键（用 SQL 写入，修改记录的只追加钩子不受影响）；已有的自由文本举报原因变为 `other` 加说明（截到 500 字符）；已经隐藏的推荐记为 `maintainer`。回退时举报原因变回文本（代码加说明）。
 
 迁移可以重复执行：每个迁移把期望的状态应用到已有集合上（字段按名称、索引按名称替换），再执行一次不改变任何东西；每个迁移都有回退（down）。
 

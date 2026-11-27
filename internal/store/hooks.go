@@ -54,6 +54,8 @@ func RoundCoord(v float64) float64 {
 //   - a record of any collection with a uuid field gets a new UUIDv7 when it is created without one, and its uuid
 //     never changes afterwards (AD4);
 //   - a place's lat and lon are rounded to [CoordDecimals] decimal places on every create and update (B12);
+//   - a member's display_name_key and pseudonym_key are set to the [NameKey] of display_name and pseudonym on every
+//     create and update;
 //   - records of the [AppendOnly] collections cannot be updated;
 //   - records of the [SoftDeleted] collections cannot be removed: they are deleted with [SoftDelete].
 //
@@ -64,8 +66,11 @@ func BindHooks(app core.App) {
 		if err := setUUID(e.Record); err != nil {
 			return err
 		}
-		if e.Record.Collection().Name == Places {
+		switch e.Record.Collection().Name {
+		case Places:
 			roundPlaceCoords(e.Record)
+		case Members:
+			setNameKeys(e.Record)
 		}
 		return e.Next()
 	})
@@ -78,8 +83,11 @@ func BindHooks(app core.App) {
 		if err := keepUUID(e.App, e.Record); err != nil {
 			return err
 		}
-		if name == Places {
+		switch name {
+		case Places:
 			roundPlaceCoords(e.Record)
+		case Members:
+			setNameKeys(e.Record)
 		}
 		return e.Next()
 	})
@@ -130,5 +138,23 @@ func keepUUID(app core.App, record *core.Record) error {
 func roundPlaceCoords(record *core.Record) {
 	for _, field := range []string{"lat", "lon"} {
 		record.Set(field, RoundCoord(record.GetFloat(field)))
+	}
+}
+
+// Members' name keys: the [NameKey] of a member's display_name and pseudonym.
+const (
+	FieldDisplayNameKey = "display_name_key"
+	FieldPseudonymKey   = "pseudonym_key"
+)
+
+// setNameKeys sets a member's name keys from the names, when the collection has them (before the migration that adds
+// them, it does not).
+func setNameKeys(record *core.Record) {
+	fields := record.Collection().Fields
+	if fields.GetByName(FieldDisplayNameKey) != nil {
+		record.Set(FieldDisplayNameKey, NameKey(record.GetString("display_name")))
+	}
+	if fields.GetByName(FieldPseudonymKey) != nil {
+		record.Set(FieldPseudonymKey, NameKey(record.GetString("pseudonym")))
 	}
 }
