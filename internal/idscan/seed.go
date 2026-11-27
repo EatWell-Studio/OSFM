@@ -46,8 +46,11 @@ const (
 	ActiveResetLinkUUID  = "0190a1b2-0000-7000-8000-00000000b001"
 	UsedResetLinkUUID    = "0190a1b2-0000-7000-8000-00000000b002"
 	ExpiredResetLinkUUID = "0190a1b2-0000-7000-8000-00000000b003"
-	// ResetMemberLogin is the login name of a seeded member that maintainers may create reset links for.
-	ResetMemberLogin = "test_reset"
+	// ResetMemberUUID is the uuid of a seeded member that maintainers may create reset links for.
+	ResetMemberUUID = "0190a1b2-0000-7000-8000-00000000d001"
+	// MaintainerUUID is the uuid of the seeded maintainer, LeftMemberUUID of a seeded member who left the circle.
+	MaintainerUUID = "0190a1b2-0000-7000-8000-00000000d002"
+	LeftMemberUUID = "0190a1b2-0000-7000-8000-00000000d003"
 )
 
 // Seed writes made-up records into every OSFM collection of app, a bootstrapped app with the OSFM migrations
@@ -84,14 +87,16 @@ func Seed(t testing.TB, app core.App) *Seeded {
 		}
 	}
 
-	maintainer := save(store.Members, map[string]any{"login_name": "test_maintainer",
+	maintainer := save(store.Members, map[string]any{store.FieldUUID: MaintainerUUID, "login_name": "test_maintainer",
 		"display_name": "Test Maintainer", "role": "maintainer", "can_invite": true,
 		"passkey_user_handle": "dGVzdC1tYWludGFpbmVyLWhhbmRsZS1ub3QtcmVhbCE"}) // #nosec G101 -- made up
 	member := save(store.Members, map[string]any{"login_name": "test_member", "display_name": "Test Member", // #nosec G101 -- made up
 		"pseudonym": "Test Alias", "role": "member", "invited_by": maintainer.Id,
 		"passkey_user_handle": "dGVzdC11c2VyLWhhbmRsZS1ub3QtYS1yZWFsLW9uZSE"})
-	save(store.Members, map[string]any{"login_name": ResetMemberLogin, "display_name": "Test Reset", "role": "member",
-		"invited_by": maintainer.Id})
+	save(store.Members, map[string]any{store.FieldUUID: ResetMemberUUID, "login_name": "test_reset",
+		"display_name": "Test Reset", "role": "member", "invited_by": maintainer.Id})
+	save(store.Members, map[string]any{store.FieldUUID: LeftMemberUUID, "login_name": "test_gone_away",
+		"display_name": "Test Gone Away", "role": "member", "invited_by": maintainer.Id, "left_at": "2026-01-03 00:00:00Z"})
 	left := save(store.Members, map[string]any{"login_name": "test_left", "display_name": "Test Left",
 		"role": "member", "invited_by": maintainer.Id})
 	deleted(left)

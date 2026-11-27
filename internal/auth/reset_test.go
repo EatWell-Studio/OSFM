@@ -18,10 +18,16 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
+// resetFor is the request that creates a reset link for the member with the login name: by the member's uuid.
+func (pe *pwEnv) resetFor(login string) auth.CreateResetLinkRequest {
+	pe.t.Helper()
+	return auth.CreateResetLinkRequest{Member: pe.memberByLogin(login).GetString(store.FieldUUID)}
+}
+
 // resetLink creates a reset link for login on behalf of the maintainer's session and returns the token.
 func (pe *pwEnv) resetLink(maintainerToken, login string) (string, auth.ResetLinkInfo) {
 	pe.t.Helper()
-	rec := pe.post(auth.ResetLinksPath, maintainerToken, auth.CreateResetLinkRequest{LoginName: login})
+	rec := pe.post(auth.ResetLinksPath, maintainerToken, pe.resetFor(login))
 	if rec.Code != http.StatusCreated {
 		pe.t.Fatalf("create reset link: %d %s", rec.Code, rec.Body.String())
 	}
@@ -246,16 +252,20 @@ func TestResetLinkRules(t *testing.T) {
 	mt := pe.session(maintainer)
 	memberToken, _, _ := pe.passkeyMember(maintainer, newLogin)
 
-	if rec := pe.post(auth.ResetLinksPath, memberToken, auth.CreateResetLinkRequest{LoginName: newLogin}); rec.Code != http.StatusForbidden {
+	if rec := pe.post(auth.ResetLinksPath, memberToken, pe.resetFor(newLogin)); rec.Code != http.StatusForbidden {
 		t.Errorf("a member creates a link: %d", rec.Code)
 	}
 	if rec := pe.reqJSON(http.MethodGet, auth.ResetLinksPath, memberToken, ""); rec.Code != http.StatusForbidden {
 		t.Errorf("a member lists links: %d", rec.Code)
 	}
-	expectError(t, "for oneself", pe.post(auth.ResetLinksPath, mt, auth.CreateResetLinkRequest{
-		LoginName: "test_maintainer"}), http.StatusConflict, auth.CodeResetSelf)
+	expectError(t, "for oneself", pe.post(auth.ResetLinksPath, mt, pe.resetFor("test_maintainer")),
+		http.StatusConflict, auth.CodeResetSelf)
 	expectError(t, "unknown member", pe.post(auth.ResetLinksPath, mt, auth.CreateResetLinkRequest{
-		LoginName: "test_nobody"}), http.StatusNotFound, auth.CodeMemberNotFound)
+		Member: "0190a1b2-0000-7000-8000-00000000ffff"}), http.StatusNotFound, auth.CodeMemberNotFound)
+	expectError(t, "not a uuid", pe.post(auth.ResetLinksPath, mt, auth.CreateResetLinkRequest{Member: "test_nobody"}),
+		http.StatusNotFound, auth.CodeMemberNotFound)
+	expectError(t, "by login name", pe.post(auth.ResetLinksPath, mt, map[string]string{"loginName": newLogin}),
+		http.StatusNotFound, auth.CodeMemberNotFound)
 	pe.resetLink(mt, "test_other_maintainer")
 	_ = other
 
@@ -291,13 +301,13 @@ func TestResetLinkRules(t *testing.T) {
 	if err := pe.app.Save(left); err != nil {
 		t.Fatal(err)
 	}
-	expectError(t, "a member who left", pe.post(auth.ResetLinksPath, mt, auth.CreateResetLinkRequest{
-		LoginName: "test_left"}), http.StatusNotFound, auth.CodeMemberNotFound)
+	expectError(t, "a member who left", pe.post(auth.ResetLinksPath, mt, pe.resetFor("test_left")),
+		http.StatusNotFound, auth.CodeMemberNotFound)
 
 	// Creating a link needs a fresh session.
 	pe.stale()
-	expectError(t, "a stale maintainer", pe.post(auth.ResetLinksPath, mt, auth.CreateResetLinkRequest{
-		LoginName: newLogin}), http.StatusForbidden, auth.CodeReauthRequired)
+	expectError(t, "a stale maintainer", pe.post(auth.ResetLinksPath, mt, pe.resetFor(newLogin)),
+		http.StatusForbidden, auth.CodeReauthRequired)
 }
 
 // TestResetLimits: invalid tokens count as failed attempts: a client that tries too many is locked out.
