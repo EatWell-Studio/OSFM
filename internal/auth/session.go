@@ -124,6 +124,8 @@ func CreateSession(app core.App, member *core.Record) (token string, session *co
 	session.Set("token_hash", hashToken(token))
 	session.Set("expires_at", t.Add(SessionLifetime))
 	session.Set("last_seen_at", day(t))
+	// Signing in is a proof of every factor: the new session counts as freshly verified (see stepup.go).
+	session.Set("verified_at", t)
 	if err := app.Save(session); err != nil {
 		return "", nil, fmt.Errorf("auth: save session: %w", err)
 	}

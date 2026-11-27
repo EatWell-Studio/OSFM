@@ -57,7 +57,7 @@ var wantCollections = map[string]collectionSpec{
 		"device_name": tText, "password_hash": tText, "totp_secret_enc": tText, "totp_last_step": tNumber,
 		"created": tAutodate, "updated": tAutodate, "uuid": tText, "aaguid": tText, "transports": tJSON,
 		"backup_eligible": tBool, "backup_state": tBool, "user_verified": tBool, "attestation_type": tText,
-		"attestation_format": tText,
+		"attestation_format": tText, "last_used_at": tDate,
 	}), indexes: []string{"idx_credentials_member", "idx_credentials_credential_id", "idx_credentials_uuid"}},
 	store.RecoveryCodes: {fields: fields(map[string]string{
 		"member": tRelation, "code_hash": tText, "used_at": tDate, "created": tAutodate, "updated": tAutodate,
@@ -68,8 +68,8 @@ var wantCollections = map[string]collectionSpec{
 	}), indexes: []string{"idx_invites_uuid", "idx_invites_code_hash", "idx_invites_created_by"}},
 	store.ResetLinks: {fields: fields(map[string]string{
 		"code_hash": tText, "member": tRelation, "created_by": tRelation, "expires_at": tDate, "used_at": tDate,
-		"created": tAutodate, "updated": tAutodate,
-	}), indexes: []string{"idx_reset_links_code_hash", "idx_reset_links_member"}},
+		"created": tAutodate, "updated": tAutodate, "uuid": tText, "revoked_at": tDate,
+	}), indexes: []string{"idx_reset_links_code_hash", "idx_reset_links_member", "idx_reset_links_uuid"}},
 	store.AuditLog: {fields: fields(map[string]string{
 		"actor": tRelation, "action": tText, "target_type": tText, "target_uuid": tText, "details": tJSON,
 		"created": tAutodate,
@@ -80,7 +80,7 @@ var wantCollections = map[string]collectionSpec{
 	})},
 	store.Sessions: {fields: fields(map[string]string{
 		"uuid": tText, "member": tRelation, "token_hash": tText, "expires_at": tDate, "last_seen_at": tDate,
-		"created": tAutodate,
+		"created": tAutodate, "verified_at": tDate,
 	}), indexes: []string{"idx_sessions_uuid", "idx_sessions_token_hash", "idx_sessions_member", "idx_sessions_expires_at"}},
 	store.Places: {fields: fields(map[string]string{
 		"uuid": tText, "name": tText, "aliases": tJSON, "lat": tNumber, "lon": tNumber, "precision": tSelect,
@@ -111,7 +111,7 @@ var uniqueIndexes = []string{
 	"idx_members_uuid", "idx_members_login_name", "idx_credentials_credential_id", "idx_recovery_codes_code_hash",
 	"idx_invites_uuid", "idx_invites_code_hash", "idx_reset_links_code_hash", "idx_places_uuid",
 	"idx_recommendations_uuid", "idx_reports_recommendation_reporter", "idx_sessions_uuid", "idx_sessions_token_hash",
-	"idx_members_passkey_user_handle", "idx_credentials_uuid",
+	"idx_members_passkey_user_handle", "idx_credentials_uuid", "idx_reset_links_uuid",
 }
 
 func newApp(t *testing.T) *tests.TestApp {

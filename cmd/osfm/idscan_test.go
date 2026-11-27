@@ -162,6 +162,160 @@ var osfmProbes = map[string][]idscan.Request{
 		{Method: http.MethodPost, Path: auth.SetupCompletePath, Header: csrfHeader, Body: `{`,
 			Status: http.StatusBadRequest},
 	},
+	// The member's own credentials (signed in; the scan's sessions are new, so they count as freshly verified). The
+	// seeded member and maintainer each have one passkey and no password.
+	"GET " + auth.MeCredentialsPath: {
+		{Path: auth.MeCredentialsPath, Status: http.StatusOK},
+	},
+	"POST " + auth.MeVerifyPath: {
+		{Method: http.MethodPost, Path: auth.MeVerifyPath, Header: csrfHeader, Status: http.StatusConflict,
+			Body: `{"password":"test scan password","code":"123456"}`},
+		{Method: http.MethodPost, Path: auth.MeVerifyPath, Header: csrfHeader, Body: `{`, Status: http.StatusBadRequest},
+	},
+	"POST " + auth.MeVerifyPasskeyOptionsPath: {
+		{Method: http.MethodPost, Path: auth.MeVerifyPasskeyOptionsPath, Header: csrfHeader, Status: http.StatusOK},
+	},
+	"POST " + auth.MeVerifyPasskeyPath: {
+		{Method: http.MethodPost, Path: auth.MeVerifyPasskeyPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{"state":"x","credential":{"id":"dGVzdC1jcmVk","rawId":"dGVzdC1jcmVk","type":"public-key"}}`},
+	},
+	"POST " + auth.MePasskeyOptionsPath: {
+		{Method: http.MethodPost, Path: auth.MePasskeyOptionsPath, Header: csrfHeader, Status: http.StatusOK},
+	},
+	"POST " + auth.MePasskeysPath: {
+		{Method: http.MethodPost, Path: auth.MePasskeysPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{"state":"x","credential":{}}`},
+	},
+	// The member's passkey: the member renames it (200) but cannot remove it (409, the last credential); for the
+	// maintainer it does not exist (404).
+	"POST " + auth.MePasskeyRenamePath: {
+		{Method: http.MethodPost, Path: passkeyPath(auth.MePasskeyRenamePath, idscan.MemberPasskeyUUID),
+			Header: csrfHeader, Body: `{"deviceName":"Test Phone"}`},
+		{Method: http.MethodPost, Path: passkeyPath(auth.MePasskeyRenamePath, "0190a1b2-0000-7000-8000-00000000ffff"),
+			Header: csrfHeader, Body: `{"deviceName":"Test Phone"}`, Status: http.StatusNotFound},
+		{Method: http.MethodPost, Path: passkeyPath(auth.MePasskeyRenamePath, "x"), Header: csrfHeader,
+			Body: `{"deviceName":"Test Phone"}`, Status: http.StatusNotFound},
+	},
+	"POST " + auth.MePasskeyRemovePath: {
+		{Method: http.MethodPost, Path: passkeyPath(auth.MePasskeyRemovePath, idscan.MemberPasskeyUUID),
+			Header: csrfHeader},
+		{Method: http.MethodPost, Path: passkeyPath(auth.MePasskeyRemovePath, "0190a1b2-0000-7000-8000-00000000ffff"),
+			Header: csrfHeader, Status: http.StatusNotFound},
+	},
+	"POST " + auth.MePasswordStartPath: {
+		{Method: http.MethodPost, Path: auth.MePasswordStartPath, Header: csrfHeader, Status: http.StatusOK,
+			Body: `{"password":"test scan password"}`},
+		{Method: http.MethodPost, Path: auth.MePasswordStartPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{"password":"x"}`},
+	},
+	"POST " + auth.MePasswordConfirmPath: {
+		{Method: http.MethodPost, Path: auth.MePasswordConfirmPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{"enrolment":"x","code":"123456"}`},
+	},
+	"POST " + auth.MePasswordRemovePath: {
+		{Method: http.MethodPost, Path: auth.MePasswordRemovePath, Header: csrfHeader, Status: http.StatusConflict},
+	},
+	"POST " + auth.MePasswordChangePath: {
+		{Method: http.MethodPost, Path: auth.MePasswordChangePath, Header: csrfHeader, Status: http.StatusConflict,
+			Body: `{"password":"test scan password"}`},
+	},
+	"POST " + auth.MeTOTPStartPath: {
+		{Method: http.MethodPost, Path: auth.MeTOTPStartPath, Header: csrfHeader, Status: http.StatusConflict},
+	},
+	"POST " + auth.MeTOTPConfirmPath: {
+		{Method: http.MethodPost, Path: auth.MeTOTPConfirmPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{"enrolment":"x","code":"123456"}`},
+	},
+	"POST " + auth.MeRecoveryCodesPath: {
+		{Method: http.MethodPost, Path: auth.MeRecoveryCodesPath, Header: csrfHeader, Status: http.StatusCreated},
+	},
+	// Public: the recovery of a passkey-only member. The seeded recovery code works once (whichever identity comes
+	// first), so its probe has no status; tickets are sealed with the master key, so the enrolment probes reach the
+	// refusals (the successes are tested in internal/auth).
+	"POST " + auth.RecoverPath: {
+		{Method: http.MethodPost, Path: auth.RecoverPath, Header: csrfHeader,
+			Body: `{"loginName":"test_member","code":"` + idscan.RecoveryCode + `"}`},
+		{Method: http.MethodPost, Path: auth.RecoverPath, Header: csrfHeader, Status: http.StatusUnauthorized,
+			Body: `{"loginName":"test_member","code":"0000-0000-0000-0000"}`},
+		{Method: http.MethodPost, Path: auth.RecoverPath, Header: csrfHeader, Body: `{`, Status: http.StatusBadRequest},
+	},
+	"POST " + auth.RecoverPasswordStartPath: {
+		{Method: http.MethodPost, Path: auth.RecoverPasswordStartPath, Header: csrfHeader,
+			Status: http.StatusUnauthorized, Body: `{"ticket":"x","password":"test scan password"}`},
+	},
+	"POST " + auth.RecoverPasswordConfirmPath: {
+		{Method: http.MethodPost, Path: auth.RecoverPasswordConfirmPath, Header: csrfHeader,
+			Status: http.StatusUnauthorized, Body: `{"ticket":"x","enrolment":"x","code":"123456"}`},
+	},
+	"POST " + auth.RecoverPasskeyOptionsPath: {
+		{Method: http.MethodPost, Path: auth.RecoverPasskeyOptionsPath, Header: csrfHeader,
+			Status: http.StatusUnauthorized, Body: `{"ticket":"x"}`},
+	},
+	"POST " + auth.RecoverPasskeyPath: {
+		{Method: http.MethodPost, Path: auth.RecoverPasskeyPath, Header: csrfHeader, Status: http.StatusUnauthorized,
+			Body: `{"ticket":"x","state":"x","credential":{}}`},
+	},
+	// Public: using a reset link. The seeded active link stays valid throughout (no probe completes a reset).
+	"POST " + auth.ResetCheckPath: {
+		{Method: http.MethodPost, Path: auth.ResetCheckPath, Header: csrfHeader, Status: http.StatusOK,
+			Body: `{"token":"` + idscan.ResetToken + `"}`},
+		{Method: http.MethodPost, Path: auth.ResetCheckPath, Header: csrfHeader, Status: http.StatusOK,
+			Body: `{"token":"x"}`},
+		{Method: http.MethodPost, Path: auth.ResetCheckPath, Header: csrfHeader, Body: `{`, Status: http.StatusBadRequest},
+	},
+	"POST " + auth.ResetPasswordStartPath: {
+		{Method: http.MethodPost, Path: auth.ResetPasswordStartPath, Header: csrfHeader, Status: http.StatusOK,
+			Body: `{"token":"` + idscan.ResetToken + `","password":"test scan password"}`},
+		{Method: http.MethodPost, Path: auth.ResetPasswordStartPath, Header: csrfHeader, Status: http.StatusForbidden,
+			Body: `{"token":"x","password":"test scan password"}`},
+	},
+	"POST " + auth.ResetPasswordConfirmPath: {
+		{Method: http.MethodPost, Path: auth.ResetPasswordConfirmPath, Header: csrfHeader,
+			Status: http.StatusBadRequest, Body: `{"token":"` + idscan.ResetToken + `","enrolment":"x","code":"123456"}`},
+		{Method: http.MethodPost, Path: auth.ResetPasswordConfirmPath, Header: csrfHeader,
+			Status: http.StatusForbidden, Body: `{"token":"x","enrolment":"x","code":"123456"}`},
+	},
+	"POST " + auth.ResetPasskeyOptionsPath: {
+		{Method: http.MethodPost, Path: auth.ResetPasskeyOptionsPath, Header: csrfHeader, Status: http.StatusOK,
+			Body: `{"token":"` + idscan.ResetToken + `"}`},
+		{Method: http.MethodPost, Path: auth.ResetPasskeyOptionsPath, Header: csrfHeader, Status: http.StatusForbidden,
+			Body: `{"token":"x"}`},
+	},
+	"POST " + auth.ResetPasskeyPath: {
+		{Method: http.MethodPost, Path: auth.ResetPasskeyPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{"token":"` + idscan.ResetToken + `","state":"x","credential":{}}`},
+	},
+	// Maintainers only (maintainerRoutes): reset links and the instance settings.
+	"GET " + auth.ResetLinksPath: {
+		{Path: auth.ResetLinksPath, Status: http.StatusOK},
+	},
+	"POST " + auth.ResetLinksPath: {
+		{Method: http.MethodPost, Path: auth.ResetLinksPath, Header: csrfHeader, Status: http.StatusCreated,
+			Body: `{"loginName":"` + idscan.ResetMemberLogin + `"}`},
+		{Method: http.MethodPost, Path: auth.ResetLinksPath, Header: csrfHeader, Status: http.StatusNotFound,
+			Body: `{"loginName":"test_nobody"}`},
+		{Method: http.MethodPost, Path: auth.ResetLinksPath, Header: csrfHeader, Status: http.StatusConflict,
+			Body: `{"loginName":"test_maintainer"}`},
+		{Method: http.MethodPost, Path: auth.ResetLinksPath, Header: csrfHeader, Body: `{`,
+			Status: http.StatusBadRequest},
+	},
+	"POST " + auth.ResetLinkRevokePath: {
+		{Method: http.MethodPost, Path: resetRevokePath(idscan.ExpiredResetLinkUUID), Header: csrfHeader,
+			Status: http.StatusOK},
+		{Method: http.MethodPost, Path: resetRevokePath(idscan.UsedResetLinkUUID), Header: csrfHeader,
+			Status: http.StatusConflict},
+		{Method: http.MethodPost, Path: resetRevokePath("0190a1b2-0000-7000-8000-00000000ffff"), Header: csrfHeader,
+			Status: http.StatusNotFound},
+		{Method: http.MethodPost, Path: resetRevokePath("x"), Header: csrfHeader, Status: http.StatusNotFound},
+	},
+	"POST " + auth.InstanceSettingsPath: {
+		{Method: http.MethodPost, Path: auth.InstanceSettingsPath, Header: csrfHeader, Status: http.StatusOK,
+			Body: `{"name":"Test Circle","cities":[{"slug":"testcity","name":"Test City","bbox":[121.3,31.1,121.6,31.4],"center":[121.47,31.23]}]}`},
+		{Method: http.MethodPost, Path: auth.InstanceSettingsPath, Header: csrfHeader, Status: http.StatusBadRequest,
+			Body: `{"name":"","cities":[]}`},
+		{Method: http.MethodPost, Path: auth.InstanceSettingsPath, Header: csrfHeader, Body: `{`,
+			Status: http.StatusBadRequest},
+	},
 	// The instance's name and cities, for members.
 	"GET " + settings.InstancePath: {
 		{Path: settings.InstancePath, Status: http.StatusOK},
@@ -210,19 +364,41 @@ var publicRoutes = map[string]bool{
 	"POST " + auth.SetupPasswordConfirmPath:    true,
 	"POST " + auth.SetupPasskeyOptionsPath:     true,
 	"POST " + auth.SetupPasskeyPath:            true,
+	"POST " + auth.RecoverPath:                 true,
+	"POST " + auth.RecoverPasswordStartPath:    true,
+	"POST " + auth.RecoverPasswordConfirmPath:  true,
+	"POST " + auth.RecoverPasskeyOptionsPath:   true,
+	"POST " + auth.RecoverPasskeyPath:          true,
+	"POST " + auth.ResetCheckPath:              true,
+	"POST " + auth.ResetPasswordStartPath:      true,
+	"POST " + auth.ResetPasswordConfirmPath:    true,
+	"POST " + auth.ResetPasskeyOptionsPath:     true,
+	"POST " + auth.ResetPasskeyPath:            true,
 }
 
 // maintainerRoutes are the OSFM routes only maintainers may use (auth.RequireMaintainer): the member identity's
 // probes of them must get 403, whatever their Status says.
 var maintainerRoutes = map[string]bool{
-	"GET " + auth.InvitesPath:        true,
-	"POST " + auth.InvitesPath:       true,
-	"POST " + auth.InviteRevokePath:  true,
-	"POST " + auth.SetupCompletePath: true,
+	"GET " + auth.InvitesPath:           true,
+	"POST " + auth.InvitesPath:          true,
+	"POST " + auth.InviteRevokePath:     true,
+	"POST " + auth.SetupCompletePath:    true,
+	"GET " + auth.ResetLinksPath:        true,
+	"POST " + auth.ResetLinksPath:       true,
+	"POST " + auth.ResetLinkRevokePath:  true,
+	"POST " + auth.InstanceSettingsPath: true,
 }
 
 func revokePath(uuid string) string {
 	return strings.Replace(auth.InviteRevokePath, "{uuid}", uuid, 1)
+}
+
+func resetRevokePath(uuid string) string {
+	return strings.Replace(auth.ResetLinkRevokePath, "{uuid}", uuid, 1)
+}
+
+func passkeyPath(pattern, uuid string) string {
+	return strings.Replace(pattern, "{uuid}", uuid, 1)
 }
 
 var csrfHeader = http.Header{http.CanonicalHeaderKey(auth.CSRFHeader): {"1"}}

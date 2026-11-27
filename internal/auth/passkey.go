@@ -142,6 +142,7 @@ type registrationState struct {
 	UserHandle  []byte               `json:"h"`
 	Session     webauthn.SessionData `json:"s"`
 	Instance    string               `json:"in,omitempty"` // the first maintainer's: the instance name (setup.go)
+	Member      string               `json:"m,omitempty"`  // an existing member's uuid (enrol.go)
 }
 
 // BeginPasskeyRegistration starts registering a new member with a passkey: it checks the invite code (without using
@@ -259,7 +260,7 @@ func passkeyRegistration(p *passkeys, kind, bindHash, state string, response []b
 		if err := tx.Save(m); err != nil {
 			return err
 		}
-		if err := savePasskey(tx, m, cred); err != nil {
+		if _, err := savePasskey(tx, m, cred, ""); err != nil {
 			return err
 		}
 		var err error
@@ -271,17 +272,18 @@ func passkeyRegistration(p *passkeys, kind, bindHash, state string, response []b
 // errCredentialExists: the credential ID is registered already.
 var errCredentialExists = fmt.Errorf("%w: the credential is registered already", ErrPasskeyFailed)
 
-// savePasskey stores a verified credential as a passkey of member.
-func savePasskey(tx core.App, member *core.Record, cred *webauthn.Credential) error {
+// savePasskey stores a verified credential as a passkey of member, named deviceName (normalised already), and
+// returns the record.
+func savePasskey(tx core.App, member *core.Record, cred *webauthn.Credential, deviceName string) (*core.Record, error) {
 	id := base64.RawURLEncoding.EncodeToString(cred.ID)
 	if _, err := tx.FindFirstRecordByData(store.Credentials, "credential_id", id); err == nil {
-		return errCredentialExists
+		return nil, errCredentialExists
 	} else if !errors.Is(err, sql.ErrNoRows) {
-		return err
+		return nil, err
 	}
 	c, err := tx.FindCachedCollectionByNameOrId(store.Credentials)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	aaguid := uuid.Nil
 	if len(cred.Authenticator.AAGUID) == 16 {
@@ -293,8 +295,9 @@ func savePasskey(tx core.App, member *core.Record, cred *webauthn.Credential) er
 	}
 	r := core.NewRecord(c)
 	r.Set("member", member.Id)
-	r.Set("kind", "passkey")
+	r.Set("kind", CredentialPasskey)
 	r.Set("credential_id", id)
+	r.Set("device_name", deviceName)
 	r.Set("public_key", base64.RawURLEncoding.EncodeToString(cred.PublicKey))
 	r.Set("sign_count", cred.Authenticator.SignCount)
 	r.Set("aaguid", aaguid.String())
@@ -304,7 +307,7 @@ func savePasskey(tx core.App, member *core.Record, cred *webauthn.Credential) er
 	r.Set("user_verified", cred.Flags.UserVerified)
 	r.Set("attestation_type", cred.AttestationType)
 	r.Set("attestation_format", cred.AttestationFormat)
-	return tx.Save(r)
+	return r, tx.Save(r)
 }
 
 // loadPasskey returns a stored passkey as go-webauthn's credential record.
@@ -409,30 +412,39 @@ func VerifyPasskeySignIn(app core.App, state string, response []byte) (*core.Rec
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrPasskeyFailed, err)
 	}
+	if err := recordPasskeyUse(app, member, stored, cred); err != nil {
+		return nil, err
+	}
+	return member, nil
+}
+
+// recordPasskeyUse finishes a verified assertion of the stored passkey of member: a signature counter that did not
+// increase is refused ([ErrPasskeyFailed]) and audited; otherwise the new counter, the backup state (which may change)
+// and the day of this use are written, only if the stored counter is still the one verified against: of two
+// assertions racing with the same counter, one fails.
+func recordPasskeyUse(app core.App, member, stored *core.Record, cred *webauthn.Credential) error {
 	if cred.Authenticator.CloneWarning {
 		if err := writeAudit(app, nil, AuditPasskeyCloneWarning, store.Members, member.GetString(store.FieldUUID),
 			map[string]any{"credential": stored.GetString(store.FieldUUID)}); err != nil {
 			app.Logger().Warn("could not audit a passkey counter regression", "error", err)
 		}
-		return nil, fmt.Errorf("%w: the signature counter did not increase", ErrPasskeyFailed)
+		return fmt.Errorf("%w: the signature counter did not increase", ErrPasskeyFailed)
 	}
-
-	// The counter (and the backup state, which may change) as of this sign-in, written only if the stored counter is
-	// still the one verified against: of two sign-ins racing with the same counter, one fails.
 	res, err := app.DB().Update(store.Credentials, dbx.Params{
 		"sign_count":       cred.Authenticator.SignCount,
 		"backup_state":     cred.Flags.BackupState,
+		"last_used_at":     dbTime(day(now())),
 		store.FieldUpdated: dbTime(now()),
 	}, dbx.HashExp{"id": stored.Id, "sign_count": stored.GetInt("sign_count")}).Execute()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if n, err := res.RowsAffected(); err != nil {
-		return nil, err
+		return err
 	} else if n != 1 {
-		return nil, fmt.Errorf("%w: the signature counter changed meanwhile", ErrPasskeyFailed)
+		return fmt.Errorf("%w: the signature counter changed meanwhile", ErrPasskeyFailed)
 	}
-	return member, nil
+	return nil
 }
 
 // errUnknownPasskey: no passkey has the credential ID, or its user handle is not its member's.
