@@ -5,20 +5,21 @@
 // server stays in this file.
 
 import { queryOptions } from '@tanstack/react-query'
+import type { InstanceUpdate, MaintainerInstance } from '@/api/types.gen'
 import { type Instance, instancePath, parseInstance } from '@/instance/instance'
 import { apiJson } from '@/lib/api'
 import { field, postAuth } from '@/lib/authApi'
 
-export interface CircleSettings {
-  /** Open reports that hide a recommendation until a maintainer reviews it; at least 1. */
-  reportThreshold: number
-  /** Days after joining before a new member can invite; 0 for none. */
-  inviteCooldownDays: number
-  /** Whether members can search for place names (through this server). */
-  geocoderEnabled: boolean
-  /** The contact sent to the search services with each request; may be empty. */
-  geocoderContact: string
-}
+/**
+ * The settings of the form, as GET /api/osfm/instance gives them to a maintainer (types generated from internal/api):
+ * the open reports that hide a recommendation (at least 1), the days after joining before a new member can invite (0
+ * for none), whether members can search for place names (through this server) and the contact sent to the search
+ * services with each request (may be empty).
+ */
+export type CircleSettings = Pick<
+  MaintainerInstance,
+  'reportThreshold' | 'inviteCooldownDays' | 'geocoderEnabled' | 'geocoderContact'
+>
 
 /** The longest contact the form accepts. */
 export const maxGeocoderContact = 200
@@ -63,6 +64,7 @@ export async function saveCircleSettings(
   settings: CircleSettings,
 ): Promise<{ settings: CircleSettings; instance: Instance }> {
   const current = parseInstance(await apiJson(instancePath))
-  const body = await postAuth(instancePath, { name: current.name, cities: current.cities, ...settings })
+  const update: InstanceUpdate = { name: current.name, cities: current.cities, ...settings }
+  const body = await postAuth(instancePath, update)
   return { settings: parseCircleSettings(body) ?? settings, instance: parseInstance(body) }
 }

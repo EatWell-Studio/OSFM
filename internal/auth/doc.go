@@ -28,7 +28,8 @@
 // hand over the account need a fresh proof on the session ([RequireFresh], stepup.go), and the last way to sign in
 // cannot be removed. See credentials.go. A member without a password recovers with the login name and a recovery code,
 // which only opens the enrolment of a new credential (recover.go). Maintainers create one-time reset links
-// (/api/osfm/reset-links), with which a member replaces every credential (reset.go), and change the instance settings.
+// (/api/osfm/reset-links), with which a member replaces every credential (reset.go). internal/api serves the
+// instance settings.
 //
 // Rate limits (N5): every public authentication route carries the [RateLimit] middleware, which keeps a request
 // budget and a failure count per client, and for the sign-in steps per login name or per member, with temporary

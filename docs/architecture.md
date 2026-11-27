@@ -65,26 +65,34 @@ flowchart LR
     internal --- p_config["config/<br/>环境变量配置、数据目录准备、实例密钥的生成与加载"]
     internal --- p_boundary["boundary/<br/>PocketBase 边界：主监听端口只提供 /api/osfm/* 等，管理后台单独监听，日志设置"]
     internal --- p_webapp["webapp/<br/>主监听端口的前端文件服务（缓存、404）与安全响应头"]
-    internal --- p_api["api/<br/>HTTP 处理函数与请求/响应结构（对外的投影）"]
+    internal --- p_api["api/<br/>M2 功能的 HTTP 处理函数与请求/响应结构（对外的投影），每个功能一个文件"]
     internal --- p_auth["auth/<br/>注册、登录、passkey、TOTP、恢复码、重置、会话"]
-    internal --- p_domain["domain/<br/>地点、推荐、成员、邀请、举报等业务规则（不依赖 HTTP）"]
-    internal --- p_store["store/<br/>数据访问层：封装 PocketBase 的记录操作"]
+    internal --- p_domain["domain/<br/>业务规则的纯函数：可见性、计数、署名、提示（不依赖 HTTP 与 PocketBase）"]
+    internal --- p_store["store/<br/>数据访问层：封装 PocketBase 的记录操作；唯一的可见性查询；审计"]
+    internal --- p_settings["settings/<br/>实例设置（名称、城市、举报阈值、冷静期、地名搜索）"]
+    internal --- p_ratelimit["ratelimit/<br/>内存中的限速与锁定（认证接口、按成员的写请求额度）"]
     internal --- p_tiles["tiles/<br/>PMTiles 读取与瓦片服务"]
     internal --- p_geocode["geocode/<br/>搜索代理、缓存、限速"]
     internal --- p_geo["geo/<br/>坐标系转换（WGS-84 / GCJ-02 / BD-09）"]
     internal --- p_export["export/<br/>GeoJSON / JSON 导出、备份"]
     internal --- p_fed["federation/<br/>/.well-known/osfm.json（联邦只预留）"]
     internal --- p_version["version/<br/>软件版本（发布时由标签写入）"]
+    internal --- p_test["testapp/、pbtest/、idscan/<br/>只供测试：整实例启动与四种身份、迁移模板、内部 ID 扫描"]
 ```
 
 依赖方向（箭头表示"调用 / 依赖"）：
 
 ```mermaid
 flowchart LR
-    api["api"] --> domain["domain"] --> store["store"] --> pb[("PocketBase")]
+    api["api"] --> store["store"] --> pb[("PocketBase")]
+    api --> domain["domain"]
+    store --> domain
+    api --> auth["auth"] --> store
 ```
 
-`domain` 不导入 PocketBase 的类型，业务规则可以脱离数据库做单元测试；替换 PocketBase 时只改 `store`。
+`domain` 是最内层：只有纯函数与普通值（`Viewer`、推荐的可见性状态、作者、提示），不导入 PocketBase，也不导入其他 OSFM 包，业务规则可以脱离数据库做单元测试（AD3）。`store` 用 `domain` 的规则写查询条件（同一条规则的 SQL 形式，测试对照两者），并实现 `domain` 声明的接口（如写提示的 `domain.NoticeWriter`）；`api` 调用两者，`auth` 只用 `store`。替换 PocketBase 时只改 `store`。（M1 的设想是 `api → domain → store`；可见性规则既要做纯函数单元测试、又要成为查询条件，`store` 必须能引用它，所以改为 `domain` 在最内层，T024。）
+
+`cmd/osfm/main.go` 的 `bind` 组装各模块；M2 的接口全部经 `api.Bind(app, api.Options{…})` 一行注册（T024），各功能只改 `internal/api` 里自己的文件，见 §3.2。
 
 ## 3. 后端
 
@@ -118,11 +126,25 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 ### 3.2 接口设计
 
 - 前缀 `/api/osfm/`，JSON，按资源组织：`places`、`places/{uuid}/recommendations`、`me`、`members`（维护者）、`invites`、`reports`、`exports`、`geocode`、`auth/*`。
-- **对外只用 UUIDv7**（`uuid` 字段，唯一索引）。PocketBase 自己的记录 ID 只在服务器内部使用，不出现在任何响应、链接或导出中。集成测试（`cmd/osfm`）按 `osfm serve` 的方式启动程序，往每个集合写入编造的记录，再调用所有已注册的路由，在每个响应的头部和正文（包括其中 JSON Web Token 解码后的内容）里查找这些记录与集合的内部 ID；路由从路由器中枚举，新增的 OSFM 路由没有对应的测试请求时测试失败（§6）。
+- **对外只用 UUIDv7**（`uuid` 字段，唯一索引）。PocketBase 自己的记录 ID 只在服务器内部使用，不出现在任何响应、链接或导出中。集成测试（`cmd/osfm`）按 `osfm serve` 的方式启动程序，往每个集合写入编造的记录，再调用所有已注册的路由，在每个响应的头部和正文（包括其中 JSON Web Token 解码后的内容）里查找这些记录与集合的内部 ID；路由从路由器中枚举，新增的 OSFM 路由没有对应的测试请求时测试失败（§6）。探测请求按功能分文件（`cmd/osfm/probes_<功能>_test.go`，各自在 `init` 里 `registerProbes`），公开路由与只限维护者的路由清单也在各自的文件里。
 - **响应是投影**，例如推荐的响应只有 `uuid`、`displayName`（主名或化名，由服务器决定）、`attitude`、正文字段、`editedByMaintainerAt`，没有 `authorId`；只有当请求者就是作者时才附加 `isMine: true`，以便显示编辑入口。
 - 地点卡片里按态度统计的人数（`A4`）在服务器端按真实作者去重后只返回数字。
 - 地图数据按城市与视野范围取：`GET /api/osfm/places?city=…&bbox=…`，返回地点的最小字段集（坐标、精度、类别、各态度人数、时段集合），详情按需取。
-- 接口的 TypeScript 类型由 Go 结构体生成（工具在 M1 选定，如 tygo），前后端不手写两份。
+- 接口的 TypeScript 类型由 Go 结构体生成（tygo，T024）：`internal/api` 导出的请求/响应类型与常量生成 `web/src/api/types.gen.ts`（配置 `tygo.yaml`，`go tool tygo generate`），生成文件提交进仓库，`bin/check-api-types.sh`（gate 与 CI）在它与 Go 类型不一致时失败。M1 的认证接口类型仍是前端手写，以后再迁。
+
+**`internal/api` 的结构**（T024）：`api.Bind` 在 OnServe 中调用每个功能的注册函数，每个功能一个文件、一个预先放好的注册函数（`settings.go` 实例设置、`places.go` 新建地点与推荐、`map.go` 地图与卡片、`recommendations.go` 编辑与修改记录、`reports.go` 举报与复核、`notices.go` 站内提示、`profile.go` 资料与化名、`governance.go` 邀请与治理、`leave.go` 退出、`personal_export.go` 个人导出、`layer_export.go` 按层导出、`backups.go` 备份、`geocode.go` 地名搜索），功能之间不改同一个文件。每个接口共用的规则：
+
+| 方面 | 做法 |
+| --- | --- |
+| 身份 | 会话中间件（`internal/auth`）先拦下无会话的请求（401）与缺 `X-OSFM` 的写请求（403）；处理函数用 `api.ViewerOf(e)` 取得 `domain.Viewer`（成员的内部 ID 与是否维护者，只在服务器内使用）；维护者接口挂 `api.MaintainersOnly()`（成员 403 `forbidden`），敏感操作另挂 `auth.RequireFresh()` |
+| 错误 | `api.Error`：与 `auth.AuthError` 同一形状 `{status, message, data, code}`，`code` 是机器可读的稳定字符串（共用的 `invalid_request`、`body_too_large`、`not_found`、`forbidden`、`rate_limited`，功能自己的如 `already_recommended`）；别人不可见的对象与不存在的对象同为 404 |
+| 请求体 | 一律带上限读取（默认 64 KiB），超出 413 `body_too_large`，格式不对 400；路径里的对象只按 `uuid` 指定，不是 UUIDv7 的一律 404 |
+| 额度 | 写接口挂按成员的写请求额度（`WriteBudget`：键为成员 `uuid`，令牌桶，默认一次 60 个、每 2 秒补 1 个，所有写接口共用；超出 429 `rate_limited` + `Retry-After`）；需要别的速率的接口（地名搜索）用 `MemberBudget` 另建一份。计数只在内存中（`internal/ratelimit`），不写日志。PocketBase 按地址的全局限速照常在前面生效（§3.1） |
+| 缓存 | 成员与管理类响应 `Cache-Control: no-store`（地图数据另定，T027） |
+| 推荐的投影 | `api.RecommendationView`：`uuid`、`displayName`、`authorLeft`、`externalLinks`、`attitude`、`text`、`dishes`、`timeSlots`、`season`、`sources`、`visitedOn`、`createdAt`、`updatedAt`、`editedByMaintainerAt`、`isMine`，作者本人另有 `visibility`，作者与维护者看到被隐藏的推荐时另有 `hidden: {kind, reason}`（举报隐藏不带原因，任何时候都不带维护者与举报人）。只能经 `api.RecommendationViews` 生成：它再按可见性过滤一次（第二道防线），一次查询取作者 |
+| 署名 | 只在 `domain.ResolveSignature` 一个函数里决定：主名推荐显示主名并附外部链接（只取 https，最多 5 条）；化名推荐显示化名、从不附外部链接（`E3`）；作者已退出或被删除时主名推荐只有 `authorLeft: true`（由客户端按语言显示"已退出成员"），化名推荐照常显示化名（M2-Q10）；没有化名的化名推荐显示空名，绝不退回主名。署名方式本身不出现在任何响应里 |
+
+**实例设置**（`internal/api/settings.go`）：`GET /api/osfm/instance` 对成员返回 `name`、`cities`、`geocoderEnabled`（前端据此隐藏搜索框），对维护者另返回 `reportThreshold`、`inviteCooldownDays`、`geocoderContact`；`POST`（只限维护者、写额度）只修改请求里带的字段，没带的（或为 `null` 的）保留已存的值——管理页的"名称与城市"表单与"举报、邀请与地名搜索"表单各自只发自己的字段。校验：名称与城市同向导（`instance_name_invalid`、`cities_invalid`），举报阈值 1–100（`report_threshold_invalid`），冷静期 0–3650 天（`invite_cooldown_invalid`），联系方式去首尾空白后 ≤ 200 字符且无控制字符（`geocoder_contact_invalid`）；保存与审计 `settings.update` 在同一事务，审计记录名称、城市标识与各项数值，联系方式只记是否设置。各功能用 `settings.LoadCircle` 读取当前值（改设置立即生效）。
 
 ### 3.3 认证与会话
 
@@ -357,19 +379,22 @@ flowchart LR
 | --- | --- |
 | 未登录只能访问登录、注册、重置相关接口（用 `auth.Public` 标记）、前端静态文件、`/api/health`，以及给其他实例读的 `/.well-known/osfm.json`（§3.8）；其余 `/api/osfm/*` 与 `/tiles/*`（包括城市列表与 TileJSON）返回 401（`E1`） | `internal/auth` 的中间件，默认拒绝（§3.3） |
 | 改变状态的请求带 `X-OSFM: 1`，否则 403 | 同上 |
-| 可见性：`private` 只有作者可见；`circle` 所有成员可见；`federated` 预留，按 `circle` 处理（`C4`） | `store` 层的查询条件，所有读取都经过同一个函数 |
-| 隐藏的推荐只有作者和维护者可见（`C6` `D11`） | 同上 |
+| 可见性：`private` 只有作者可见（维护者也看不到）；`circle` 所有成员可见；`federated` 预留，按 `circle` 处理（`C4`）；软删除的推荐、已删除地点的推荐谁都看不到 | 规则是 `domain.CanSeeRecommendation`（纯函数）；所有读取都经过同一组查询：`store.VisibleRecommendations(app, viewer)`、`store.VisiblePlaces(app, viewer)`，手写查询（分组计数、联表）用同一个条件 `store.RecommendationVisibleTo(viewer, 表名或别名)`，地点上的筛选用 `store.HasVisibleRecommendation(viewer, 条件)`。卡片、地图、人数、筛选、重名提示、修改记录、导出、分享都从这里开始；集成测试 `TestVisibility` 以四种身份对照查询结果与纯函数 |
+| 隐藏的推荐只有作者和维护者可见（`C6` `D11`）；`hidden` 或 `hidden_kind` 任一为真即算隐藏 | 同上 |
+| 地点只在至少有一条对请求者可见的推荐时存在（M2-Q3）：只有他人私密推荐的地点对其他成员不存在；推荐全部删除后地点保留但不出现 | `domain.CanSeePlace`；`store.VisiblePlaces` |
+| 人数：只算请求者可见且未隐藏的推荐（维护者也不算隐藏的），每个作者只算一次 | `domain.CountAttitudes`（地图的分组查询须与它一致，T027） |
+| 站内提示：只写成员、类型与对象的 `uuid`，不写操作人与举报人；与引起它的修改在同一事务 | `domain.Notify(store.NoticesIn(tx), 成员, 类型, 对象)` |
 | 编辑：作者或维护者；每次编辑写一条修改记录（`C5`） | `domain`，与更新在同一事务 |
 | 删除：只有作者；维护者只能在违规处理中删除并写原因（`C6` `H6`） | `domain` |
 | 举报：每人每条一次；达到阈值（默认 3）自动隐藏（`D11`） | `domain`，事务内计数 |
 | 邀请：M1 只有维护者能创建、查看与撤销邀请（`auth.RequireMaintainer`，否则 403）；M2 起成员有邀请权且已过冷静期（`D12`）也可以邀请 | M1 在 `internal/auth`（§3.3）；M2 在 `domain` |
 | 注册：必须消耗一个有效邀请，经 `auth.RegisterWithInvite` 在创建成员的同一事务里完成（`D1`）；唯一的例外是首次启动向导创建第一个维护者：需要服务器打印的设置码，并在创建成员的同一事务里确认还没有维护者 | `internal/auth`（§3.3） |
 | 首次启动向导：实例名称只随第一个维护者在同一事务里保存（需要设置码）；城市（以及对名称的修改）只能由维护者保存，且只在实例还没有城市时（之后 404） | `internal/auth`（§3.3） |
-| 实例设置：设置完成后，维护者在"管理"页修改实例名称与城市（`POST /api/osfm/instance`，`auth.RequireMaintainer`，规则同向导，写审计 `settings.update`）；改名只影响显示，已加进验证器 App 的条目的发行方不变 | `internal/auth` |
+| 实例设置：设置完成后，维护者在"管理"页修改实例名称与城市，以及举报阈值、冷静期与地名搜索（`POST /api/osfm/instance`，`api.MaintainersOnly`，只改请求带的字段，写审计 `settings.update`，§3.2）；改名只影响显示，已加进验证器 App 的条目的发行方不变 | `internal/api` |
 | 凭据：成员只能管理自己的凭据；不能删掉最后一种登录方式；敏感修改要求 10 分钟内再次验证过（`auth.RequireFresh`） | `internal/auth`（§3.3） |
 | 重置链接：只有维护者能生成、查看、撤销；按成员的 `uuid` 生成，要求再次验证；不能为自己、不能为已离开的成员生成；可以为其他维护者生成 | `internal/auth`（§3.3） |
 | 成员列表：只有维护者能查看（`GET /api/osfm/members`）；只含 `uuid`、主名、角色、加入时间、邀请人、邀请权、离开时间、登录方式的个数与待使用的重置链接，不含登录名与化名 | `internal/auth`（§3.3） |
-| 维护者操作写审计记录 | `domain` |
+| 维护者操作写审计记录 | `store.WriteAudit`，与操作在同一事务（`auth` 与 `api` 共用） |
 
 ### 3.5 数据模型落地
 
@@ -637,7 +662,7 @@ erDiagram
 | 层 | 内容 |
 | --- | --- |
 | Go 单元测试 | `domain` 的业务规则（可见性、编辑与修改记录、举报阈值、冷静期、去重计数）、坐标转换、认证流程的状态机 |
-| Go 集成测试 | 使用 PocketBase 的测试应用，覆盖每个接口的权限：以"未登录 / 成员 / 作者 / 维护者"四种身份调用，断言响应中不含作者 ID 与化名映射（`E2`）。辅助包 `internal/testapp`（T019，只供测试使用）：`testapp.Start` 在新的数据目录上按 `osfm serve` 的方式启动程序（传入 `cmd/osfm` 的 `bind`，引导与迁移、OnServe 注册路由，不监听端口），预置编造的维护者、成员、作者（带一条推荐）、实例名称与一个城市，或以 `Unconfigured` 从未设置状态开始（`SetupCode` 读设置码）；`As(identity)` 返回某种身份的客户端（成员身份每次一个新会话），`Get`/`Post` 像浏览器一样带 cookie 与 `X-OSFM: 1`，响应设置或清除的会话 cookie 会被记住，每个客户端用自己的 IPv6 文档地址（各在不同的 /64，不共用认证限速）；`Invite`、`RegisterPasswordTOTP`、`RegisterPasskey` 经真实接口创建邀请与成员（密码 + TOTP 用生成的验证码，passkey 用 `passkeytest`），`SignIn` 再次登录（TOTP 只用尚未用过的时间步，必要时等待）；`CheckNoInternalIDs` 检查目前为止的全部响应不含任何记录或集合的内部 ID。辅助包 `internal/pbtest`（只供测试使用）：`pbtest.NewApp` 返回 PocketBase 的测试应用，数据目录是一份已执行全部迁移的模板目录的副本（每个测试进程只迁移一次，用完由该包的 `TestMain` 调 `pbtest.RemoveTemplate` 删除）：竞态检测下每次执行全部迁移要几秒，`internal/auth` 的测试要建几十个应用（T023 起用它）；迁移本身的测试仍从空数据目录开始。`cmd/osfm` 的 `TestIdentities` 以四种身份调用现有接口（作者在 M2 有推荐接口之前与成员相同），`TestMembersRegisterAndSignIn` 用两种方式注册、退出、再登录，并确认在服务器上结束的会话被拒绝。密码 + TOTP（T009）：用生成的验证码完成注册与登录的端到端测试（只过密码一步时没有会话 cookie；同一验证码、较旧的验证码、用过的恢复码都被拒绝；并发提交同一验证码或恢复码只有一个成功；无效邀请一律被拒；登录名不存在、密码错误、没有密码凭据、已离开的成员得到完全相同的响应；票据在过期、改密码、离开后作废；响应中没有内部 ID）。passkey 用 `internal/auth/passkeytest` 的软件认证器（ES256、可发现凭据、证明 `none`，可以改来源、依赖方 ID、签名计数与标志）：带邀请注册、免登录名登录、计数回退、来源或依赖方错误、状态重放、无有效邀请、成员已离开。限速（T011）：超过阈值后 429，存在与不存在的登录名响应逐字节相同；单个客户端锁不住其他地址上的成员；同一张票据里反复试 TOTP 被锁定、换票据或换地址无效、恢复码仍可用；并发请求不能越过阈值；可信代理头与 IPv6 /64；计数表在大量不同键下不超过容量（`internal/ratelimit`）；审计事件齐全且不含密码、验证码、密钥、票据、邀请码、登录名与地址。凭据管理（T012）：再次验证窗口与过期后的 `reauth_required`，用密码加验证码或恢复码、用自己的 passkey 再次验证（别人的 passkey 不行），失败计入与登录共用的第二步锁定；不能删掉最后一种登录方式（包括并发删除）；添加 passkey 的选项带 `excludeCredentials` 与成员的用户句柄；设置、修改密码与更换 TOTP 后旧密码、旧票据、旧密钥失效、其他会话结束；重新生成恢复码后旧码失效。只有 passkey 的成员的恢复：恢复票据不是会话（不设 cookie，其他接口 401，不能当登录票据或重置令牌），注册新 passkey 或密码 + TOTP 后才签发会话，旧会话结束、旧恢复码作废、票据只能用一次、旧 passkey 保留；登录名不存在、成员已离开、恢复码错误、成员有密码的回答逐字节相同，有密码的成员的有效恢复码得到 409 且不被用掉；按客户端 + 登录名锁定。成员列表（T012 后续）：未登录 401、成员 403、维护者 200，按加入时间排列，含已离开的成员、不含已删除的，登录方式的个数、邀请人与待使用的重置链接正确，响应中没有登录名、化名、设备名与内部 ID（`internal/auth` 与 `cmd/osfm` 的 `TestMemberList`）。重置链接：按成员的 uuid 生成（不存在、格式不对、按登录名的请求都是 404）；只能用一次（包括并发）；重置后旧 passkey、旧密码与 TOTP（及旧登录票据）、旧恢复码都不能登录，旧会话失效，用户句柄更换；各种无效令牌在所有公开重置接口上回答相同；新链接替换旧链接；不能为自己或已离开的成员生成；生成要求再次验证；无效令牌计为失败。审计记录不含密码、验证码、恢复码、票据与令牌。首次启动向导（T013）：两种方式建出第一个维护者、设置码错误或缺失被拒、设置的待完成注册与仪式状态不能用于邀请注册、并发设置只有一个成功、设置完成后所有设置接口 404、名称与城市的校验与审计；实例名称在创建维护者时必填且按规则检查，与维护者在同一事务里保存（创建失败时不保存），是 TOTP 地址的发行方（含冒号与中文的名称的编码），确认请求改不了封进待完成注册的名称；`cmd/osfm` 另按 `osfm serve` 的方式从空数据目录走完整个向导（设置码取自服务器写的文件），检查响应中没有内部 ID |
+| Go 集成测试 | 使用 PocketBase 的测试应用，覆盖每个接口的权限：以"未登录 / 成员 / 作者 / 维护者"四种身份调用，断言响应中不含作者 ID 与化名映射（`E2`）。辅助包 `internal/testapp`（T019，只供测试使用）：`testapp.Start` 在新的数据目录上按 `osfm serve` 的方式启动程序（传入 `cmd/osfm` 的 `bind`，引导与迁移、OnServe 注册路由，不监听端口），预置编造的维护者、成员、作者、实例名称与一个城市，作者有化名与一条外部链接，并在三个地点各有一条推荐：主名圈内（`Recommendation`）、化名圈内（`PseudonymRecommendation`）、私密（`PrivateRecommendation`，它的地点只对作者存在），或以 `Unconfigured` 从未设置状态开始（`SetupCode` 读设置码）；`SeedPlace`、`SeedRecommendation` 经 store 的钩子写入更多编造的地点与推荐（可设化名、私密、隐藏、删除等状态）；每个应用的数据目录是 `internal/pbtest` 迁移模板的副本（T024 起，启动一个应用不再执行全部迁移，用到 testapp 的包在 `TestMain` 里调 `pbtest.RemoveTemplate`）；`As(identity)` 返回某种身份的客户端（成员身份每次一个新会话），`Get`/`Post` 像浏览器一样带 cookie 与 `X-OSFM: 1`，响应设置或清除的会话 cookie 会被记住，每个客户端用自己的 IPv6 文档地址（各在不同的 /64，不共用认证限速）；`Invite`、`RegisterPasswordTOTP`、`RegisterPasskey` 经真实接口创建邀请与成员（密码 + TOTP 用生成的验证码，passkey 用 `passkeytest`），`SignIn` 再次登录（TOTP 只用尚未用过的时间步，必要时等待）；`CheckNoInternalIDs` 检查目前为止的全部响应不含任何记录或集合的内部 ID。辅助包 `internal/pbtest`（只供测试使用）：`pbtest.NewApp` 返回 PocketBase 的测试应用，数据目录是一份已执行全部迁移的模板目录的副本（每个测试进程只迁移一次，用完由该包的 `TestMain` 调 `pbtest.RemoveTemplate` 删除）：竞态检测下每次执行全部迁移要几秒，`internal/auth` 的测试要建几十个应用（T023 起用它）；迁移本身的测试仍从空数据目录开始。`cmd/osfm` 的 `TestIdentities` 以四种身份调用现有接口（作者在 M2 有推荐接口之前与成员相同），`TestVisibility`、`TestVisiblePlaceFilters`、`TestRecommendationViews` 以四种身份检查唯一的可见性查询与推荐的投影，`TestInstanceSettings` 检查管理页两个设置表单所依赖的接口约定，`TestMembersRegisterAndSignIn` 用两种方式注册、退出、再登录，并确认在服务器上结束的会话被拒绝。密码 + TOTP（T009）：用生成的验证码完成注册与登录的端到端测试（只过密码一步时没有会话 cookie；同一验证码、较旧的验证码、用过的恢复码都被拒绝；并发提交同一验证码或恢复码只有一个成功；无效邀请一律被拒；登录名不存在、密码错误、没有密码凭据、已离开的成员得到完全相同的响应；票据在过期、改密码、离开后作废；响应中没有内部 ID）。passkey 用 `internal/auth/passkeytest` 的软件认证器（ES256、可发现凭据、证明 `none`，可以改来源、依赖方 ID、签名计数与标志）：带邀请注册、免登录名登录、计数回退、来源或依赖方错误、状态重放、无有效邀请、成员已离开。限速（T011）：超过阈值后 429，存在与不存在的登录名响应逐字节相同；单个客户端锁不住其他地址上的成员；同一张票据里反复试 TOTP 被锁定、换票据或换地址无效、恢复码仍可用；并发请求不能越过阈值；可信代理头与 IPv6 /64；计数表在大量不同键下不超过容量（`internal/ratelimit`）；审计事件齐全且不含密码、验证码、密钥、票据、邀请码、登录名与地址。凭据管理（T012）：再次验证窗口与过期后的 `reauth_required`，用密码加验证码或恢复码、用自己的 passkey 再次验证（别人的 passkey 不行），失败计入与登录共用的第二步锁定；不能删掉最后一种登录方式（包括并发删除）；添加 passkey 的选项带 `excludeCredentials` 与成员的用户句柄；设置、修改密码与更换 TOTP 后旧密码、旧票据、旧密钥失效、其他会话结束；重新生成恢复码后旧码失效。只有 passkey 的成员的恢复：恢复票据不是会话（不设 cookie，其他接口 401，不能当登录票据或重置令牌），注册新 passkey 或密码 + TOTP 后才签发会话，旧会话结束、旧恢复码作废、票据只能用一次、旧 passkey 保留；登录名不存在、成员已离开、恢复码错误、成员有密码的回答逐字节相同，有密码的成员的有效恢复码得到 409 且不被用掉；按客户端 + 登录名锁定。成员列表（T012 后续）：未登录 401、成员 403、维护者 200，按加入时间排列，含已离开的成员、不含已删除的，登录方式的个数、邀请人与待使用的重置链接正确，响应中没有登录名、化名、设备名与内部 ID（`internal/auth` 与 `cmd/osfm` 的 `TestMemberList`）。重置链接：按成员的 uuid 生成（不存在、格式不对、按登录名的请求都是 404）；只能用一次（包括并发）；重置后旧 passkey、旧密码与 TOTP（及旧登录票据）、旧恢复码都不能登录，旧会话失效，用户句柄更换；各种无效令牌在所有公开重置接口上回答相同；新链接替换旧链接；不能为自己或已离开的成员生成；生成要求再次验证；无效令牌计为失败。审计记录不含密码、验证码、恢复码、票据与令牌。首次启动向导（T013）：两种方式建出第一个维护者、设置码错误或缺失被拒、设置的待完成注册与仪式状态不能用于邀请注册、并发设置只有一个成功、设置完成后所有设置接口 404、名称与城市的校验与审计；实例名称在创建维护者时必填且按规则检查，与维护者在同一事务里保存（创建失败时不保存），是 TOTP 地址的发行方（含冒号与中文的名称的编码），确认请求改不了封进待完成注册的名称；`cmd/osfm` 另按 `osfm serve` 的方式从空数据目录走完整个向导（设置码取自服务器写的文件），检查响应中没有内部 ID |
 | 内部 ID 扫描 | `cmd/osfm` 的测试按 `osfm serve` 的方式启动程序（同一个注册函数），`internal/idscan` 往每个集合写入编造的记录（含已软删除的；有集合没写入时失败），枚举路由器上的全部路由：OSFM 的每条路由必须在测试的探测表里有请求，PocketBase 自己的路由按占位符代入各集合名后逐一请求；任何响应的头部或正文（含 gzip 解码后、JSON Web Token 解码后，以及其中每个 base64 或 base64url 值解码后，例如 WebAuthn 选项里的用户句柄与凭据 ID）出现记录或集合的内部 ID 即失败（AD4）。passkey 注册与登录的成功响应另由一个测试用软件认证器走完整个仪式后检查（包括仪式中新建的成员、凭据、恢复码与会话的 ID）。每个请求按匿名、成员、维护者三种身份各发一次（成员与维护者每个请求用一个新会话，退出登录的探测不影响后面的请求），会话 cookie 本身也在被检查的请求里；同时检查会话规则：匿名访问需要登录的路径必须得到 401，公开路由必须在测试的清单里，只限维护者的路由（另一份清单）成员访问必须得到 403，带 `X-OSFM` 的写请求去掉这个头后必须得到 403。每个请求用自己的客户端地址（IPv6 文档地址段，各在不同的 /64），认证限速因此不会用 429 挡住扫描 |
 | 前端单元测试 | Vitest + Testing Library |
 | 前端文案检查 | `pnpm run check:i18n`：语言文件以外的源码不含中日韩字符（§4.1） |

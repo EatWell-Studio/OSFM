@@ -6,6 +6,17 @@
 //
 // The caller passes the function that registers OSFM's hooks and routes: `bind` of cmd/osfm, so that what a test
 // checks is what the binary serves. Only tests import this package.
+//
+// Each app starts from a copy of a data directory with every migration applied (internal/pbtest), made once per test
+// binary: a package that uses testapp removes it when its tests end, from its TestMain:
+//
+//	func TestMain(m *testing.M) {
+//		code := m.Run()
+//		pbtest.RemoveTemplate()
+//		os.Exit(code)
+//	}
+//
+// Apps are independent of each other: tests that start their own may run in parallel (t.Parallel).
 package testapp
 
 import (
@@ -26,7 +37,9 @@ import (
 
 	"github.com/EatWell-Studio/OSFM/internal/auth"
 	"github.com/EatWell-Studio/OSFM/internal/config"
+	"github.com/EatWell-Studio/OSFM/internal/domain"
 	"github.com/EatWell-Studio/OSFM/internal/idscan"
+	"github.com/EatWell-Studio/OSFM/internal/pbtest"
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
@@ -53,7 +66,8 @@ const (
 	Anonymous Identity = "anonymous"
 	// Member is a signed-in member who wrote nothing.
 	Member Identity = "member"
-	// Author is a signed-in member who wrote [App.Recommendation].
+	// Author is a signed-in member who wrote [App.Recommendation], [App.PseudonymRecommendation] and
+	// [App.PrivateRecommendation].
 	Author Identity = "author"
 	// Maintainer is a signed-in maintainer.
 	Maintainer Identity = "maintainer"
@@ -65,21 +79,30 @@ var Identities = []Identity{Anonymous, Member, Author, Maintainer}
 // Made-up data of a configured instance.
 const (
 	InstanceName = "Test Circle"
-	CitySlug     = "testtown"
-	CityName     = "Test Town"
+	// AuthorLink is the external link on Author's profile.
+	AuthorLink = "https://example.test/test-author"
+	CitySlug   = "testtown"
+	CityName   = "Test Town"
 )
 
-// App is a booted instance. Unless it was started unconfigured, it has a maintainer, a member, an author with a
-// recommendation, an instance name and one city (without a basemap archive).
+// App is a booted instance. Unless it was started unconfigured, it has a maintainer, a member, an author with three
+// recommendations of three places, an instance name and one city (without a basemap archive). All of it is made up.
 type App struct {
 	core.App
 	Config *config.Config
 	// Handler serves requests as the main listener does.
 	Handler http.Handler
 
+	// Maintainer, Member and Author are members who may sign in. Author has a pseudonym and an external link; Member
+	// has neither and wrote nothing.
 	Maintainer, Member, Author *core.Record
-	// Recommendation is a recommendation by Author, of a made-up place.
-	Recommendation *core.Record
+	// Recommendation is Author's recommendation of Place, signed with the main name, for the circle.
+	Recommendation, Place *core.Record
+	// PseudonymRecommendation is Author's recommendation of PseudonymPlace, signed with the pseudonym, for the circle.
+	PseudonymRecommendation, PseudonymPlace *core.Record
+	// PrivateRecommendation is Author's private recommendation of PrivatePlace, signed with the main name; it is the
+	// only recommendation of that place, so the place exists for Author only (M2-Q3).
+	PrivateRecommendation, PrivatePlace *core.Record
 
 	t         testing.TB
 	mu        sync.Mutex
@@ -104,6 +127,9 @@ func Start(t testing.TB, opts Options) *App {
 		return v, ok
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pbtest.CopyTemplate(cfg.PBDataDir()); err != nil {
 		t.Fatal(err)
 	}
 	app := core.NewBaseApp(core.BaseAppConfig{DataDir: cfg.PBDataDir()})
@@ -163,11 +189,17 @@ func (a *App) seed() {
 	a.Member = save(store.Members, map[string]any{"login_name": "test_member", "display_name": "Test Member",
 		"role": auth.RoleMember, "invited_by": a.Maintainer.Id, "joined_at": joined})
 	a.Author = save(store.Members, map[string]any{"login_name": "test_author", "display_name": "Test Author",
-		"pseudonym": "Test Pen Name", "role": auth.RoleMember, "invited_by": a.Maintainer.Id, "joined_at": joined})
-	place := save(store.Places, map[string]any{"name": "Test Dumpling House", "lat": 0.34, "lon": 7.06,
-		"precision": "exact", "category": "restaurant", "status": "open"})
-	a.Recommendation = save(store.Recommendations, map[string]any{"place": place.Id, "author": a.Author.Id,
-		"display_as": "pseudonym", "attitude": "good", "visibility": "circle", "text": "Test recommendation text"})
+		"pseudonym": "Test Pen Name", "role": auth.RoleMember, "invited_by": a.Maintainer.Id, "joined_at": joined,
+		"external_links": []map[string]any{{"url": AuthorLink, "label": "Test Blog"}}})
+	a.Place = a.SeedPlace(PlaceSeed{Name: "Test Dumpling House", Lat: 0.34, Lon: 7.06, Category: "restaurant"})
+	a.Recommendation = a.SeedRecommendation(RecommendationSeed{Place: a.Place, Author: a.Author,
+		Text: "Test recommendation text"})
+	a.PseudonymPlace = a.SeedPlace(PlaceSeed{Name: "Test Noodle Stall", Lat: 0.345, Lon: 7.065, Category: "fast_food"})
+	a.PseudonymRecommendation = a.SeedRecommendation(RecommendationSeed{Place: a.PseudonymPlace, Author: a.Author,
+		DisplayAs: domain.SignAsPseudonym, Attitude: domain.AttitudeMustTry, Text: "Test pen name text"})
+	a.PrivatePlace = a.SeedPlace(PlaceSeed{Name: "Test Secret Bakery", Lat: 0.335, Lon: 7.055, Category: "bakery"})
+	a.PrivateRecommendation = a.SeedRecommendation(RecommendationSeed{Place: a.PrivatePlace, Author: a.Author,
+		Visibility: domain.VisibilityPrivate, Attitude: domain.AttitudeOK, Text: "Test private text"})
 
 	settings, err := a.FindRecordById(store.InstanceSettings, store.SettingsID)
 	if err != nil {

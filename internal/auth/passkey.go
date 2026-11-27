@@ -424,7 +424,7 @@ func VerifyPasskeySignIn(app core.App, state string, response []byte) (*core.Rec
 // assertions racing with the same counter, one fails.
 func recordPasskeyUse(app core.App, member, stored *core.Record, cred *webauthn.Credential) error {
 	if cred.Authenticator.CloneWarning {
-		if err := writeAudit(app, nil, AuditPasskeyCloneWarning, store.Members, member.GetString(store.FieldUUID),
+		if err := store.WriteAudit(app, nil, AuditPasskeyCloneWarning, store.Members, member.GetString(store.FieldUUID),
 			map[string]any{"credential": stored.GetString(store.FieldUUID)}); err != nil {
 			app.Logger().Warn("could not audit a passkey counter regression", "error", err)
 		}

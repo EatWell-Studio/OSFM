@@ -1,5 +1,7 @@
 package store
 
+import "github.com/EatWell-Studio/OSFM/internal/domain"
+
 // Collection names. Every collection's API rules are nil (superusers only): clients never use PocketBase's collection
 // API, only /api/osfm/* (AD2). The schema itself is created by the migrations in /migrations.
 const (
@@ -86,12 +88,13 @@ const (
 // Resolutions lists the values reports.resolution accepts.
 var Resolutions = []string{ResolutionRestored, ResolutionKeptHidden, ResolutionDeleted}
 
-// Kinds of notices to a member (notices.kind). Clients show them by translation key; ref names the object (a
-// recommendation's uuid). The field itself stays free text so that later kinds need no migration.
+// Kinds of notices to a member (notices.kind), defined with the notice rules in internal/domain ([domain.Notify]).
+// Clients show them by translation key; ref names the object (a recommendation's uuid). The field itself stays free
+// text so that later kinds need no migration.
 const (
-	NoticeMaintainerEdited   = "maintainer_edited"    // a maintainer edited the member's recommendation
-	NoticeHiddenByMaintainer = "hidden_by_maintainer" // a maintainer hid it
-	NoticeHiddenByReports    = "hidden_by_reports"    // it was hidden automatically after reports
-	NoticeRestored           = "restored"             // it is shown again
-	NoticeViolationDeleted   = "violation_deleted"    // a maintainer deleted it as a violation
+	NoticeMaintainerEdited   = domain.NoticeMaintainerEdited   // a maintainer edited the member's recommendation
+	NoticeHiddenByMaintainer = domain.NoticeHiddenByMaintainer // a maintainer hid it
+	NoticeHiddenByReports    = domain.NoticeHiddenByReports    // it was hidden automatically after reports
+	NoticeRestored           = domain.NoticeRestored           // it is shown again
+	NoticeViolationDeleted   = domain.NoticeViolationDeleted   // a maintainer deleted it as a violation
 )

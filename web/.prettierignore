@@ -3,3 +3,4 @@ pnpm-lock.yaml
 public/map/
 test-results
 playwright-report
+src/api/types.gen.ts

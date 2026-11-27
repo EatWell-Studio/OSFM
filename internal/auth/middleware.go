@@ -107,8 +107,8 @@ type Options struct {
 //     are soft-deleted;
 //   - a daily job that deletes expired sessions;
 //   - the setup wizard's routes ([bindSetupRoutes]), and the setup code when the instance starts unconfigured;
-//   - the credential management, recovery, reset link, member list and instance settings routes
-//     (credentials_routes.go, recover_routes.go, reset_routes.go, member_routes.go, instance_routes.go).
+//   - the credential management, recovery, reset link and member list routes
+//     (credentials_routes.go, recover_routes.go, reset_routes.go, member_routes.go).
 func Bind(app core.App, opts Options) {
 	name := CookieName
 	if opts.HostPrefix {
@@ -185,7 +185,6 @@ func Bind(app core.App, opts Options) {
 		bindRecoverRoutes(se)
 		bindResetRoutes(se)
 		bindMemberRoutes(se)
-		bindInstanceRoutes(se)
 		if err := startSetup(se.App, logger); err != nil {
 			return err
 		}

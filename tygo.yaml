@@ -1,0 +1,17 @@
+# TypeScript types of the API for the web app (architecture §3.2): `go tool tygo generate` writes
+# web/src/api/types.gen.ts from the exported types and constants of internal/api. The generated file is committed;
+# bin/gate.sh and CI fail when it is not up to date. Files without request or response types are left out.
+packages:
+  - path: "github.com/EatWell-Studio/OSFM/internal/api"
+    output_path: "web/src/api/types.gen.ts"
+    exclude_files:
+      - "api.go"
+      - "budget.go"
+      - "doc.go"
+      - "request.go"
+      - "viewer.go"
+    type_mappings:
+      time.Time: "string /* RFC 3339 */"
+    frontmatter: |
+      // The request and response types of the OSFM API (internal/api), generated with `go tool tygo generate` from
+      // tygo.yaml. Do not edit: change the Go types and generate again.

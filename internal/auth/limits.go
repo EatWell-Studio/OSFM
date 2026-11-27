@@ -511,7 +511,7 @@ func auditSuccess(e *core.RequestEvent, limit Limit) {
 
 // auditApp writes an audit entry about a member; a failure is logged, not returned: the request has been answered.
 func auditApp(app core.App, actor *core.Record, action, memberUUID string, details map[string]any) {
-	if err := writeAudit(app, actor, action, store.Members, memberUUID, details); err != nil {
+	if err := store.WriteAudit(app, actor, action, store.Members, memberUUID, details); err != nil {
 		app.Logger().Warn("could not write an audit entry", "action", action, "error", err)
 	}
 }

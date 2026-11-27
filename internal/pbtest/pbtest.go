@@ -48,6 +48,18 @@ func NewApp(t testing.TB) *tests.TestApp {
 	return app
 }
 
+// CopyTemplate copies the template data directory to dst, a directory that does not exist yet: a PocketBase data
+// directory with every migration applied, for apps made otherwise than by [NewApp]. internal/testapp boots the whole
+// instance on such a copy, so that a test app costs a file copy instead of running every migration. The caller's
+// package removes the template from its TestMain, as for NewApp.
+func CopyTemplate(dst string) error {
+	dir, err := templateDir()
+	if err != nil {
+		return err
+	}
+	return os.CopyFS(dst, os.DirFS(dir))
+}
+
 // RemoveTemplate removes the template data directory, if one was made.
 func RemoveTemplate() {
 	template.Lock()

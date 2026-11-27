@@ -39,6 +39,7 @@ if [ "$#" -eq 0 ]; then
 		'pnpm --dir web run build' \
 		'pnpm --dir web run check:urls' \
 		'golangci-lint run ./...' \
+		'bin/check-api-types.sh' \
 		'go test -race ./...' \
 		'go build -o "$OSFM_GATE_BIN" ./cmd/osfm'
 	if [ "$e2e" -eq 1 ]; then

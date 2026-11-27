@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/EatWell-Studio/OSFM/internal/api"
 	"github.com/EatWell-Studio/OSFM/internal/auth"
 	"github.com/EatWell-Studio/OSFM/internal/settings"
 	"github.com/EatWell-Studio/OSFM/internal/store"
@@ -29,8 +30,11 @@ func TestIdentities(t *testing.T) {
 	}{
 		{"who am I", func(c *testapp.Client) *testapp.Response { return c.Get(auth.MePath) },
 			map[testapp.Identity]int{anon: 401, member: 200, author: 200, maintainer: 200}},
-		{"the instance's name and cities", func(c *testapp.Client) *testapp.Response { return c.Get(settings.InstancePath) },
+		{"the instance's name and cities", func(c *testapp.Client) *testapp.Response { return c.Get(api.InstancePath) },
 			map[testapp.Identity]int{anon: 401, member: 200, author: 200, maintainer: 200}},
+		{"changing the instance settings", func(c *testapp.Client) *testapp.Response {
+			return c.Post(api.InstancePath, api.InstanceUpdate{})
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
 		{"the city index of the tiles", func(c *testapp.Client) *testapp.Response { return c.Get("/tiles/") },
 			map[testapp.Identity]int{anon: 401, member: 200, author: 200, maintainer: 200}},
 		{"the invite list", func(c *testapp.Client) *testapp.Response { return c.Get(auth.InvitesPath) },

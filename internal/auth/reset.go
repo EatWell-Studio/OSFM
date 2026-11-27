@@ -100,7 +100,7 @@ func revokePendingResetLinks(tx core.App, member, actor *core.Record, reason str
 			dbx.HashExp{"id": l.Id}).Execute(); err != nil {
 			return err
 		}
-		if err := writeAudit(tx, actor, AuditRevokeResetLink, store.ResetLinks, l.GetString(store.FieldUUID),
+		if err := store.WriteAudit(tx, actor, AuditRevokeResetLink, store.ResetLinks, l.GetString(store.FieldUUID),
 			map[string]any{"reason": reason}); err != nil {
 			return err
 		}
@@ -150,7 +150,7 @@ func CreateResetLink(app core.App, actor *core.Record, memberUUID string) (strin
 		if err := tx.Save(link); err != nil {
 			return err
 		}
-		return writeAudit(tx, actor, AuditCreateResetLink, store.ResetLinks, link.GetString(store.FieldUUID),
+		return store.WriteAudit(tx, actor, AuditCreateResetLink, store.ResetLinks, link.GetString(store.FieldUUID),
 			map[string]any{"member": member.GetString(store.FieldUUID)})
 	})
 	if err != nil {
@@ -180,7 +180,7 @@ func RevokeResetLink(app core.App, link, actor *core.Record) error {
 		link.Load(current.FieldsData())
 		switch {
 		case n == 1:
-			return writeAudit(tx, actor, AuditRevokeResetLink, store.ResetLinks, link.GetString(store.FieldUUID), nil)
+			return store.WriteAudit(tx, actor, AuditRevokeResetLink, store.ResetLinks, link.GetString(store.FieldUUID), nil)
 		case !current.GetDateTime("used_at").IsZero():
 			return errResetLinkUsed
 		default:
@@ -261,7 +261,7 @@ func useResetLink(app core.App, token, method string, save func(tx core.App, mem
 		if codes, err = NewRecoveryCodes(tx, member); err != nil {
 			return err
 		}
-		if err := writeAudit(tx, member, AuditUseResetLink, store.ResetLinks, link.GetString(store.FieldUUID),
+		if err := store.WriteAudit(tx, member, AuditUseResetLink, store.ResetLinks, link.GetString(store.FieldUUID),
 			map[string]any{"method": method}); err != nil {
 			return err
 		}
@@ -311,7 +311,7 @@ func confirmResetPassword(app core.App, token, enrolment, code string) (*core.Re
 		if err != nil {
 			return err
 		}
-		return writeAudit(tx, m, AuditCredentialAdd, store.Members, m.GetString(store.FieldUUID),
+		return store.WriteAudit(tx, m, AuditCredentialAdd, store.Members, m.GetString(store.FieldUUID),
 			map[string]any{"kind": CredentialPasswordTOTP, "credential": cred.GetString(store.FieldUUID), "via": viaReset})
 	})
 }
