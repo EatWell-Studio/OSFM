@@ -6,11 +6,13 @@ import { App } from '@/App'
 import zhCN from '@/i18n/locales/zh-CN.json'
 import { createQueryClient } from '@/lib/queryClient'
 import { routes } from '@/routes'
-import type { Me } from '@/session/session'
+import { type Me, sessionQueryKey } from '@/session/session'
 import { normalizeSetupCode, parseBbox } from './setup'
 
 // Made-up values only.
 const setupCode = 'ABCD-EFGH-JKMN-PQRS'
+// CJK characters and a colon, escaped: the source files outside the locales hold no CJK text.
+const cjkName = '\u6d4b\u8bd5\u5708: Test Circle'
 const maintainer: Me = { uuid: '0190a1b2-0000-7000-8000-000000000001', displayName: 'Test First', role: 'maintainer' }
 const archive = {
   id: 'example-town',
@@ -61,7 +63,7 @@ function bodiesOf(fetchMock: ReturnType<typeof stubApi>, path: string): unknown[
 const s = zhCN.setup
 
 describe('setup wizard', () => {
-  it('leads every page to the wizard while there is no maintainer, and asks for the setup code', async () => {
+  it('leads every page to the wizard while there is no maintainer: setup code, instance name, account', async () => {
     const fetchMock = stubApi(
       () => null,
       () => 'maintainer',
@@ -90,6 +92,13 @@ describe('setup wizard', () => {
     await user.clear(field)
     await user.type(field, setupCode)
     await user.click(screen.getByRole('button', { name: s.code.check }))
+
+    // The instance name, kept in the page: required, then sent with the account.
+    await user.click(await screen.findByRole('button', { name: s.name.next }))
+    expect(await screen.findByText(s.name.required)).toBeInTheDocument()
+    await user.type(screen.getByLabelText(s.name.label), ` ${cjkName} `)
+    await user.click(screen.getByRole('button', { name: s.name.next }))
+
     // Password and TOTP first and chosen, passkey second, as on the registration page.
     const methods = await screen.findAllByRole('button', { pressed: true })
     expect(methods.map((b) => b.textContent)).toEqual([zhCN.pages.register.methods.password])
@@ -105,17 +114,24 @@ describe('setup wizard', () => {
     await user.click(screen.getByRole('button', { name: reg.next }))
     expect(await screen.findByText(reg.errors.loginNameTaken)).toBeInTheDocument()
     expect(bodiesOf(fetchMock, '/api/osfm/setup/password/start')).toEqual([
-      { setupCode, loginName: 'test_first', displayName: '', password: 'test password, made up' },
+      {
+        setupCode,
+        instanceName: cjkName,
+        loginName: 'test_first',
+        displayName: '',
+        password: 'test password, made up',
+      },
     ])
   })
 
-  it('asks the new maintainer for the name and cities, then opens the map', async () => {
+  it('resumes at the cities for the new maintainer, with the saved name, then opens the map', async () => {
     let done = false
     const fetchMock = stubApi(
       () => maintainer,
-      () => (done ? null : 'instance'),
+      () => (done ? null : 'cities'),
       {
         'GET /tiles/': () => Response.json({ cities: [archive] }),
+        'GET /api/osfm/instance': () => Response.json({ name: 'Test Circle', cities: [] }),
         'POST /api/osfm/setup/complete': (body) => {
           done = true
           return Response.json(body)
@@ -127,10 +143,7 @@ describe('setup wizard', () => {
       expect(router.state.location.pathname).toBe('/setup')
     })
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: s.name.next }))
-    expect(await screen.findByText(s.name.required)).toBeInTheDocument()
-    await user.type(screen.getByLabelText(s.name.label), 'Test Circle')
-    await user.click(screen.getByRole('button', { name: s.name.next }))
+    expect(await screen.findByDisplayValue('Test Circle')).toBeInTheDocument()
 
     // The archive on the server is offered under a name made from its file name, which can be changed.
     const archiveName = await screen.findByDisplayValue('Example Town')
@@ -148,9 +161,10 @@ describe('setup wizard', () => {
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/')
     })
+    // The name was not changed: the server keeps the saved one.
     expect(bodiesOf(fetchMock, '/api/osfm/setup/complete')).toEqual([
       {
-        name: 'Test Circle',
+        name: '',
         cities: [
           { slug: 'example-town', name: 'Test Town', bbox: archive.bounds, center: [6.72, 0.33] },
           { slug: 'test-village', name: 'Test Village', bbox: [7.1, 0.2, 7.2, 0.3], center: [7.15, 0.25] },
@@ -159,19 +173,79 @@ describe('setup wizard', () => {
     ])
   })
 
-  it('needs at least one city', async () => {
-    stubApi(
+  it('needs at least one city, and says when there were too many attempts', async () => {
+    const fetchMock = stubApi(
       () => maintainer,
-      () => 'instance',
-      { 'GET /tiles/': () => Response.json({ cities: [] }) },
+      () => 'cities',
+      {
+        'GET /tiles/': () => Response.json({ cities: [] }),
+        'POST /api/osfm/setup/complete': () =>
+          Response.json(
+            { code: 'rate_limited', status: 429, message: 'x', data: {} },
+            { status: 429, headers: { 'Retry-After': '90' } },
+          ),
+      },
     )
     renderAt('/setup')
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText(s.name.label), 'Test Circle')
-    await user.click(screen.getByRole('button', { name: s.name.next }))
     expect(await screen.findByText(s.cities.noArchives)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: s.cities.finish }))
     expect(await screen.findByText(s.cities.errors.none)).toBeInTheDocument()
+
+    // A corrected name goes with the cities.
+    const name = screen.getByLabelText(s.name.label)
+    await user.clear(name)
+    await user.type(name, 'Test Other Circle')
+    await user.type(screen.getByLabelText(s.cities.add.name), 'Test Village')
+    await user.type(screen.getByLabelText(s.cities.add.slug), 'test-village')
+    await user.type(screen.getByLabelText(s.cities.add.bbox), '7.1,0.2,7.2,0.3')
+    await user.click(screen.getByRole('button', { name: s.cities.add.submit }))
+    await user.click(screen.getByRole('button', { name: s.cities.finish }))
+    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '2'))).toBeInTheDocument()
+    expect(bodiesOf(fetchMock, '/api/osfm/setup/complete')).toMatchObject([{ name: 'Test Other Circle' }])
+  })
+
+  it('shows the rate limit at the setup code', async () => {
+    stubApi(
+      () => null,
+      () => 'maintainer',
+      {
+        'POST /api/osfm/setup/check': () =>
+          Response.json(
+            { code: 'rate_limited', status: 429, message: 'x', data: {} },
+            { status: 429, headers: { 'Retry-After': '60' } },
+          ),
+      },
+    )
+    renderAt('/setup')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText(s.code.label), setupCode)
+    await user.click(screen.getByRole('button', { name: s.code.check }))
+    expect(await screen.findByText(zhCN.rateLimit.wait_one.replace('{{count}}', '1'))).toBeInTheDocument()
+  })
+
+  it('resumes at the cities when the maintainer signs in after an anonymous visit', async () => {
+    let signedIn = false
+    stubApi(
+      () => (signedIn ? maintainer : null),
+      () => (signedIn ? 'cities' : null),
+      {
+        'GET /tiles/': () => Response.json({ cities: [] }),
+        'GET /api/osfm/instance': () => Response.json({ name: 'Test Circle', cities: [] }),
+      },
+    )
+    const queryClient = createQueryClient()
+    const router = createMemoryRouter(routes, { initialEntries: ['/login'] })
+    render(<App router={router} queryClient={queryClient} />)
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(zhCN.pages.login.title)
+    // Signing in, as the sign-in forms do: the session is set, and the app goes on.
+    signedIn = true
+    queryClient.setQueryData(sessionQueryKey, maintainer)
+    await router.navigate('/')
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/setup')
+    })
+    expect(await screen.findByDisplayValue('Test Circle')).toBeInTheDocument()
   })
 
   it('cannot be reached once the instance is set up', async () => {

@@ -11,7 +11,8 @@ import { TopBar } from './TopBar'
  */
 export function PublicLayout() {
   const { t } = useTranslation()
-  const setup = useQuery(setupQuery)
+  // Whether the instance has a maintainer is the same for everyone: the anonymous answer does.
+  const setup = useQuery(setupQuery(null))
   if (setup.data === 'maintainer') {
     return <Navigate to={setupPagePath} replace />
   }

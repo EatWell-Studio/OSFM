@@ -1,9 +1,9 @@
 // What entitles someone to create an account: an invite (D1), or, for the first maintainer only, the setup code that
-// the server prints when it starts without a maintainer (G3; docs/architecture.md §3.3). The registration components
-// take one and post to the matching endpoints; the server finds the invite or setup code in the request body under
-// the same name as here.
+// the server prints when it starts without a maintainer (G3; docs/architecture.md §3.3), which comes with the instance
+// name the server saves together with the maintainer. The registration components take one and post to the matching
+// endpoints; the server finds these values in the request body under the same names as here.
 
-export type Entitlement = { invite: string } | { setupCode: string }
+export type Entitlement = { invite: string } | { setupCode: string; instanceName: string }
 
 export interface RegistrationPaths {
   passwordStart: string

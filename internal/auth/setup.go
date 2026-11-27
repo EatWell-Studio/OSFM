@@ -22,10 +22,14 @@ import (
 
 // First-start setup (G3; architecture §3.3, §5.3). An instance is unconfigured while it has no maintainer: no member
 // with the role maintainer has ever been created (one who has left or was deleted still counts, so that setup happens
-// once). Until then the web app sends every visitor to the setup wizard, whose first step creates the first maintainer:
-// the only member created without an invite (D1), with the same mandatory two-step verification (D3), password and
-// TOTP or a passkey, and the same recovery codes. The wizard then asks the new maintainer, now signed in, for the
-// instance's name and its cities, and setup is complete once they are saved ([completeSetup]).
+// once). Until then the web app sends every visitor to the setup wizard: the setup code (below), the instance's name,
+// the first maintainer, and the cities. The first maintainer is the only member created without an invite (D1), with
+// the same mandatory two-step verification (D3), password and TOTP or a passkey, and the same recovery codes. The
+// instance name is not saved on its own: the browser keeps it and sends it with the requests that create the
+// maintainer. It is sealed into the pending enrolment (or ceremony state) with everything else, is the issuer of the
+// maintainer's TOTP secret, and is saved in the transaction that creates the maintainer, so there is never a name
+// without a maintainer. The new maintainer, signed in, then gives the instance its cities (and may correct the name),
+// and setup is complete once they are saved ([completeSetup]): a maintainer exists and the instance has cities.
 //
 // Setup code. A freshly deployed instance is reachable before anyone has configured it; without a further check,
 // whoever opened it first would become its maintainer. So creating the first maintainer needs a setup code that only
@@ -47,17 +51,19 @@ import (
 
 // Steps of the setup wizard, as GET /api/osfm/setup reports them.
 const (
-	// SetupStepMaintainer: the instance has no maintainer; the wizard creates the first one (setup code required).
+	// SetupStepMaintainer: the instance has no maintainer; the wizard asks for the setup code and the instance name
+	// and creates the first maintainer.
 	SetupStepMaintainer = "maintainer"
-	// SetupStepInstance: the signed-in maintainer has yet to give the instance its name and cities.
-	SetupStepInstance = "instance"
+	// SetupStepCities: the signed-in maintainer has yet to give the instance its cities.
+	SetupStepCities = "cities"
 )
 
 // Audit log actions of the setup.
 const (
 	// AuditSetupMaintainer: the first maintainer was created by the setup wizard; details say with which credential.
 	AuditSetupMaintainer = "setup.first_maintainer"
-	// AuditSettingsUpdate: the instance settings were changed; details hold the new name and the cities' slugs.
+	// AuditSettingsUpdate: the instance settings were changed; details hold the new name and, when they changed, the
+	// cities' slugs.
 	AuditSettingsUpdate = "settings.update"
 	// AuditSetupComplete: the setup wizard was completed.
 	AuditSetupComplete = "setup.complete"
@@ -207,7 +213,7 @@ func startSetup(app core.App, logger *slog.Logger) error {
 }
 
 // setupStep returns the step of the setup wizard for the request's member (nil without a session): the maintainer
-// step while the instance is unconfigured, the instance step for a maintainer while the instance has no cities, and
+// step while the instance is unconfigured, the cities step for a maintainer while the instance has no cities, and
 // "" otherwise (nothing to set up for this caller).
 func setupStep(app core.App, member *core.Record) (string, error) {
 	needs, err := NeedsSetup(app)
@@ -224,7 +230,7 @@ func setupStep(app core.App, member *core.Record) (string, error) {
 	if err != nil || done {
 		return "", err
 	}
-	return SetupStepInstance, nil
+	return SetupStepCities, nil
 }
 
 // checkSetupCode returns [ErrSetupDone] once a maintainer exists and [ErrInvalidSetupCode] unless code is the current
@@ -247,11 +253,17 @@ func checkSetupCode(app core.App, code string) error {
 // transaction it checks that no maintainer exists ([ErrSetupDone]) and that code is the setup code
 // ([ErrInvalidSetupCode]), prepares a new member record (role maintainer, may invite, joined_at now, no inviter),
 // calls register to fill it in and save it with its credentials, checks that the record was saved unchanged in role
-// and inviter, and writes the audit_log entry [AuditSetupMaintainer] with method (the credential kind). Any failure
-// rolls everything back. After the commit the setup code is forgotten.
-func registerFirstMaintainer(app core.App, code, method string, register Registration) (*core.Record, error) {
+// and inviter, saves instanceName as the instance's name, and writes the audit_log entries [AuditSetupMaintainer]
+// (method, the credential kind) and [AuditSettingsUpdate]. Any failure rolls everything back, the name included.
+// After the commit the setup code is forgotten.
+func registerFirstMaintainer(app core.App, code, instanceName, method string, register Registration) (*core.Record,
+	error) {
+	name, err := settings.NormalizeName(instanceName)
+	if err != nil {
+		return nil, err
+	}
 	var member *core.Record
-	err := app.RunInTransaction(func(tx core.App) error {
+	err = app.RunInTransaction(func(tx core.App) error {
 		if err := checkSetupCode(tx, code); err != nil {
 			return err
 		}
@@ -272,8 +284,14 @@ func registerFirstMaintainer(app core.App, code, method string, register Registr
 		if saved.GetString("role") != RoleMaintainer || saved.GetString("invited_by") != "" || !CanSignIn(saved) {
 			return errors.New("the registration changed the first maintainer's role or inviter")
 		}
-		return writeAudit(tx, nil, AuditSetupMaintainer, store.Members, saved.GetString(store.FieldUUID),
-			map[string]any{"method": method})
+		if err := writeAudit(tx, nil, AuditSetupMaintainer, store.Members, saved.GetString(store.FieldUUID),
+			map[string]any{"method": method}); err != nil {
+			return err
+		}
+		if err := settings.SaveName(tx, name); err != nil {
+			return err
+		}
+		return writeAudit(tx, saved, AuditSettingsUpdate, store.InstanceSettings, "", map[string]any{"name": name})
 	})
 	switch {
 	case errors.Is(err, ErrSetupDone), errors.Is(err, ErrInvalidSetupCode), errors.Is(err, errLoginNameTaken):
@@ -286,13 +304,19 @@ func registerFirstMaintainer(app core.App, code, method string, register Registr
 }
 
 // startSetupPassword is step 1 of creating the first maintainer with password and TOTP: the setup code instead of an
-// invite, otherwise as [startPasswordRegistration].
-func startSetupPassword(ctx context.Context, app core.App, code, loginName, displayName, password string) (
-	*PasswordEnrolmentStart, error) {
+// invite, otherwise as [startPasswordRegistration]. The instance name is checked, sealed into the enrolment and used
+// as the TOTP issuer.
+func startSetupPassword(ctx context.Context, app core.App, code, instanceName, loginName, displayName,
+	password string) (*PasswordEnrolmentStart, error) {
 	if err := checkSetupCode(app, code); err != nil {
 		return nil, err
 	}
-	return startPasswordEnrolment(ctx, app, setupEnrolmentAAD, setupBindHash(code), loginName, displayName, password)
+	name, err := settings.NormalizeName(instanceName)
+	if err != nil {
+		return nil, err
+	}
+	return startPasswordEnrolment(ctx, app, setupEnrolmentAAD, setupBindHash(code), name, loginName, displayName,
+		password)
 }
 
 // confirmSetupPassword is step 2: as [confirmPasswordRegistration], creating the first maintainer.
@@ -300,26 +324,31 @@ func confirmSetupPassword(app core.App, code, enrolment, totpCode string) (*core
 	if err := checkSetupCode(app, code); err != nil {
 		return nil, nil, err
 	}
-	register, codes, err := passwordRegistration(app, setupEnrolmentAAD, setupBindHash(code), enrolment, totpCode)
+	pending, err := passwordRegistration(app, setupEnrolmentAAD, setupBindHash(code), enrolment, totpCode)
 	if err != nil {
 		return nil, nil, err
 	}
-	member, err := registerFirstMaintainer(app, code, CredentialPasswordTOTP, register)
+	// The name sealed into the enrolment, whatever this request says.
+	member, err := registerFirstMaintainer(app, code, pending.newInstance, CredentialPasswordTOTP, pending.register)
 	if err != nil {
 		return nil, nil, err
 	}
-	return member, *codes, nil
+	return member, *pending.codes, nil
 }
 
 // beginSetupPasskey starts creating the first maintainer with a passkey: as [BeginPasskeyRegistration], with the
-// setup code instead of an invite.
-func beginSetupPasskey(app core.App, code, loginName, displayName string) (*protocol.CredentialCreation, string,
-	error) {
+// setup code instead of an invite and the instance name sealed into the ceremony state.
+func beginSetupPasskey(app core.App, code, instanceName, loginName, displayName string) (*protocol.CredentialCreation,
+	string, error) {
 	p, err := passkeysOf(app)
 	if err != nil {
 		return nil, "", err
 	}
 	if err := checkSetupCode(app, code); err != nil {
+		return nil, "", err
+	}
+	name, err := settings.NormalizeName(instanceName)
+	if err != nil {
 		return nil, "", err
 	}
 	if loginName = NormalizeLoginName(loginName); !validLoginName(loginName) {
@@ -329,7 +358,7 @@ func beginSetupPasskey(app core.App, code, loginName, displayName string) (*prot
 	if displayName, ok = normalizeDisplayName(displayName, loginName); !ok {
 		return nil, "", errDisplayNameInvalid
 	}
-	return beginPasskeyEnrolment(app, p, ceremonySetup, setupBindHash(code), loginName, displayName)
+	return beginPasskeyEnrolment(app, p, ceremonySetup, setupBindHash(code), name, loginName, displayName)
 }
 
 // finishSetupPasskey completes it: as [FinishPasskeyRegistration], creating the first maintainer.
@@ -341,24 +370,31 @@ func finishSetupPasskey(app core.App, code, state string, response []byte) (*cor
 	if err := checkSetupCode(app, code); err != nil {
 		return nil, nil, err
 	}
-	register, codes, err := passkeyRegistration(p, ceremonySetup, setupBindHash(code), state, response)
+	pending, err := passkeyRegistration(p, ceremonySetup, setupBindHash(code), state, response)
 	if err != nil {
 		return nil, nil, err
 	}
-	member, err := registerFirstMaintainer(app, code, "passkey", register)
+	member, err := registerFirstMaintainer(app, code, pending.newInstance, "passkey", pending.register)
 	if err != nil {
 		return nil, nil, err
 	}
-	return member, *codes, nil
+	return member, *pending.codes, nil
 }
 
-// completeSetup is the last step of the wizard, on behalf of actor, a maintainer: it checks the instance's name and
-// cities ([settings.Normalize]) and saves them, in one transaction that first checks that the instance has no cities
-// yet ([ErrSetupDone] otherwise) and writes the audit_log entries [AuditSettingsUpdate] and [AuditSetupComplete].
-// It returns the settings as saved.
+// completeSetup is the last step of the wizard, on behalf of actor, a maintainer: it checks the cities and the
+// instance's name ([settings.Normalize]; an empty name keeps the one saved with the first maintainer) and saves them,
+// in one transaction that first checks that the instance has no cities yet ([ErrSetupDone] otherwise) and writes the
+// audit_log entries [AuditSettingsUpdate] and [AuditSetupComplete]. It returns the settings as saved.
 func completeSetup(app core.App, actor *core.Record, in settings.Instance) (settings.Instance, error) {
 	if err := requireNoCities(app); err != nil {
 		return settings.Instance{}, err
+	}
+	if strings.TrimSpace(in.Name) == "" {
+		current, err := settings.Load(app)
+		if err != nil {
+			return settings.Instance{}, err
+		}
+		in.Name = current.Name
 	}
 	inst, err := settings.Normalize(in)
 	if err != nil {

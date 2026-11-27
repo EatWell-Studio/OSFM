@@ -1,6 +1,6 @@
 // The first-start setup wizard's endpoints (G3; docs/architecture.md §3.3). While the instance has no maintainer,
 // GET /api/osfm/setup says so and the app sends everyone to the wizard; once it has one, only that maintainer is still
-// asked for the instance's name and cities, and afterwards the endpoint answers 404.
+// asked for the cities, and afterwards the endpoint answers 404.
 
 import { queryOptions } from '@tanstack/react-query'
 import { ApiError, apiFetch, isJson } from '@/lib/api'
@@ -9,7 +9,7 @@ import { type Instance, parseInstance } from '@/instance/instance'
 import type { Bounds } from '@/map/cities'
 
 /** The wizard's step for the current visitor, or null when there is nothing to set up for them. */
-export type SetupStep = 'maintainer' | 'instance' | null
+export type SetupStep = 'maintainer' | 'cities' | null
 
 export const setupPath = '/setup'
 export const setupQueryKey = ['setup'] as const
@@ -23,18 +23,24 @@ export async function fetchSetupStep(): Promise<SetupStep> {
     throw new ApiError(response.status, setupPath)
   }
   const step = field(await response.json(), 'step')
-  if (step !== 'maintainer' && step !== 'instance') {
+  if (step !== 'maintainer' && step !== 'cities') {
     throw unexpected(setupPath)
   }
   return step
 }
 
-export const setupQuery = queryOptions({
-  queryKey: setupQueryKey,
-  queryFn: fetchSetupStep,
-  staleTime: Infinity,
-  retry: false,
-})
+/**
+ * The step for a visitor: anonymous (null) or the signed-in member with that uuid. The answer depends on who asks, so
+ * it is cached per visitor: what an anonymous visit learned must not stand for the maintainer who then signs in.
+ */
+export function setupQuery(member: string | null) {
+  return queryOptions({
+    queryKey: [...setupQueryKey, member ?? 'anonymous'],
+    queryFn: fetchSetupStep,
+    staleTime: Infinity,
+    retry: false,
+  })
+}
 
 /** Whether the server takes code as the current setup code. */
 export async function checkSetupCode(code: string): Promise<boolean> {
@@ -45,7 +51,14 @@ export async function checkSetupCode(code: string): Promise<boolean> {
   return valid
 }
 
-/** Saves the instance's name and cities, which completes the setup. */
+/** The instance name rules of the server: 1 to 100 characters after trimming, no control or format characters. */
+export function isValidInstanceName(name: string): boolean {
+  const trimmed = name.trim()
+  // eslint-disable-next-line no-control-regex
+  return trimmed !== '' && Array.from(trimmed).length <= 100 && !/[\u0000-\u001f\u007f-\u009f\p{Cf}]/u.test(trimmed)
+}
+
+/** Saves the cities and the instance's name (empty keeps the saved one), which completes the setup. */
 export async function completeSetup(instance: Instance): Promise<Instance> {
   return parseInstance(await postAuth('/setup/complete', instance))
 }

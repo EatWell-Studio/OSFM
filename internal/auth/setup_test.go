@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/EatWell-Studio/OSFM/internal/auth"
 	"github.com/EatWell-Studio/OSFM/internal/auth/passkeytest"
@@ -17,8 +19,22 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
-// A setup code of the right form that is never the current one (made up).
-const otherSetupCode = "0000-0000-0000-0000"
+// Made-up values only.
+const (
+	// otherSetupCode has the right form but is never the current setup code.
+	otherSetupCode = "0000-0000-0000-0000"
+	// testInstanceName has a colon, which may not appear in a TOTP issuer, and CJK characters.
+	testInstanceName = "测试圈: Test Circle"
+)
+
+func (pe *pwEnv) savedName() string {
+	pe.t.Helper()
+	inst, err := settings.Load(pe.app)
+	if err != nil {
+		pe.t.Fatal(err)
+	}
+	return inst.Name
+}
 
 func (pe *pwEnv) setupStep(token string) (int, string) {
 	pe.t.Helper()
@@ -48,12 +64,21 @@ func TestSetupWithPassword(t *testing.T) {
 		t.Fatalf("setup status: %d %q", status, step)
 	}
 	startReq := func(setupCode string) auth.SetupPasswordStartRequest {
-		return auth.SetupPasswordStartRequest{SetupCode: setupCode, LoginName: " Test_First ", DisplayName: "Test First",
+		return auth.SetupPasswordStartRequest{SetupCode: setupCode, InstanceName: testInstanceName,
+			LoginName: " Test_First ", DisplayName: "Test First",
 			Password: testPassword}
 	}
 	for _, c := range []string{"", "x", otherSetupCode, code + "0"} {
 		expectError(t, "start with code "+c, pe.post(auth.SetupPasswordStartPath, "", startReq(c)),
 			http.StatusForbidden, auth.CodeSetupCodeInvalid)
+	}
+	// The instance name is required, by the rules of the settings.
+	for _, name := range []string{"", "  ", "Test\u0007Circle", strings.Repeat("x", 101)} {
+		req := startReq(code)
+		req.InstanceName = name
+		// From a client of its own, so that the requests count towards no other client's limits.
+		expectError(t, "start with instance name "+name, pe.postFrom(client(9), auth.SetupPasswordStartPath, req),
+			http.StatusBadRequest, auth.CodeInstanceNameInvalid)
 	}
 	// Case, spaces and dashes do not matter, as for recovery codes.
 	rec := pe.post(auth.SetupPasswordStartPath, "", startReq(strings.ToLower(strings.ReplaceAll(code, "-", " "))))
@@ -61,6 +86,21 @@ func TestSetupWithPassword(t *testing.T) {
 		t.Fatalf("start: %d %s", rec.Code, rec.Body.String())
 	}
 	start := decode[auth.RegisterPasswordStartResponse](t, rec)
+	// The TOTP issuer is the instance name; a colon, which separates issuer and account in the label, becomes a space.
+	uri, err := url.Parse(start.OTPAuthURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const issuer = "测试圈 Test Circle"
+	if got := uri.Query().Get("issuer"); got != issuer {
+		t.Errorf("issuer %q in %s", got, start.OTPAuthURI)
+	}
+	if uri.Path != "/"+issuer+":test_first" || strings.ContainsAny(uri.RawPath+uri.RawQuery, " 测") {
+		t.Errorf("label %q (raw %q) in %s", uri.Path, uri.RawPath, start.OTPAuthURI)
+	}
+	if pe.savedName() != "" {
+		t.Error("the start saved the instance name")
+	}
 
 	confirm := func(setupCode string) auth.SetupPasswordConfirmRequest {
 		return auth.SetupPasswordConfirmRequest{SetupCode: setupCode, Enrolment: start.Enrolment,
@@ -72,11 +112,14 @@ func TestSetupWithPassword(t *testing.T) {
 	expectError(t, "confirm as an invited registration", pe.post(auth.RegisterPasswordConfirmPath, "",
 		auth.RegisterPasswordConfirmRequest{Invite: code, Enrolment: start.Enrolment, Code: pe.code(start.Secret, 0)}),
 		http.StatusBadRequest, auth.CodeEnrolmentExpired)
-	if pe.maintainers() != 0 {
-		t.Fatal("a refused confirmation created a maintainer")
+	if pe.maintainers() != 0 || pe.savedName() != "" {
+		t.Fatal("a refused confirmation created a maintainer or saved the name")
 	}
 
-	rec = pe.post(auth.SetupPasswordConfirmPath, "", confirm(code))
+	// The name sealed into the enrolment is saved, whatever the confirmation says.
+	body := map[string]string{"setupCode": code, "enrolment": start.Enrolment, "code": pe.code(start.Secret, 0),
+		"instanceName": "Test Other Name"}
+	rec = pe.post(auth.SetupPasswordConfirmPath, "", body)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("confirm: %d %s", rec.Code, rec.Body.String())
 	}
@@ -99,6 +142,13 @@ func TestSetupWithPassword(t *testing.T) {
 		entry.GetString("details") != `{"method":"password_totp"}` {
 		t.Errorf("audit entry: %s %s", entry.GetString("target_uuid"), entry.GetString("details"))
 	}
+	if got := pe.savedName(); got != testInstanceName {
+		t.Errorf("saved instance name %q", got)
+	}
+	if entry, err := pe.app.FindFirstRecordByData(store.AuditLog, "action", auth.AuditSettingsUpdate); err != nil ||
+		entry.GetString("actor") != m.Id {
+		t.Errorf("settings audit entry: %v", err)
+	}
 
 	// The maintainer can sign in like anyone else.
 	ticket := pe.ticket("test_first", testPassword)
@@ -108,11 +158,11 @@ func TestSetupWithPassword(t *testing.T) {
 		t.Errorf("sign-in: %d %s", rec.Code, rec.Body.String())
 	}
 
-	// Setup is over for everyone but this maintainer, who still has to name the instance.
+	// Setup is over for everyone but this maintainer, who still has to give the instance its cities.
 	if status, _ := pe.setupStep(""); status != http.StatusNotFound {
 		t.Errorf("setup status without a session: %d", status)
 	}
-	if status, step := pe.setupStep(token); status != http.StatusOK || step != auth.SetupStepInstance {
+	if status, step := pe.setupStep(token); status != http.StatusOK || step != auth.SetupStepCities {
 		t.Errorf("setup status of the maintainer: %d %q", status, step)
 	}
 	for _, path := range []string{auth.SetupPasswordStartPath, auth.SetupPasswordConfirmPath, auth.SetupCheckPath,
@@ -136,7 +186,8 @@ func TestSetupWithPasskey(t *testing.T) {
 	a := &passkeytest.Authenticator{}
 
 	options := func(setupCode string) string {
-		return jsonBody(t, auth.SetupPasskeyOptionsRequest{SetupCode: setupCode, LoginName: "test_first"})
+		return jsonBody(t, auth.SetupPasskeyOptionsRequest{SetupCode: setupCode, InstanceName: "Test Circle",
+			LoginName: "test_first"})
 	}
 	if rec := pe.reqJSON(http.MethodPost, auth.SetupPasskeyOptionsPath, "", options(otherSetupCode)); rec.Code !=
 		http.StatusForbidden || errorCode(t, rec) != auth.CodeSetupCodeInvalid {
@@ -180,6 +231,9 @@ func TestSetupWithPasskey(t *testing.T) {
 	if m := pe.memberByLogin("test_first"); m.GetString("role") != auth.RoleMaintainer {
 		t.Errorf("role %q", m.GetString("role"))
 	}
+	if got := pe.savedName(); got != "Test Circle" {
+		t.Errorf("saved instance name %q", got)
+	}
 	if rec := pe.passkeySignIn(a); rec.Code != http.StatusNoContent {
 		t.Errorf("passkey sign-in: %d %s", rec.Code, rec.Body.String())
 	}
@@ -201,7 +255,7 @@ func TestConcurrentSetup(t *testing.T) {
 		for i := range errs {
 			wg.Go(func() {
 				<-start
-				_, errs[i] = auth.RegisterFirstMaintainer(pe.app, code, "test",
+				_, errs[i] = auth.RegisterFirstMaintainer(pe.app, code, "Test Circle", "test",
 					registerAs(fmt.Sprintf("test_r%d_%d", round, i)))
 			})
 		}
@@ -250,7 +304,7 @@ func TestSetupCodeCheck(t *testing.T) {
 func TestCompleteSetup(t *testing.T) {
 	pe := newPWEnv(t)
 	code := auth.NewSetupCode(t, pe.app)
-	maintainer, err := auth.RegisterFirstMaintainer(pe.app, code, "test", registerAs("test_first"))
+	maintainer, err := auth.RegisterFirstMaintainer(pe.app, code, "Test Circle", "test", registerAs("test_first"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +313,8 @@ func TestCompleteSetup(t *testing.T) {
 
 	city := settings.City{Slug: "test-town", Name: " Test Town ", BBox: [4]float64{10, 20, 10.5, 20.5},
 		Center: [2]float64{10.2, 20.2}}
-	valid := settings.Instance{Name: " Test Circle ", Cities: []settings.City{city}}
+	// Without a name, the one saved with the maintainer stays.
+	valid := settings.Instance{Cities: []settings.City{city}}
 	if rec := pe.post(auth.SetupCompletePath, pe.session(member), valid); rec.Code != http.StatusForbidden {
 		t.Errorf("a member: %d", rec.Code)
 	}
@@ -275,7 +330,7 @@ func TestCompleteSetup(t *testing.T) {
 		inst settings.Instance
 		code string
 	}{
-		"no name":         {settings.Instance{Name: "  ", Cities: valid.Cities}, auth.CodeInstanceNameInvalid},
+		"control char":    {settings.Instance{Name: "Test\u0007", Cities: valid.Cities}, auth.CodeInstanceNameInvalid},
 		"long name":       {settings.Instance{Name: strings.Repeat("x", 101), Cities: valid.Cities}, auth.CodeInstanceNameInvalid},
 		"no cities":       {settings.Instance{Name: "Test Circle"}, auth.CodeCitiesInvalid},
 		"bad slug":        {with(func(c *settings.City) { c.Slug = "Test Town" }), auth.CodeCitiesInvalid},
@@ -331,7 +386,8 @@ func TestSetupRoutesRateLimited(t *testing.T) {
 			rec = pe.postFrom(client(1), auth.SetupCheckPath, auth.SetupCheckRequest{Code: otherSetupCode})
 		} else {
 			rec = pe.postFrom(client(1), auth.SetupPasswordStartPath, auth.SetupPasswordStartRequest{
-				SetupCode: otherSetupCode, LoginName: "test_first", DisplayName: "Test First", Password: "made up password",
+				SetupCode: otherSetupCode, InstanceName: "Test Circle", LoginName: "test_first", DisplayName: "Test First",
+				Password: "made up password",
 			})
 		}
 		if rec.Code == http.StatusTooManyRequests {
@@ -343,5 +399,34 @@ func TestSetupRoutesRateLimited(t *testing.T) {
 	rec := pe.postFrom(client(2), auth.SetupCheckPath, auth.SetupCheckRequest{Code: code})
 	if rec.Code != http.StatusOK || !decode[auth.SetupCheckResponse](t, rec).Valid {
 		t.Errorf("another client: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestFirstMaintainerAndNameTogether: the instance name is saved in the transaction that creates the first maintainer;
+// a creation that fails leaves no name, and an invalid name creates no maintainer.
+func TestFirstMaintainerAndNameTogether(t *testing.T) {
+	pe := newPWEnv(t)
+	code := auth.NewSetupCode(t, pe.app)
+	failing := func(tx core.App, m *core.Record) error {
+		if err := registerAs("test_first")(tx, m); err != nil {
+			return err
+		}
+		return errors.New("test failure after saving the member")
+	}
+	if _, err := auth.RegisterFirstMaintainer(pe.app, code, "Test Circle", "test", failing); err == nil {
+		t.Fatal("a failing registration succeeded")
+	}
+	if _, err := auth.RegisterFirstMaintainer(pe.app, code, " ", "test", registerAs("test_first")); !errors.Is(err,
+		settings.ErrInvalidName) {
+		t.Fatalf("an empty name: %v", err)
+	}
+	if pe.maintainers() != 0 || pe.savedName() != "" {
+		t.Fatalf("after failures: %d maintainers, name %q", pe.maintainers(), pe.savedName())
+	}
+	if _, err := auth.RegisterFirstMaintainer(pe.app, code, " Test Circle ", "test", registerAs("test_first")); err != nil {
+		t.Fatal(err)
+	}
+	if pe.maintainers() != 1 || pe.savedName() != "Test Circle" {
+		t.Fatalf("%d maintainers, name %q", pe.maintainers(), pe.savedName())
 	}
 }

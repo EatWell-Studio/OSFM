@@ -92,7 +92,8 @@ func TestSetupResponsesHaveNoInternalIDs(t *testing.T) {
 			case "password":
 				var start auth.RegisterPasswordStartResponse
 				decodeInto(send(http.MethodPost, auth.SetupPasswordStartPath, "", auth.SetupPasswordStartRequest{
-					SetupCode: code, LoginName: "test_first", DisplayName: "Test First", Password: "test password, made up",
+					SetupCode: code, InstanceName: "Test Circle", LoginName: "test_first", DisplayName: "Test First",
+					Password: "test password, made up",
 				}, http.StatusOK), &start)
 				totpCode, err := totp.GenerateCode(start.Secret, time.Now())
 				if err != nil {
@@ -105,7 +106,7 @@ func TestSetupResponsesHaveNoInternalIDs(t *testing.T) {
 				a := &passkeytest.Authenticator{Origin: "http://localhost:8090"}
 				var options auth.PasskeyOptionsResponse
 				rec := send(http.MethodPost, auth.SetupPasskeyOptionsPath, "", auth.SetupPasskeyOptionsRequest{
-					SetupCode: code, LoginName: "test_first",
+					SetupCode: code, InstanceName: "Test Circle", LoginName: "test_first",
 				}, http.StatusOK)
 				var raw struct {
 					Options json.RawMessage `json:"options"`
@@ -144,12 +145,17 @@ func TestSetupResponsesHaveNoInternalIDs(t *testing.T) {
 			}
 			send(http.MethodGet, auth.SetupPath, "", nil, http.StatusNotFound)
 			decodeInto(send(http.MethodGet, auth.SetupPath, cookie, nil, http.StatusOK), &status)
-			if status.Step != auth.SetupStepInstance {
+			if status.Step != auth.SetupStepCities {
 				t.Fatalf("step %q", status.Step)
 			}
-			send(http.MethodGet, settings.InstancePath, cookie, nil, http.StatusOK)
+			// The name came with the maintainer; the wizard resumes at the cities with it.
+			var saved settings.Instance
+			decodeInto(send(http.MethodGet, settings.InstancePath, cookie, nil, http.StatusOK), &saved)
+			if saved.Name != "Test Circle" || len(saved.Cities) != 0 {
+				t.Errorf("settings after the maintainer: %+v", saved)
+			}
 
-			inst := settings.Instance{Name: "Test Circle", Cities: []settings.City{{
+			inst := settings.Instance{Cities: []settings.City{{
 				Slug: "testtown", Name: "Test Town", BBox: [4]float64{1, 1, 2, 2}, Center: [2]float64{1.5, 1.5},
 			}}}
 			send(http.MethodPost, auth.SetupCompletePath, cookie, inst, http.StatusOK)

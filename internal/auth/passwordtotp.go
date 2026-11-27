@@ -161,11 +161,12 @@ func instanceName(app core.App) string {
 // passwordEnrolment is the pending enrolment of a password and TOTP registration, sealed under purposeEnrolment.
 type passwordEnrolment struct {
 	Expires      int64  `json:"exp"`
-	InviteHash   string `json:"inv"`  // hashToken of the invite code, or of the setup code (setup.go)
-	LoginName    string `json:"ln"`   // normalised
-	DisplayName  string `json:"dn"`   // normalised
-	PasswordHash string `json:"pw"`   // PHC string
-	TOTPSecret   []byte `json:"totp"` // raw secret
+	InviteHash   string `json:"inv"`          // hashToken of the invite code, or of the setup code (setup.go)
+	LoginName    string `json:"ln"`           // normalised
+	DisplayName  string `json:"dn"`           // normalised
+	PasswordHash string `json:"pw"`           // PHC string
+	TOTPSecret   []byte `json:"totp"`         // raw secret
+	Instance     string `json:"in,omitempty"` // the first maintainer's: the instance name (setup.go)
 }
 
 func (p *passwordEnrolment) expiry() int64 { return p.Expires }
@@ -193,14 +194,16 @@ func startPasswordRegistration(ctx context.Context, app core.App, inviteCode, lo
 	if !valid {
 		return nil, ErrInvalidInvite
 	}
-	return startPasswordEnrolment(ctx, app, enrolmentAAD, hashToken(inviteCode), loginName, displayName, password)
+	return startPasswordEnrolment(ctx, app, enrolmentAAD, hashToken(inviteCode), "", loginName, displayName, password)
 }
 
 // startPasswordEnrolment is step 1 of a registration after the right to register has been checked: an invite here,
 // the setup code for the first maintainer (setup.go). bindHash is the hash of that invite or setup code, sealed into
-// the enrolment; aad tells the two kinds of enrolment apart.
-func startPasswordEnrolment(ctx context.Context, app core.App, aad []byte, bindHash, loginName, displayName,
-	password string) (*PasswordEnrolmentStart, error) {
+// the enrolment; aad tells the two kinds of enrolment apart. The first maintainer's enrolment also seals newInstance,
+// the instance name the setup saves with the maintainer, which is then the TOTP issuer; otherwise it is empty and the
+// issuer is the instance's current name.
+func startPasswordEnrolment(ctx context.Context, app core.App, aad []byte, bindHash, newInstance, loginName,
+	displayName, password string) (*PasswordEnrolmentStart, error) {
 	login := NormalizeLoginName(loginName)
 	if !validLoginName(login) {
 		return nil, errLoginNameInvalid
@@ -228,7 +231,11 @@ func startPasswordEnrolment(ctx context.Context, app core.App, aad []byte, bindH
 	if err != nil {
 		return nil, err
 	}
-	key, err := totpKey(secret, instanceName(app), login)
+	issuer := newInstance
+	if issuer == "" {
+		issuer = instanceName(app)
+	}
+	key, err := totpKey(secret, issuer, login)
 	if err != nil {
 		return nil, err
 	}
@@ -239,6 +246,7 @@ func startPasswordEnrolment(ctx context.Context, app core.App, aad []byte, bindH
 		DisplayName:  display,
 		PasswordHash: hash,
 		TOTPSecret:   secret,
+		Instance:     newInstance,
 	}
 	sealed, err := sealJSON(app, purposeEnrolment, p, aad)
 	if err != nil {
@@ -255,11 +263,11 @@ func startPasswordEnrolment(ctx context.Context, app core.App, aad []byte, bindH
 // confirmPasswordRegistration is step 2 of the registration: see the comment at the top of this file. It returns the
 // new member and the recovery codes; the caller starts the session.
 func confirmPasswordRegistration(app core.App, inviteCode, enrolment, code string) (*core.Record, []string, error) {
-	register, codes, err := passwordRegistration(app, enrolmentAAD, hashToken(inviteCode), enrolment, code)
+	pending, err := passwordRegistration(app, enrolmentAAD, hashToken(inviteCode), enrolment, code)
 	if err != nil {
 		return nil, nil, err
 	}
-	member, err := RegisterWithInvite(app, inviteCode, register)
+	member, err := RegisterWithInvite(app, inviteCode, pending.register)
 	switch {
 	case errors.Is(err, ErrInvalidInvite):
 		return nil, nil, ErrInvalidInvite
@@ -268,39 +276,47 @@ func confirmPasswordRegistration(app core.App, inviteCode, enrolment, code strin
 	case err != nil:
 		return nil, nil, err
 	}
-	return member, *codes, nil
+	return member, *pending.codes, nil
+}
+
+// pendingRegistration is a verified second step of a registration: the [Registration] that saves the member with the
+// credential and the recovery codes, where it leaves the codes, and, for the first maintainer, the instance name sealed
+// with the enrolment or ceremony state.
+type pendingRegistration struct {
+	register    Registration
+	codes       *[]string
+	newInstance string
 }
 
 // passwordRegistration is step 2 of a registration up to the creation of the member: it opens the pending enrolment
 // (sealed with aad, started with the invite or setup code whose hash is bindHash) and checks the TOTP code. It returns
-// the [Registration] that saves the member, the credential and the recovery codes, and where it leaves the codes.
-func passwordRegistration(app core.App, aad []byte, bindHash, enrolment, code string) (Registration, *[]string,
-	error) {
+// the registration that saves the member, the credential and the recovery codes.
+func passwordRegistration(app core.App, aad []byte, bindHash, enrolment, code string) (*pendingRegistration, error) {
 	var p passwordEnrolment
 	if err := openJSON(app, purposeEnrolment, enrolment, aad, &p); err != nil {
 		if errors.Is(err, errSealed) {
-			return nil, nil, errEnrolmentInvalid
+			return nil, errEnrolmentInvalid
 		}
-		return nil, nil, err
+		return nil, err
 	}
 	if subtle.ConstantTimeCompare([]byte(p.InviteHash), []byte(bindHash)) != 1 {
-		return nil, nil, errEnrolmentInvalid
+		return nil, errEnrolmentInvalid
 	}
 	step, ok := matchTOTP(p.TOTPSecret, code, now(), 0)
 	if !ok {
-		return nil, nil, errCodeInvalid
+		return nil, errCodeInvalid
 	}
 
 	memberUUID, err := store.NewUUID()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	secretEnc, err := sealTOTPSecret(app, memberUUID, p.TOTPSecret)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var codes []string
-	return func(tx core.App, member *core.Record) error {
+	return &pendingRegistration{codes: &codes, newInstance: p.Instance, register: func(tx core.App, member *core.Record) error {
 		taken, err := loginNameTaken(tx, p.LoginName)
 		if err != nil {
 			return err
@@ -330,7 +346,7 @@ func passwordRegistration(app core.App, aad []byte, bindHash, enrolment, code st
 		}
 		codes, err = NewRecoveryCodes(tx, member)
 		return err
-	}, &codes, nil
+	}}, nil
 }
 
 // signInTicket is the sealed proof that the password step succeeded, under purposeTicket.

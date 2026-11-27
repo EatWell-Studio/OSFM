@@ -3,10 +3,11 @@ import { type SyntheticEvent, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Field } from '@/components/Field'
 import { Button } from '@/components/ui/button'
-import type { InstanceCity } from '@/instance/instance'
-import { authErrorCode } from '@/lib/authApi'
+import { type InstanceCity, instanceQuery } from '@/instance/instance'
+import { authErrorCode, authRetryAfter, rateLimitedCode } from '@/lib/authApi'
+import { rateLimitMessage } from '@/lib/rateLimit'
 import { type Bounds, citiesQueryKey, cityLabel, fetchCities } from '@/map/cities'
-import { completeSetup, parseBbox } from './setup'
+import { completeSetup, isValidInstanceName, parseBbox } from './setup'
 
 const slugPattern = /^[a-z0-9-]{1,64}$/
 const maxCityName = 64
@@ -33,13 +34,18 @@ interface ManualCity {
 }
 
 /**
- * Step 3 of the setup: the cities. The basemap archives already in the server's tiles directory (GET /tiles/) are
+ * The last step of the setup, for the signed-in first maintainer: the cities. The instance name saved with the
+ * maintainer is shown and can still be corrected; left as it is, the request carries no name and the server keeps it. The basemap archives already in the server's tiles directory (GET /tiles/) are
  * offered with their bounds, each to be used or not under a display name; cities whose basemap is not there yet can be
  * added with a slug and a bounding box, and for those the step shows the deploy/tiles.sh command that extracts the
- * basemap, and a button to look for the archives again. At least one city; then the setup is complete.
+ * basemap, and a button to look for the archives again. At least one city; then the setup is complete. Reached again
+ * after signing in when the wizard was left before this step.
  */
-export function CitiesStep({ name, onBack, onDone }: { name: string; onBack: () => void; onDone: () => void }) {
+export function CitiesStep({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation()
+  const instance = useQuery(instanceQuery)
+  // The name as edited here; null while it is the saved one.
+  const [name, setName] = useState<string | null>(null)
   const archives = useQuery({ queryKey: citiesQueryKey, queryFn: ({ signal }) => fetchCities(signal) })
   // Per archive id: whether it is used and under which name; archives not in here are used under their label.
   const [edits, setEdits] = useState<Record<string, { use: boolean; name: string }>>({})
@@ -57,6 +63,9 @@ export function CitiesStep({ name, onBack, onDone }: { name: string; onBack: () 
     onSuccess: onDone,
     onError: (err) => {
       switch (authErrorCode(err)) {
+        case rateLimitedCode:
+          setError(rateLimitMessage(t, authRetryAfter(err)))
+          break
         case 'cities_invalid':
         case 'instance_name_invalid':
           setError(t('setup.cities.errors.invalid'))
@@ -90,12 +99,27 @@ export function CitiesStep({ name, onBack, onDone }: { name: string; onBack: () 
       setError(t('setup.cities.errors.name'))
       return
     }
+    if (name !== null && !isValidInstanceName(name)) {
+      setError(t('setup.name.required'))
+      return
+    }
     setError(null)
-    save.mutate({ name, cities })
+    save.mutate({ name: name?.trim() ?? '', cities })
   }
 
   return (
     <div className="flex flex-col gap-4">
+      <Field
+        label={t('setup.name.label')}
+        hint={t('setup.cities.nameHint')}
+        name="instance-name"
+        autoComplete="off"
+        maxLength={100}
+        value={name ?? instance.data?.name ?? ''}
+        onChange={(e) => {
+          setName(e.target.value)
+        }}
+      />
       <p>{t('setup.cities.intro')}</p>
 
       <section className="flex flex-col gap-3">
@@ -169,9 +193,6 @@ export function CitiesStep({ name, onBack, onDone }: { name: string; onBack: () 
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" size="lg" onClick={onBack}>
-          {t('setup.cities.back')}
-        </Button>
         <Button size="lg" disabled={save.isPending} onClick={finish}>
           {save.isPending ? t('setup.cities.working') : t('setup.cities.finish')}
         </Button>

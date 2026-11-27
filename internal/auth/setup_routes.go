@@ -41,7 +41,7 @@ const (
 // maxSetupCompleteBody bounds the body of POST [SetupCompletePath]: [settings.MaxCities] cities of a few hundred bytes.
 const maxSetupCompleteBody = 32 << 10
 
-// SetupStatusResponse is the response of GET [SetupPath]: [SetupStepMaintainer] or [SetupStepInstance].
+// SetupStatusResponse is the response of GET [SetupPath]: [SetupStepMaintainer] or [SetupStepCities].
 type SetupStatusResponse struct {
 	Step string `json:"step"`
 }
@@ -59,10 +59,12 @@ type SetupCheckResponse struct {
 // SetupPasswordStartRequest is the body of POST [SetupPasswordStartPath]; the response is a
 // [RegisterPasswordStartResponse].
 type SetupPasswordStartRequest struct {
-	SetupCode   string `json:"setupCode"`
-	LoginName   string `json:"loginName"`
-	DisplayName string `json:"displayName"`
-	Password    string `json:"password"`
+	SetupCode string `json:"setupCode"`
+	// InstanceName is sealed into the enrolment, is the TOTP issuer and is saved with the maintainer.
+	InstanceName string `json:"instanceName"`
+	LoginName    string `json:"loginName"`
+	DisplayName  string `json:"displayName"`
+	Password     string `json:"password"`
 }
 
 // SetupPasswordConfirmRequest is the body of POST [SetupPasswordConfirmPath]; the response is a [RegisteredResponse]
@@ -76,9 +78,11 @@ type SetupPasswordConfirmRequest struct {
 // SetupPasskeyOptionsRequest is the body of POST [SetupPasskeyOptionsPath]; the response is a
 // [PasskeyOptionsResponse].
 type SetupPasskeyOptionsRequest struct {
-	SetupCode   string `json:"setupCode"`
-	LoginName   string `json:"loginName"`
-	DisplayName string `json:"displayName"`
+	SetupCode string `json:"setupCode"`
+	// InstanceName is sealed into the ceremony state and saved with the maintainer.
+	InstanceName string `json:"instanceName"`
+	LoginName    string `json:"loginName"`
+	DisplayName  string `json:"displayName"`
 }
 
 // SetupPasskeyRequest is the body of POST [SetupPasskeyPath]; the response is a [PasskeyRegisterResponse] (201) with
@@ -89,7 +93,8 @@ type SetupPasskeyRequest struct {
 	Credential json.RawMessage `json:"credential"`
 }
 
-// The body of POST [SetupCompletePath] and its response are a [settings.Instance].
+// The body of POST [SetupCompletePath] and its response are a [settings.Instance]; an empty name in the body keeps the
+// name saved with the first maintainer.
 
 func bindSetupRoutes(se *core.ServeEvent) {
 	Public(se.Router.GET(SetupPath, handleSetupStatus))
@@ -171,8 +176,8 @@ func handleSetupPasswordStart(e *core.RequestEvent) error {
 	if !readAuthJSON(e, &req) {
 		return badRequest(e)
 	}
-	start, err := startSetupPassword(e.Request.Context(), e.App, req.SetupCode, req.LoginName, req.DisplayName,
-		req.Password)
+	start, err := startSetupPassword(e.Request.Context(), e.App, req.SetupCode, req.InstanceName, req.LoginName,
+		req.DisplayName, req.Password)
 	if err != nil {
 		return setupError(e, err)
 	}
@@ -203,7 +208,7 @@ func handleSetupPasskeyOptions(e *core.RequestEvent) error {
 	if err := readPasskeyJSON(e, &req); err != nil {
 		return badRequest(e)
 	}
-	options, state, err := beginSetupPasskey(e.App, req.SetupCode, req.LoginName, req.DisplayName)
+	options, state, err := beginSetupPasskey(e.App, req.SetupCode, req.InstanceName, req.LoginName, req.DisplayName)
 	if err != nil {
 		return setupError(e, err)
 	}

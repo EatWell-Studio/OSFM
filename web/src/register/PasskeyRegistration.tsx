@@ -22,6 +22,7 @@ const messageKeys = {
   invite_invalid: 'passkey.register.errors.invalidInvite',
   setup_code_invalid: 'setup.errors.codeInvalid',
   setup_done: 'setup.errors.done',
+  instance_name_invalid: 'setup.name.required',
   passkey_failed: 'passkey.register.errors.verifyFailed',
   passkeys_unavailable: 'passkey.errors.unavailable',
   cancelled: 'passkey.errors.cancelled',

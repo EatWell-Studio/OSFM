@@ -6,27 +6,37 @@ import { Field } from '@/components/Field'
 import { PageHeading } from '@/components/PageHeading'
 import { TopBar } from '@/components/TopBar'
 import { Button } from '@/components/ui/button'
-import { instanceQueryKey } from '@/instance/instance'
+import { instanceQuery, instanceQueryKey } from '@/instance/instance'
+import { authErrorCode, authRetryAfter, rateLimitedCode } from '@/lib/authApi'
+import { rateLimitMessage } from '@/lib/rateLimit'
 import { PasskeyRegistration } from '@/register/PasskeyRegistration'
 import { PasswordTotpRegistration } from '@/register/PasswordTotpRegistration'
 import { type Me, sessionQueryKey } from '@/session/session'
+import { useSession } from '@/session/useSession'
 import { CitiesStep } from './CitiesStep'
-import { checkSetupCode, normalizeSetupCode, setupQuery, setupQueryKey } from './setup'
+import { checkSetupCode, isValidInstanceName, normalizeSetupCode, setupQuery, setupQueryKey } from './setup'
 
 /**
- * The first-start setup wizard (G3): the setup code and the first maintainer's account (the same registration forms
- * as with an invite, password and TOTP first, passkey second), then, signed in, the instance's name and its cities.
- * Which step applies comes from the server (GET /api/osfm/setup); once there is nothing left to set up, the page
- * leads to the map.
+ * The first-start setup wizard (G3): the setup code, the instance's name, the first maintainer's account (the same
+ * registration forms as with an invite, password and TOTP first, passkey second), then, signed in, the cities. The
+ * name is kept in the page and sent with the requests that create the maintainer: the server saves it together with
+ * the maintainer, and it is the issuer of the maintainer's TOTP entry. Which step applies comes from the server
+ * (GET /api/osfm/setup); once there is nothing left to set up, the page leads to the map.
  */
 export function SetupPage() {
   const { t } = useTranslation()
-  const setup = useQuery(setupQuery)
+  const session = useSession()
+  const setup = useQuery({
+    ...setupQuery(session.status === 'signed-in' ? session.me.uuid : null),
+    enabled: session.status !== 'loading',
+  })
+  // Once the maintainer exists, the name saved with them (members only).
+  const instance = useQuery({ ...instanceQuery, enabled: session.status === 'signed-in' })
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
   let content
-  if (setup.isPending) {
+  if (setup.isPending || session.status === 'loading') {
     content = (
       <p role="status" className="text-muted-foreground">
         {t('setup.loading')}
@@ -49,32 +59,36 @@ export function SetupPage() {
     return <Navigate to="/" replace />
   } else if (setup.data === 'maintainer') {
     content = (
-      <MaintainerStep
+      <MaintainerSteps
         onDone={(me) => {
           if (me) {
             queryClient.setQueryData(sessionQueryKey, me)
           } else {
             void queryClient.invalidateQueries({ queryKey: sessionQueryKey })
           }
+          void queryClient.invalidateQueries({ queryKey: instanceQueryKey })
           void queryClient.invalidateQueries({ queryKey: setupQueryKey })
         }}
       />
     )
   } else {
     content = (
-      <InstanceStep
-        onDone={() => {
-          queryClient.setQueryData(setupQueryKey, null)
-          void queryClient.invalidateQueries({ queryKey: instanceQueryKey })
-          void navigate('/', { replace: true })
-        }}
-      />
+      <>
+        <StepHeading n={4} name="cities" />
+        <CitiesStep
+          onDone={() => {
+            queryClient.setQueriesData({ queryKey: setupQueryKey }, null)
+            void queryClient.invalidateQueries({ queryKey: instanceQueryKey })
+            void navigate('/', { replace: true })
+          }}
+        />
+      </>
     )
   }
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <TopBar />
+      <TopBar name={instance.data?.name} />
       <main className="flex-1 pb-8">
         <PageHeading>{t('setup.title')}</PageHeading>
         <div className="flex flex-col gap-4 px-4">{content}</div>
@@ -83,29 +97,42 @@ export function SetupPage() {
   )
 }
 
-function StepHeading({ n, name }: { n: 1 | 2 | 3; name: 'account' | 'name' | 'cities' }) {
+function StepHeading({ n, name }: { n: 1 | 2 | 3 | 4; name: 'code' | 'name' | 'account' | 'cities' }) {
   const { t } = useTranslation()
   return <h2 className="text-lg font-medium">{t('setup.step', { n, name: t(`setup.steps.${name}`) })}</h2>
 }
 
-/** Step 1: the setup code, then the first maintainer's account. onDone gets the member when the method returns it. */
-function MaintainerStep({ onDone }: { onDone: (me?: Me) => void }) {
+/**
+ * Steps 1 to 3, while the instance has no maintainer: the setup code, the instance name, the first maintainer's
+ * account. onDone gets the member when the method returns it.
+ */
+function MaintainerSteps({ onDone }: { onDone: (me?: Me) => void }) {
   const { t } = useTranslation()
   const [code, setCode] = useState<string | null>(null)
+  const [name, setName] = useState<string | null>(null)
   const [method, setMethod] = useState<'password' | 'passkey'>('password')
 
   if (code === null) {
     return (
       <>
-        <StepHeading n={1} name="account" />
+        <StepHeading n={1} name="code" />
         <p>{t('setup.code.intro')}</p>
         <SetupCodeForm onValid={setCode} />
       </>
     )
   }
+  if (name === null) {
+    return (
+      <>
+        <StepHeading n={2} name="name" />
+        <NameForm onDone={setName} />
+      </>
+    )
+  }
+  const entitlement = { setupCode: code, instanceName: name }
   return (
     <>
-      <StepHeading n={1} name="account" />
+      <StepHeading n={3} name="account" />
       <p>{t('setup.account.intro')}</p>
       <div role="group" aria-label={t('setup.account.method')} className="flex flex-wrap gap-2">
         {(['password', 'passkey'] as const).map((m) => (
@@ -123,19 +150,28 @@ function MaintainerStep({ onDone }: { onDone: (me?: Me) => void }) {
       </div>
       {method === 'password' ? (
         <PasswordTotpRegistration
-          entitlement={{ setupCode: code }}
+          entitlement={entitlement}
           onRegistered={onDone}
           continueLabel={t('setup.account.continue')}
         />
       ) : (
         <PasskeyRegistration
-          entitlement={{ setupCode: code }}
+          entitlement={entitlement}
           continueLabel={t('setup.account.continue')}
           onDone={() => {
             onDone()
           }}
         />
       )}
+      <Button
+        variant="ghost"
+        className="self-start"
+        onClick={() => {
+          setName(null)
+        }}
+      >
+        {t('setup.account.back')}
+      </Button>
     </>
   )
 }
@@ -153,8 +189,14 @@ function SetupCodeForm({ onValid }: { onValid: (code: string) => void }) {
         setError(t('setup.code.invalid'))
       }
     },
-    onError: () => {
-      setError(t('setup.code.network'))
+    onError: (err) => {
+      setError(
+        authErrorCode(err) === rateLimitedCode
+          ? rateLimitMessage(t, authRetryAfter(err))
+          : authErrorCode(err) === 'setup_done'
+            ? t('setup.errors.done')
+            : t('setup.code.network'),
+      )
     },
   })
 
@@ -193,58 +235,38 @@ function SetupCodeForm({ onValid }: { onValid: (code: string) => void }) {
   )
 }
 
-/** Steps 2 and 3, for the signed-in first maintainer: the instance's name, then its cities. */
-function InstanceStep({ onDone }: { onDone: () => void }) {
+/** The instance name, kept in the page until the maintainer is created with it. */
+function NameForm({ onDone }: { onDone: (name: string) => void }) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
-  const [stage, setStage] = useState<'name' | 'cities'>('name')
   const [error, setError] = useState<string | null>(null)
-
-  if (stage === 'cities') {
-    return (
-      <>
-        <StepHeading n={3} name="cities" />
-        <CitiesStep
-          name={name.trim()}
-          onBack={() => {
-            setStage('name')
-          }}
-          onDone={onDone}
-        />
-      </>
-    )
-  }
   const submit = (e: SyntheticEvent) => {
     e.preventDefault()
-    const trimmed = name.trim()
-    if (trimmed === '' || Array.from(trimmed).length > 100) {
+    if (!isValidInstanceName(name)) {
       setError(t('setup.name.required'))
       return
     }
     setError(null)
-    setStage('cities')
+    onDone(name.trim())
   }
   return (
-    <>
-      <StepHeading n={2} name="name" />
-      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-        <Field
-          label={t('setup.name.label')}
-          hint={t('setup.name.hint')}
-          error={error}
-          name="instance-name"
-          autoComplete="off"
-          required
-          maxLength={100}
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value)
-          }}
-        />
-        <Button type="submit" size="lg" className="self-start">
-          {t('setup.name.next')}
-        </Button>
-      </form>
-    </>
+    <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      <Field
+        label={t('setup.name.label')}
+        hint={t('setup.name.hint')}
+        error={error}
+        name="instance-name"
+        autoComplete="off"
+        required
+        maxLength={100}
+        value={name}
+        onChange={(e) => {
+          setName(e.target.value)
+        }}
+      />
+      <Button type="submit" size="lg" className="self-start">
+        {t('setup.name.next')}
+      </Button>
+    </form>
   )
 }

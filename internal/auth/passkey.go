@@ -141,6 +141,7 @@ type registrationState struct {
 	DisplayName string               `json:"n"`
 	UserHandle  []byte               `json:"h"`
 	Session     webauthn.SessionData `json:"s"`
+	Instance    string               `json:"in,omitempty"` // the first maintainer's: the instance name (setup.go)
 }
 
 // BeginPasskeyRegistration starts registering a new member with a passkey: it checks the invite code (without using
@@ -167,14 +168,14 @@ func BeginPasskeyRegistration(app core.App, code, loginName, displayName string)
 	if !ok {
 		return nil, "", ErrInvalidInvite
 	}
-	return beginPasskeyEnrolment(app, p, ceremonyRegister, hashToken(code), loginName, displayName)
+	return beginPasskeyEnrolment(app, p, ceremonyRegister, hashToken(code), "", loginName, displayName)
 }
 
 // beginPasskeyEnrolment is the first request of a passkey registration after the right to register has been checked
 // (an invite, or the setup code for the first maintainer: setup.go) and the names normalised: it checks that the login
 // name is free and returns the creation options with the state sealed for the ceremony kind, binding bindHash, the
-// hash of the invite or setup code.
-func beginPasskeyEnrolment(app core.App, p *passkeys, kind, bindHash, loginName, displayName string) (
+// hash of the invite or setup code, and, for the first maintainer, newInstance, the instance name the setup saves.
+func beginPasskeyEnrolment(app core.App, p *passkeys, kind, bindHash, newInstance, loginName, displayName string) (
 	options *protocol.CredentialCreation, state string, err error) {
 	if taken, err := loginNameTaken(app, loginName); err != nil {
 		return nil, "", err
@@ -193,7 +194,7 @@ func beginPasskeyEnrolment(app core.App, p *passkeys, kind, bindHash, loginName,
 	}
 	state, err = p.states.seal(kind, ceremonyTTL, registrationState{
 		InviteHash: bindHash, LoginName: loginName, DisplayName: displayName, UserHandle: handle,
-		Session: *session,
+		Session: *session, Instance: newInstance,
 	})
 	if err != nil {
 		return nil, "", err
@@ -212,41 +213,41 @@ func FinishPasskeyRegistration(app core.App, code, state string, response []byte
 	if err != nil {
 		return nil, nil, err
 	}
-	register, codes, err := passkeyRegistration(p, ceremonyRegister, hashToken(code), state, response)
+	pending, err := passkeyRegistration(p, ceremonyRegister, hashToken(code), state, response)
 	if err != nil {
 		return nil, nil, err
 	}
-	if member, err = RegisterWithInvite(app, code, register); err != nil {
+	if member, err = RegisterWithInvite(app, code, pending.register); err != nil {
 		return nil, nil, err
 	}
-	return member, *codes, nil
+	return member, *pending.codes, nil
 }
 
 // passkeyRegistration verifies the second request of a passkey registration of the ceremony kind, begun with the
-// invite or setup code whose hash is bindHash, and returns the [Registration] that saves the member with the passkey
-// and new recovery codes, and where it leaves the codes.
-func passkeyRegistration(p *passkeys, kind, bindHash, state string, response []byte) (Registration, *[]string,
-	error) {
+// invite or setup code whose hash is bindHash, and returns the registration that saves the member with the passkey
+// and new recovery codes.
+func passkeyRegistration(p *passkeys, kind, bindHash, state string, response []byte) (*pendingRegistration, error) {
 	var st registrationState
 	if err := p.states.open(kind, state, &st); err != nil {
-		return nil, nil, ErrPasskeyFailed
+		return nil, ErrPasskeyFailed
 	}
 	if subtle.ConstantTimeCompare([]byte(st.InviteHash), []byte(bindHash)) != 1 {
-		return nil, nil, ErrPasskeyFailed
+		return nil, ErrPasskeyFailed
 	}
 	// The verification needs no database and runs before the registration transaction (see [Registration]).
 	parsed, err := protocol.ParseCredentialCreationResponseBytes(response)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %w", ErrPasskeyFailed, err)
+		return nil, fmt.Errorf("%w: %w", ErrPasskeyFailed, err)
 	}
 	user := &passkeyUser{handle: st.UserHandle, name: st.LoginName, displayName: st.DisplayName}
 	cred, err := p.wa.CreateCredential(user, st.Session, parsed)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %w", ErrPasskeyFailed, err)
+		return nil, fmt.Errorf("%w: %w", ErrPasskeyFailed, err)
 	}
 
 	var recoveryCodes []string
-	return func(tx core.App, m *core.Record) error {
+	return &pendingRegistration{codes: &recoveryCodes, newInstance: st.Instance, register: func(tx core.App,
+		m *core.Record) error {
 		if taken, err := loginNameTaken(tx, st.LoginName); err != nil {
 			return err
 		} else if taken {
@@ -264,7 +265,7 @@ func passkeyRegistration(p *passkeys, kind, bindHash, state string, response []b
 		var err error
 		recoveryCodes, err = NewRecoveryCodes(tx, m)
 		return err
-	}, &recoveryCodes, nil
+	}}, nil
 }
 
 // errCredentialExists: the credential ID is registered already.

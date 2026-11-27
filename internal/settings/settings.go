@@ -65,9 +65,9 @@ var (
 // bounding box with min < max within the WGS-84 range, and a center inside it. It returns [ErrInvalidName] or an
 // error wrapping [ErrInvalidCities].
 func Normalize(in Instance) (Instance, error) {
-	name, ok := normalizeText(in.Name, MaxNameLength)
-	if !ok {
-		return Instance{}, ErrInvalidName
+	name, err := NormalizeName(in.Name)
+	if err != nil {
+		return Instance{}, err
 	}
 	if len(in.Cities) == 0 || len(in.Cities) > MaxCities {
 		return Instance{}, fmt.Errorf("%w: 1 to %d cities", ErrInvalidCities, MaxCities)
@@ -86,6 +86,16 @@ func Normalize(in Instance) (Instance, error) {
 		out.Cities = append(out.Cities, c)
 	}
 	return out, nil
+}
+
+// NormalizeName returns an instance name as stored, trimmed, or [ErrInvalidName] when it is empty, longer than
+// [MaxNameLength] characters or contains control or format characters.
+func NormalizeName(name string) (string, error) {
+	name, ok := normalizeText(name, MaxNameLength)
+	if !ok {
+		return "", ErrInvalidName
+	}
+	return name, nil
 }
 
 func normalizeCity(c City) (City, error) {
@@ -159,6 +169,20 @@ func Save(app core.App, inst Instance) error {
 	}
 	r.Set("name", inst.Name)
 	r.Set("cities", inst.Cities)
+	if err := app.Save(r); err != nil {
+		return fmt.Errorf("settings: save: %w", err)
+	}
+	return nil
+}
+
+// SaveName writes the instance name, which [NormalizeName] has checked, into the settings row. It runs in the
+// caller's transaction when app is a transaction's app.
+func SaveName(app core.App, name string) error {
+	r, err := app.FindRecordById(store.InstanceSettings, store.SettingsID)
+	if err != nil {
+		return fmt.Errorf("settings: %w", err)
+	}
+	r.Set("name", name)
 	if err := app.Save(r); err != nil {
 		return fmt.Errorf("settings: save: %w", err)
 	}

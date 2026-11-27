@@ -43,6 +43,8 @@ function startError(t: T, error: unknown): Errors {
       return { form: t('setup.errors.codeInvalid') }
     case 'setup_done':
       return { form: t('setup.errors.done') }
+    case 'instance_name_invalid':
+      return { form: t('setup.name.required') }
     case 'login_name_invalid':
       return { loginName: t('pages.register.password.errors.loginNameInvalid') }
     case 'login_name_taken':
