@@ -2,6 +2,7 @@
 // they are generated from the server's structs (auth.RegisterPasswordStartResponse and friends).
 
 import { field, isMe, postAuth, unexpected } from '@/lib/authApi'
+import { type Entitlement, registrationPaths } from '@/lib/entitlement'
 import type { Me } from '@/session/session'
 
 export interface PasswordEnrolment {
@@ -25,20 +26,20 @@ export interface SignedIn {
   recoveryCodesLeft?: number
 }
 
-const startPath = '/register/password/start'
-const confirmPath = '/register/password/confirm'
 const passwordPath = '/signin/password'
 const totpPath = '/signin/totp'
 const recoveryPath = '/signin/recovery'
 
-/** Step 1 of the registration: checks invite, login name and password; returns the TOTP secret. Creates nothing. */
-export async function startPasswordRegistration(req: {
-  invite: string
-  loginName: string
-  displayName: string
-  password: string
-}): Promise<PasswordEnrolment> {
-  const body = await postAuth(startPath, req)
+/**
+ * Step 1 of the registration: checks the invite (or setup code), login name and password; returns the TOTP secret.
+ * Creates nothing.
+ */
+export async function startPasswordRegistration(
+  entitlement: Entitlement,
+  req: { loginName: string; displayName: string; password: string },
+): Promise<PasswordEnrolment> {
+  const startPath = registrationPaths(entitlement).passwordStart
+  const body = await postAuth(startPath, { ...entitlement, ...req })
   const enrolment = field(body, 'enrolment')
   const secret = field(body, 'secret')
   const otpauthUri = field(body, 'otpauthUri')
@@ -56,12 +57,12 @@ export async function startPasswordRegistration(req: {
 }
 
 /** Step 2: one code from the app creates the member, starts the session and returns the recovery codes. */
-export async function confirmPasswordRegistration(req: {
-  invite: string
-  enrolment: string
-  code: string
-}): Promise<Registered> {
-  const body = await postAuth(confirmPath, req)
+export async function confirmPasswordRegistration(
+  entitlement: Entitlement,
+  req: { enrolment: string; code: string },
+): Promise<Registered> {
+  const confirmPath = registrationPaths(entitlement).passwordConfirm
+  const body = await postAuth(confirmPath, { ...entitlement, ...req })
   const me = field(body, 'me')
   const codes = field(body, 'recoveryCodes')
   if (!isMe(me) || !Array.isArray(codes) || !codes.every((c) => typeof c === 'string')) {

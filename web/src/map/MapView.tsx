@@ -6,11 +6,12 @@ import { AttributionControl, Map as MapLibreMap, type MapRef, Marker } from '@vi
 import { LocateFixedIcon, MinusIcon, PlusIcon } from 'lucide-react'
 import * as maplibregl from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
-import { type City, citiesQueryKey, cityLabel, contains, fetchCities, pickCity } from './cities'
+import { instanceQuery } from '@/instance/instance'
+import { type City, citiesQueryKey, contains, fetchCities, type MapCity, mergeCities, pickCity } from './cities'
 import { basemapLanguage, buildStyle, localIdeographFontFamily } from './style'
 import { type Position, useLocate } from './useLocate'
 
@@ -45,8 +46,10 @@ const transformRequest: maplibregl.RequestTransformFunction = (url) => ({ url, c
 export default function MapView() {
   const { t } = useTranslation()
   const cities = useQuery({ queryKey: citiesQueryKey, queryFn: ({ signal }) => fetchCities(signal) })
+  // The display names of the cities, and the cities that have no tiles yet. Without them the archives are still shown.
+  const instance = useQuery(instanceQuery)
 
-  if (cities.isPending) {
+  if (cities.isPending || instance.isPending) {
     return <MapMessage>{t('map.loading')}</MapMessage>
   }
   if (cities.isError) {
@@ -64,13 +67,14 @@ export default function MapView() {
       </MapMessage>
     )
   }
-  if (cities.data.length === 0) {
+  const choices = mergeCities(cities.data, instance.data?.cities ?? [])
+  if (choices.length === 0) {
     return <MapMessage>{t('map.noCities')}</MapMessage>
   }
-  return <CityMap cities={cities.data} />
+  return <CityView choices={choices} />
 }
 
-function MapMessage({ children }: { children: React.ReactNode }) {
+function MapMessage({ children }: { children: ReactNode }) {
   return (
     <div role="status" className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
       {children}
@@ -78,18 +82,82 @@ function MapMessage({ children }: { children: React.ReactNode }) {
   )
 }
 
-function CityMap({ cities }: { cities: City[] }) {
-  const { t, i18n } = useTranslation()
+/** The city chosen in the URL (or remembered, or the first), on the map or, without tiles yet, as a notice. */
+function CityView({ choices }: { choices: MapCity[] }) {
+  const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
+  const chosen = pickCity(choices, searchParams.get(cityParam), readRememberedCity())
+  if (!chosen) {
+    throw new Error('CityView needs at least one city')
+  }
+
+  useEffect(() => {
+    rememberCity(chosen.id)
+  }, [chosen.id])
+
+  const selectCity = useCallback(
+    (id: string) => {
+      setSearchParams(
+        (params) => {
+          params.set(cityParam, id)
+          return params
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
+  )
+
+  const select = (
+    <div className="absolute top-2.5 left-2.5 z-[2]">
+      <label className="sr-only" htmlFor="map-city">
+        {t('map.city')}
+      </label>
+      <select
+        id="map-city"
+        value={chosen.id}
+        onChange={(event) => {
+          selectCity(event.target.value)
+        }}
+        className="h-9 rounded-md border bg-background px-2 text-sm shadow-sm"
+      >
+        {choices.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+
+  if (!chosen.tiles) {
+    return (
+      <div className="relative h-full">
+        {select}
+        <MapMessage>{t('map.noTiles', { city: chosen.label })}</MapMessage>
+      </div>
+    )
+  }
+  const withTiles = choices.flatMap((c) => (c.tiles ? [c.tiles] : []))
+  return <CityMap city={chosen.tiles} cities={withTiles} select={select} selectCity={selectCity} />
+}
+
+function CityMap({
+  city,
+  cities,
+  select,
+  selectCity,
+}: {
+  city: City
+  cities: City[]
+  select: ReactNode
+  selectCity: (id: string) => void
+}) {
+  const { t, i18n } = useTranslation()
   const mapRef = useRef<MapRef>(null)
   const [position, setPosition] = useState<Position | null>(null)
   // A position to center on once the map shows the city it lies in.
   const pendingCenter = useRef<Position | null>(null)
-
-  const city = pickCity(cities, searchParams.get(cityParam), readRememberedCity())
-  if (!city) {
-    throw new Error('CityMap needs at least one city')
-  }
 
   const lang = basemapLanguage(i18n.language)
   const style = useMemo(() => buildStyle(city, lang, window.location.origin), [city, lang])
@@ -100,10 +168,6 @@ function CityMap({ cities }: { cities: City[] }) {
     }),
     [t],
   )
-
-  useEffect(() => {
-    rememberCity(city.id)
-  }, [city.id])
 
   // Switching cities moves the map to the new city: the bounds changed with the props already.
   const shownCity = useRef(city.id)
@@ -121,19 +185,6 @@ function CityMap({ cities }: { cities: City[] }) {
       map.fitBounds(city.bounds, { animate: false })
     }
   }, [city])
-
-  const selectCity = useCallback(
-    (id: string) => {
-      setSearchParams(
-        (params) => {
-          params.set(cityParam, id)
-          return params
-        },
-        { replace: true },
-      )
-    },
-    [setSearchParams],
-  )
 
   /** Centers on the member's position, switching to the city it lies in; false when it lies in none. */
   const showPosition = useCallback(
@@ -197,25 +248,7 @@ function CityMap({ cities }: { cities: City[] }) {
         )}
       </MapLibreMap>
 
-      <div className="absolute top-2.5 left-2.5 z-[2]">
-        <label className="sr-only" htmlFor="map-city">
-          {t('map.city')}
-        </label>
-        <select
-          id="map-city"
-          value={city.id}
-          onChange={(event) => {
-            selectCity(event.target.value)
-          }}
-          className="h-9 rounded-md border bg-background px-2 text-sm shadow-sm"
-        >
-          {cities.map((c) => (
-            <option key={c.id} value={c.id}>
-              {cityLabel(c)}
-            </option>
-          ))}
-        </select>
-      </div>
+      {select}
 
       {/* Our own buttons rather than MapLibre's controls, whose icons are data: URLs that the CSP refuses (§4.7). */}
       <div className="absolute top-2.5 right-2.5 z-[2] flex flex-col gap-2">

@@ -166,7 +166,8 @@
       "zoomIn": "Zoom in",
       "zoomOut": "Zoom out",
       "toggleAttribution": "Show or hide attribution"
-    }
+    },
+    "noTiles": "There is no basemap for {{city}} yet. It shows here once the server's operator has placed the city's basemap file (deploy/tiles.sh)."
   },
   "passkey": {
     "errors": {
@@ -211,6 +212,78 @@
     "confirm": "I have saved these recovery codes",
     "continue": "Open the map",
     "fileHeader": "OSFM recovery codes (each works once)"
+  },
+  "setup": {
+    "title": "Set up this instance",
+    "loading": "Checking the instance…",
+    "loadError": "Could not check the instance. Check your connection and try again.",
+    "retry": "Try again",
+    "step": "Step {{n}} of 4: {{name}}",
+    "steps": {
+      "code": "Setup code",
+      "name": "Instance name",
+      "account": "First maintainer",
+      "cities": "Cities"
+    },
+    "code": {
+      "intro": "This instance has no maintainer yet. Enter the setup code, then name the instance and create the first maintainer; after that, people can only join with a maintainer's invite.",
+      "label": "Setup code",
+      "hint": "The server writes the setup code to its log when it starts (look for setup_code); you can also run osfm setup-code on the server. Only the code from the latest start is valid.",
+      "check": "Continue",
+      "checking": "Checking…",
+      "form": "A setup code has 16 letters and digits, like XXXX-XXXX-XXXX-XXXX.",
+      "invalid": "Wrong setup code. Use the one the server printed at its latest start.",
+      "network": "Could not check the setup code. Check your connection and try again."
+    },
+    "account": {
+      "intro": "Create your maintainer account. As for every member, two-step verification is required.",
+      "method": "Sign-in method",
+      "continue": "Next: cities",
+      "back": "Change the instance name"
+    },
+    "name": {
+      "label": "Instance name",
+      "hint": "Shown at the top of the page and as the issuer of this account in authenticator apps; at most 100 characters. It is saved together with the maintainer.",
+      "required": "Enter the instance's name (at most 100 characters).",
+      "next": "Next"
+    },
+    "cities": {
+      "intro": "The cities your circle cares about, at least one. Each city's basemap is one file in the server's tiles directory, named after the city's slug.",
+      "archives": "Basemaps on the server",
+      "noArchives": "There are no basemap files on the server yet. You can add cities below and complete the setup now, and place the basemaps later.",
+      "include": "Use this city",
+      "name": "Display name",
+      "slugLabel": "Slug: {{slug}}",
+      "hasTiles": "The basemap is in place.",
+      "noTiles": "No basemap yet. In the OSFM directory on the server, run the command below to extract this city's basemap (if the data directory is not ./data, add its tiles directory as a third argument). Until the file is in place, the map shows “no basemap yet” for this city.",
+      "recheck": "Check the basemaps again",
+      "add": {
+        "title": "Add a city",
+        "name": "New city's display name",
+        "slug": "Slug",
+        "slugHint": "1 to 64 lowercase letters, digits or -; also the basemap's file name (slug.pmtiles).",
+        "bbox": "Bounding box",
+        "bboxHint": "minLon,minLat,maxLon,maxLat in WGS-84 degrees, for example 6.68,0.30,6.76,0.36. You can draw one on OpenStreetMap's export page.",
+        "submit": "Add",
+        "remove": "Remove"
+      },
+      "errors": {
+        "name": "Enter a display name (at most 64 characters).",
+        "slug": "A slug has 1 to 64 lowercase letters, digits or -.",
+        "slugTaken": "Another city has this slug.",
+        "bbox": "Write the bounding box as four numbers, minLon,minLat,maxLon,maxLat, each minimum below its maximum.",
+        "none": "Choose or add at least one city.",
+        "invalid": "The cities are not valid. Check their names, slugs and bounding boxes.",
+        "network": "Could not save. Check your connection and try again."
+      },
+      "finish": "Complete the setup",
+      "working": "Saving…",
+      "nameHint": "Saved with the maintainer; you can still change it here."
+    },
+    "errors": {
+      "codeInvalid": "Wrong or expired setup code. Use the one the server printed at its latest start.",
+      "done": "This instance has been set up already."
+    }
   },
   "rateLimit": {
     "wait_one": "Too many attempts. Try again in {{count}} minute.",

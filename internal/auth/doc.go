@@ -19,6 +19,10 @@
 // login name ([BeginPasskeySignIn], [VerifyPasskeySignIn]). Registration hands out the recovery codes
 // ([NewRecoveryCodes]).
 //
+// First-start setup (G3): while no maintainer exists, the routes under /api/osfm/setup create the first one, the only
+// member created without an invite, with the setup code the server prints when it starts; the new maintainer then
+// saves the instance's name and cities. See setup.go.
+//
 // Rate limits (N5): every public authentication route carries the [RateLimit] middleware, which keeps a request
 // budget and a failure count per client, and for the sign-in steps per login name or per member, with temporary
 // lockouts (429 with Retry-After); it also writes the audit entries of registration and sign-in. See limits.go.

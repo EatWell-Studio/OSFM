@@ -54,14 +54,16 @@ const methods: {
   {
     id: 'password',
     label: (t) => t('pages.register.methods.password'),
-    form: (props) => <PasswordTotpRegistration {...props} />,
+    form: ({ invite, onRegistered }) => (
+      <PasswordTotpRegistration entitlement={{ invite }} onRegistered={onRegistered} />
+    ),
   },
   {
     id: 'passkey',
     label: (t) => t('pages.register.methods.passkey'),
     form: ({ invite, onRegistered }) => (
       <PasskeyRegistration
-        code={invite}
+        entitlement={{ invite }}
         onDone={() => {
           onRegistered()
         }}

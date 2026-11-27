@@ -3,6 +3,7 @@
 
 export const loginPath = '/login'
 export const registerPath = '/register'
+export const setupPagePath = '/setup'
 
 const fallback = '/'
 const maxLength = 2048

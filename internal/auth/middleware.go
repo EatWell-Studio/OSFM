@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -85,6 +86,11 @@ type Options struct {
 	// 500.
 	MasterKey func() []byte
 
+	// SetupCodeFile is where the setup code is written while the instance has no maintainer (setup.go), normally
+	// <data>/secrets/[SetupCodeFileName]; empty writes no file. Logger receives the setup code and other startup
+	// messages; nil means slog.Default().
+	SetupCodeFile string
+	Logger        *slog.Logger
 	// Limits are the rate limits and lockouts of the public authentication routes ([RateLimit]); nil means
 	// [DefaultLimits].
 	Limits *Limits
@@ -99,7 +105,8 @@ type Options struct {
 //   - the rate limits of the public authentication routes ([RateLimit], with opts.Limits);
 //   - a hook that deletes a member's sessions and revokes their open invites as soon as they leave, are removed or
 //     are soft-deleted;
-//   - a daily job that deletes expired sessions.
+//   - a daily job that deletes expired sessions;
+//   - the setup wizard's routes ([bindSetupRoutes]), and the setup code when the instance starts unconfigured.
 func Bind(app core.App, opts Options) {
 	name := CookieName
 	if opts.HostPrefix {
@@ -119,6 +126,11 @@ func Bind(app core.App, opts Options) {
 		panic(fmt.Sprintf("auth: passkey setup: %v", err)) // only if the system's random source fails
 	}
 	app.Store().Set(passkeysKey, p)
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	app.Store().Set(setupCodeKey, &setupCode{file: opts.SetupCodeFile, logger: logger})
 	limits := DefaultLimits()
 	if opts.Limits != nil {
 		limits = *opts.Limits
@@ -166,6 +178,10 @@ func Bind(app core.App, opts Options) {
 		bindInviteRoutes(se)
 		bindPasswordTOTPRoutes(se)
 		bindPasskeyRoutes(se)
+		bindSetupRoutes(se)
+		if err := startSetup(se.App, logger); err != nil {
+			return err
+		}
 		// The first sign-in attempt with an unknown login name would otherwise also pay for the dummy hash.
 		go func() { _ = verifyDummy(context.Background(), "") }()
 		return se.Next()

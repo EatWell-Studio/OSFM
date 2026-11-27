@@ -43,10 +43,11 @@ func newTOTPSecret() ([]byte, error) {
 }
 
 // totpKey returns the otpauth:// key of secret for the authenticator app: issuer (the instance's name) and account
-// (the login name) label the entry in the app.
+// (the login name) label the entry in the app. A colon would end the issuer part of the label early, so colons in the
+// issuer become spaces (and runs of spaces one).
 func totpKey(secret []byte, issuer, account string) (*otp.Key, error) {
 	return totp.Generate(totp.GenerateOpts{
-		Issuer:      strings.ReplaceAll(issuer, ":", " "),
+		Issuer:      strings.Join(strings.Fields(strings.ReplaceAll(issuer, ":", " ")), " "),
 		AccountName: account,
 		Period:      totpPeriod,
 		Secret:      secret,

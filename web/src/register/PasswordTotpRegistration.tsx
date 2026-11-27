@@ -5,6 +5,7 @@ import { type SyntheticEvent, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Field } from '@/components/Field'
 import { Button } from '@/components/ui/button'
+import type { Entitlement } from '@/lib/entitlement'
 import { authErrorCode, authRetryAfter, rateLimitedCode } from '@/lib/authApi'
 import { rateLimitMessage } from '@/lib/rateLimit'
 import type { Me } from '@/session/session'
@@ -38,6 +39,12 @@ function startError(t: T, error: unknown): Errors {
       return { form: rateLimitMessage(t, authRetryAfter(error)) }
     case 'invite_invalid':
       return { form: t('pages.register.invalidInvite') }
+    case 'setup_code_invalid':
+      return { form: t('setup.errors.codeInvalid') }
+    case 'setup_done':
+      return { form: t('setup.errors.done') }
+    case 'instance_name_invalid':
+      return { form: t('setup.name.required') }
     case 'login_name_invalid':
       return { loginName: t('pages.register.password.errors.loginNameInvalid') }
     case 'login_name_taken':
@@ -61,7 +68,16 @@ function startError(t: T, error: unknown): Errors {
  * codes. The member exists, and is signed in, once the code is confirmed; onRegistered runs after the member has
  * confirmed saving the recovery codes.
  */
-export function PasswordTotpRegistration({ invite, onRegistered }: { invite: string; onRegistered: (me: Me) => void }) {
+export function PasswordTotpRegistration({
+  entitlement,
+  onRegistered,
+  continueLabel,
+}: {
+  entitlement: Entitlement
+  onRegistered: (me: Me) => void
+  /** The label of the button after the recovery codes, when it does not lead to the map. */
+  continueLabel?: string
+}) {
   const [step, setStep] = useState<Step>({ kind: 'form' })
   const [notice, setNotice] = useState<string | null>(null)
   // What was typed survives going back to the form (after the enrolment expired, say); the password does not.
@@ -71,6 +87,7 @@ export function PasswordTotpRegistration({ invite, onRegistered }: { invite: str
     return (
       <RecoveryCodes
         codes={step.registered.recoveryCodes}
+        continueLabel={continueLabel}
         onConfirmed={() => {
           onRegistered(step.registered.me)
         }}
@@ -80,7 +97,7 @@ export function PasswordTotpRegistration({ invite, onRegistered }: { invite: str
   if (step.kind === 'totp') {
     return (
       <TotpStep
-        invite={invite}
+        entitlement={entitlement}
         enrolment={step.enrolment}
         onRegistered={(registered) => {
           setStep({ kind: 'codes', registered })
@@ -94,7 +111,7 @@ export function PasswordTotpRegistration({ invite, onRegistered }: { invite: str
   }
   return (
     <AccountForm
-      invite={invite}
+      entitlement={entitlement}
       notice={notice}
       names={names}
       onNamesChange={setNames}
@@ -107,13 +124,13 @@ export function PasswordTotpRegistration({ invite, onRegistered }: { invite: str
 }
 
 function AccountForm({
-  invite,
+  entitlement,
   notice,
   names,
   onNamesChange,
   onStarted,
 }: {
-  invite: string
+  entitlement: Entitlement
   notice: string | null
   names: { loginName: string; displayName: string }
   onNamesChange: (names: { loginName: string; displayName: string }) => void
@@ -126,7 +143,8 @@ function AccountForm({
   const [errors, setErrors] = useState<Errors>({})
 
   const start = useMutation({
-    mutationFn: startPasswordRegistration,
+    mutationFn: (req: { loginName: string; displayName: string; password: string }) =>
+      startPasswordRegistration(entitlement, req),
     onSuccess: onStarted,
     onError: (error) => {
       setErrors(startError(t, error))
@@ -154,7 +172,7 @@ function AccountForm({
     if (Object.keys(next).length > 0) {
       return
     }
-    start.mutate({ invite, loginName: login, displayName: displayName.trim(), password })
+    start.mutate({ loginName: login, displayName: displayName.trim(), password })
   }
 
   return (
@@ -230,12 +248,12 @@ function AccountForm({
 }
 
 function TotpStep({
-  invite,
+  entitlement,
   enrolment,
   onRegistered,
   onRestart,
 }: {
-  invite: string
+  entitlement: Entitlement
   enrolment: PasswordEnrolment
   onRegistered: (registered: Registered) => void
   onRestart: (message: string) => void
@@ -247,7 +265,7 @@ function TotpStep({
   const [copied, setCopied] = useState(false)
 
   const confirm = useMutation({
-    mutationFn: confirmPasswordRegistration,
+    mutationFn: (req: { enrolment: string; code: string }) => confirmPasswordRegistration(entitlement, req),
     onSuccess: onRegistered,
     onError: (err) => {
       switch (authErrorCode(err)) {
@@ -262,6 +280,12 @@ function TotpStep({
           break
         case 'invite_invalid':
           setError(t('pages.register.invalidInvite'))
+          break
+        case 'setup_code_invalid':
+          setError(t('setup.errors.codeInvalid'))
+          break
+        case 'setup_done':
+          setError(t('setup.errors.done'))
           break
         case rateLimitedCode:
           setError(rateLimitMessage(t, authRetryAfter(err)))
@@ -280,7 +304,7 @@ function TotpStep({
       return
     }
     setError(null)
-    confirm.mutate({ invite, enrolment: enrolment.enrolment, code: normalized })
+    confirm.mutate({ enrolment: enrolment.enrolment, code: normalized })
   }
 
   return (

@@ -215,7 +215,7 @@ describe('passkey registration', () => {
       },
     })
     const onDone = vi.fn()
-    render(<PasskeyRegistration code="test-code" onDone={onDone} />)
+    render(<PasskeyRegistration entitlement={{ invite: 'test-code' }} onDone={onDone} />)
     await userEvent.type(screen.getByLabelText(zhCN.passkey.register.loginName), 'test_new')
     await userEvent.type(screen.getByLabelText(zhCN.passkey.register.displayName), 'Test New')
     await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.register.submit }))
@@ -236,7 +236,7 @@ describe('passkey registration', () => {
       '/api/osfm/passkey/register/options': () =>
         Response.json({ status: 409, code: 'login_name_taken' }, { status: 409 }),
     })
-    render(<PasskeyRegistration code="test-code" onDone={vi.fn()} />)
+    render(<PasskeyRegistration entitlement={{ invite: 'test-code' }} onDone={vi.fn()} />)
     await userEvent.type(screen.getByLabelText(zhCN.passkey.register.loginName), 'test_taken')
     await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.register.submit }))
     expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.passkey.register.errors.loginNameTaken)

@@ -183,7 +183,8 @@ func LimitRegistration(method string) Limit {
 }
 
 // failureCodes are the [AuthError] codes that count as a failed attempt, on every limited route: a wrong password or
-// code, an invalid invite, sealed data (ticket, enrolment, ceremony state) that does not open, or a malformed request.
+// code, an invalid invite or setup code, sealed data (ticket, enrolment, ceremony state) that does not open, or a
+// malformed request.
 var failureCodes = map[string]bool{
 	CodeInvalidRequest:     true,
 	CodeInviteInvalid:      true,
@@ -192,6 +193,7 @@ var failureCodes = map[string]bool{
 	CodeCredentialsInvalid: true,
 	CodeTicketExpired:      true,
 	CodePasskeyFailed:      true,
+	CodeSetupCodeInvalid:   true,
 }
 
 // Request store keys: the code of the AuthError a handler answered with, and the mark of a failed attempt that
