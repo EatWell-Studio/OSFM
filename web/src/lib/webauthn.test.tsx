@@ -178,6 +178,16 @@ describe('passkey sign-in', () => {
     })
     await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.signIn.button }))
     expect(await screen.findByText(zhCN.passkey.signIn.errors.failed)).toHaveAttribute('role', 'alert')
+
+    stubFetch({
+      '/api/osfm/passkey/login/options': () =>
+        Response.json({ status: 429, code: 'rate_limited' }, { status: 429, headers: { 'Retry-After': '600' } }),
+    })
+    await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.signIn.button }))
+    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '10'))).toHaveAttribute(
+      'role',
+      'alert',
+    )
   })
 })
 

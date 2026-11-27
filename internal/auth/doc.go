@@ -18,4 +18,8 @@
 // ([BeginPasskeyRegistration], [FinishPasskeyRegistration]) and sign a member in with a discoverable passkey, without a
 // login name ([BeginPasskeySignIn], [VerifyPasskeySignIn]). Registration hands out the recovery codes
 // ([NewRecoveryCodes]).
+//
+// Rate limits (N5): every public authentication route carries the [RateLimit] middleware, which keeps a request
+// budget and a failure count per client, and for the sign-in steps per login name or per member, with temporary
+// lockouts (429 with Retry-After); it also writes the audit entries of registration and sign-in. See limits.go.
 package auth

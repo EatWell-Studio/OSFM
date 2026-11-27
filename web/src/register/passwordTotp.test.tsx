@@ -46,6 +46,13 @@ function authError(status: number, code: string) {
   return Response.json({ status, message: 'x', data: {}, code }, { status })
 }
 
+function rateLimited(retryAfter: string) {
+  return Response.json(
+    { status: 429, message: 'x', data: {}, code: 'rate_limited' },
+    { status: 429, headers: { 'Retry-After': retryAfter } },
+  )
+}
+
 function renderAt(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] })
   render(<App router={router} queryClient={createQueryClient()} />)
@@ -138,6 +145,29 @@ describe('registration with password and TOTP', () => {
       expect(router.state.location.pathname).toBe('/')
     })
     expect(sessionStorage.getItem('osfm.inviteCode')).toBeNull()
+  })
+
+  it('says how long to wait when the invite check or the registration was refused for too many attempts', async () => {
+    const user = userEvent.setup()
+    let checkAnswer = () => rateLimited('30')
+    stubApi({
+      '/api/osfm/invites/check': () => checkAnswer(),
+      '/api/osfm/register/password/start': () => rateLimited('120'),
+    })
+    sessionStorage.setItem('osfm.inviteCode', invite)
+    const { unmount } = render(
+      <App router={createMemoryRouter(routes, { initialEntries: ['/register'] })} queryClient={createQueryClient()} />,
+    )
+    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '1'))).toBeInTheDocument()
+    unmount()
+
+    checkAnswer = () => Response.json({ valid: true })
+    renderAt('/register')
+    await user.type(await screen.findByLabelText(reg.loginName), 'test_new')
+    await user.type(screen.getByLabelText(reg.password), password)
+    await user.type(screen.getByLabelText(reg.repeat), password)
+    await user.click(screen.getByRole('button', { name: reg.next }))
+    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '2'))).toBeInTheDocument()
   })
 
   it('checks the form before sending it, and shows the server errors at their field', async () => {
@@ -256,5 +286,26 @@ describe('sign-in with password', () => {
     await user.click(screen.getByRole('button', { name: login.signIn }))
     expect(await screen.findByText(login.errors.expired)).toBeInTheDocument()
     expect(screen.getByLabelText(login.loginName)).toHaveValue('test_new')
+  })
+
+  it('says how long to wait after too many attempts, at either step', async () => {
+    const user = userEvent.setup()
+    let passwordAnswer = () => rateLimited('61')
+    stubApi({
+      '/api/osfm/signin/password': () => passwordAnswer(),
+      '/api/osfm/signin/totp': () => rateLimited('3600'),
+    })
+    renderAt('/login')
+    await user.type(await screen.findByLabelText(login.loginName), 'test_new')
+    await user.type(screen.getByLabelText(login.password), password)
+    await user.click(screen.getByRole('button', { name: login.next }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.rateLimit.wait_other.replace('{{count}}', '2'))
+
+    passwordAnswer = () => Response.json({ ticket: 'sealed-ticket', expiresAt: 'x' })
+    await user.type(screen.getByLabelText(login.password), password)
+    await user.click(screen.getByRole('button', { name: login.next }))
+    await user.type(await screen.findByLabelText(login.totp), '123456')
+    await user.click(screen.getByRole('button', { name: login.signIn }))
+    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '60'))).toBeInTheDocument()
   })
 })

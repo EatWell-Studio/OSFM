@@ -42,6 +42,10 @@ func (c *Config) Prepare(pbDataDir string, logger *slog.Logger) (*Keys, error) {
 		pbDataDir = abs
 	}
 	rpID, rpOrigins := c.PasskeyRP()
+	trustedProxy := strings.Join(c.TrustedProxyHeaders, ",")
+	if trustedProxy == "" {
+		trustedProxy = "(not set: PocketBase's setting applies)"
+	}
 	logger.Info("OSFM configuration",
 		slog.String("data_dir", c.DataDir),
 		slog.String("pb_data", pbDataDir),
@@ -53,6 +57,7 @@ func (c *Config) Prepare(pbDataDir string, logger *slog.Logger) (*Keys, error) {
 		slog.String("admin_listen", c.AdminListen),
 		slog.String("passkey_rp_id", rpID),
 		slog.String("passkey_origins", strings.Join(rpOrigins, " ")),
+		slog.String("trusted_proxy_headers", trustedProxy),
 	)
 
 	if err := c.EnsureDirs(); err != nil {

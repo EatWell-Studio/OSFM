@@ -38,6 +38,19 @@ func TestParseDefaults(t *testing.T) {
 	if cfg.AdminListen != DefaultAdminListen {
 		t.Errorf("AdminListen = %q, want %q", cfg.AdminListen, DefaultAdminListen)
 	}
+	if cfg.TrustedProxyHeaders != nil {
+		t.Errorf("TrustedProxyHeaders = %q, want none", cfg.TrustedProxyHeaders)
+	}
+}
+
+func TestParseTrustedProxyHeaders(t *testing.T) {
+	cfg, err := Parse(env(map[string]string{EnvTrustedProxyHeaders: " x-forwarded-for , X-Real-IP"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"X-Forwarded-For", "X-Real-Ip"}; !slices.Equal(cfg.TrustedProxyHeaders, want) {
+		t.Errorf("TrustedProxyHeaders = %q, want %q", cfg.TrustedProxyHeaders, want)
+	}
 }
 
 func TestParseValues(t *testing.T) {
@@ -134,6 +147,9 @@ func TestParseInvalid(t *testing.T) {
 		{EnvAdminUI, "2"},
 		{EnvAdminListen, "8091"},
 		{EnvAdminListen, "127.0.0.1:0"},
+		{EnvTrustedProxyHeaders, "X-Forwarded-For,"},
+		{EnvTrustedProxyHeaders, "X Forwarded For"},
+		{EnvTrustedProxyHeaders, "X-Forwarded-For: 1"},
 	} {
 		_, err := Parse(env(map[string]string{tc.name: tc.value}))
 		if err == nil {

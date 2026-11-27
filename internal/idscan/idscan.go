@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -134,6 +135,17 @@ func (r Request) String() string {
 // Timeout bounds each request of a scan; a streaming endpoint (PocketBase's realtime API) answers until it expires.
 const Timeout = time.Second
 
+// clients numbers the client addresses of the scan's requests.
+var clients atomic.Uint64
+
+// ClientAddr returns a new client address (host and port) from the IPv6 documentation range, a different /64 network
+// for every call. The scan sends each request from its own address, so that the sign-in rate limits, which count per
+// client, do not answer its many requests with 429 instead of reaching the handlers.
+func ClientAddr() string {
+	n := clients.Add(1)
+	return fmt.Sprintf("[2001:db8:%x:%x::1]:40000", n>>16&0xffff, n&0xffff)
+}
+
 // Scan sends each request to h and fails the test for every response that contains one of ids: in a header name or
 // value (cookies, redirects, ETags included), in the body (gzip-decoded when the response says so), or in the decoded
 // header or payload of a JSON Web Token found in either. It returns the number of responses it checked.
@@ -147,6 +159,7 @@ func Scan(t testing.TB, h http.Handler, reqs []Request, ids []string) int {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		req := httptest.NewRequestWithContext(ctx, method, r.Path, strings.NewReader(r.Body))
+		req.RemoteAddr = ClientAddr()
 		if r.Body != "" {
 			req.Header.Set("Content-Type", "application/json")
 		}

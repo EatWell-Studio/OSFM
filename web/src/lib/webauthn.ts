@@ -3,7 +3,7 @@
 // rather than with PublicKeyCredential.parseCreationOptionsFromJSON() and toJSON(), which older browsers still in use
 // (N6) do not have.
 
-import { apiFetch, isJson } from '@/lib/api'
+import { apiFetch, isJson, retryAfterSeconds } from '@/lib/api'
 
 /** Whether this browser can use passkeys at all; without it, members register with a password and TOTP. */
 export function passkeysSupported(): boolean {
@@ -136,12 +136,15 @@ export type PasskeyFailure =
 export class PasskeyError extends Error {
   readonly reason: PasskeyFailure
   readonly code: string | undefined
+  /** For rate_limited: the seconds to wait, from the Retry-After header. */
+  readonly retryAfter: number | null
 
-  constructor(reason: PasskeyFailure, code?: string) {
+  constructor(reason: PasskeyFailure, code?: string, retryAfter: number | null = null) {
     super(`passkey: ${reason}${code ? ` (${code})` : ''}`)
     this.name = 'PasskeyError'
     this.reason = reason
     this.code = code
+    this.retryAfter = retryAfter
   }
 }
 
@@ -181,7 +184,7 @@ export async function postJson(path: string, body?: unknown): Promise<Response> 
         code = data.code
       }
     }
-    throw new PasskeyError('failed', code ?? `http_${String(response.status)}`)
+    throw new PasskeyError('failed', code ?? `http_${String(response.status)}`, retryAfterSeconds(response))
   }
   return response
 }

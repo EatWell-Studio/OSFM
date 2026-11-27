@@ -8,12 +8,21 @@ const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS'])
 /** A response with an unsuccessful HTTP status. */
 export class ApiError extends Error {
   readonly status: number
+  /** For a 429: the seconds to wait, from the Retry-After header; otherwise null. */
+  readonly retryAfter: number | null
 
-  constructor(status: number, path: string) {
+  constructor(status: number, path: string, retryAfter: number | null = null) {
     super(`${path}: HTTP ${String(status)}`)
     this.name = 'ApiError'
     this.status = status
+    this.retryAfter = retryAfter
   }
+}
+
+/** The seconds a Retry-After header asks to wait (the server sends whole seconds), or null without a usable one. */
+export function retryAfterSeconds(response: Response): number | null {
+  const value = response.headers.get('Retry-After')?.trim() ?? ''
+  return /^\d+$/.test(value) ? Number(value) : null
 }
 
 /**
@@ -54,7 +63,7 @@ export function isJson(response: Response): boolean {
 export async function apiJson(path: string, init?: RequestInit): Promise<unknown> {
   const response = await apiFetch(path, init)
   if (!response.ok) {
-    throw new ApiError(response.status, path)
+    throw new ApiError(response.status, path, retryAfterSeconds(response))
   }
   if (!isJson(response)) {
     throw new Error(`${path}: not a JSON response`)

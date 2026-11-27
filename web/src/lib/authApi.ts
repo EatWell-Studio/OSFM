@@ -1,25 +1,36 @@
 // Calls to the public registration and sign-in endpoints (docs/architecture.md §3.3). Their error responses carry a
 // machine-readable `code` (auth.AuthError on the server), which the forms turn into a message.
 
-import { apiFetch, isJson } from '@/lib/api'
+import { apiFetch, isJson, retryAfterSeconds } from '@/lib/api'
 import type { Me } from '@/session/session'
 
 /** An unsuccessful response of an auth endpoint, with the server's error code when it sent one. */
 export class AuthApiError extends Error {
   readonly status: number
   readonly code: string | null
+  /** For rate_limited: the seconds to wait, from the Retry-After header. */
+  readonly retryAfter: number | null
 
-  constructor(status: number, code: string | null, path: string) {
+  constructor(status: number, code: string | null, path: string, retryAfter: number | null = null) {
     super(`${path}: HTTP ${String(status)}${code ? ` (${code})` : ''}`)
     this.name = 'AuthApiError'
     this.status = status
     this.code = code
+    this.retryAfter = retryAfter
   }
 }
 
 /** The error code of a failed auth request, or null for anything else (a network error, a 500). */
 export function authErrorCode(error: unknown): string | null {
   return error instanceof AuthApiError ? error.code : null
+}
+
+/** The error code the server sends when there were too many attempts (HTTP 429, with Retry-After). */
+export const rateLimitedCode = 'rate_limited'
+
+/** The seconds to wait after a rate_limited auth error, or null. */
+export function authRetryAfter(error: unknown): number | null {
+  return error instanceof AuthApiError ? error.retryAfter : null
 }
 
 /** A property of a parsed JSON body, or undefined. */
@@ -47,7 +58,7 @@ export async function postAuth(path: string, body: unknown): Promise<unknown> {
   const parsed: unknown = isJson(response) ? await response.json().catch(() => null) : null
   if (!response.ok) {
     const code = field(parsed, 'code')
-    throw new AuthApiError(response.status, typeof code === 'string' ? code : null, path)
+    throw new AuthApiError(response.status, typeof code === 'string' ? code : null, path, retryAfterSeconds(response))
   }
   if (parsed === null) {
     throw new Error(`${path}: not a JSON response`)

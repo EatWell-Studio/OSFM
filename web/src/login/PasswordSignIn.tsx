@@ -3,8 +3,9 @@ import { type SyntheticEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Field } from '@/components/Field'
 import { Button } from '@/components/ui/button'
-import { authErrorCode } from '@/lib/authApi'
+import { authErrorCode, authRetryAfter, rateLimitedCode } from '@/lib/authApi'
 import { normalizeTotpCode, type SignedIn, signInWithCode, signInWithPassword } from '@/lib/passwordTotp'
+import { rateLimitMessage } from '@/lib/rateLimit'
 import type { Me } from '@/session/session'
 
 type Step =
@@ -88,11 +89,16 @@ function PasswordStep({
     onSuccess: onTicket,
     onError: (err) => {
       setPassword('')
-      setError(
-        authErrorCode(err) === 'credentials_invalid'
-          ? t('pages.login.password.errors.credentials')
-          : t('pages.login.password.errors.network'),
-      )
+      switch (authErrorCode(err)) {
+        case 'credentials_invalid':
+          setError(t('pages.login.password.errors.credentials'))
+          break
+        case rateLimitedCode:
+          setError(rateLimitMessage(t, authRetryAfter(err)))
+          break
+        default:
+          setError(t('pages.login.password.errors.network'))
+      }
     },
   })
 
@@ -180,6 +186,9 @@ function SecondFactor({
           break
         case 'cannot_sign_in':
           onRestart(t('pages.login.password.errors.cannotSignIn'))
+          break
+        case rateLimitedCode:
+          setError(rateLimitMessage(t, authRetryAfter(err)))
           break
         default:
           setError(t('pages.login.password.errors.network'))
