@@ -10,7 +10,7 @@ import { updateInstance } from './instance'
  * saved settings. The top bar and the map's city switcher follow once saved.
  */
 export function InstanceSettings() {
-  const { t } = useTranslation()
+  const { t } = useTranslation('admin')
   const queryClient = useQueryClient()
   const headingId = useId()
   const [saved, setSaved] = useState(false)
@@ -19,18 +19,18 @@ export function InstanceSettings() {
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-4 px-4">
       <h2 id={headingId} className="text-lg font-medium">
-        {t('pages.admin.instance.title')}
+        {t('instance.title')}
       </h2>
       {saved && (
         <p role="status" className="rounded-lg border p-3 text-sm">
-          {t('pages.admin.instance.saved')}
+          {t('instance.saved')}
         </p>
       )}
       <CitiesStep
         key={round}
         editing
         save={updateInstance}
-        finishLabel={t('pages.admin.instance.save')}
+        finishLabel={t('instance.save')}
         onDone={(instance) => {
           queryClient.setQueryData(instanceQueryKey, instance)
           setSaved(true)

@@ -15,18 +15,18 @@ import { useSession } from '@/session/useSession'
 /** The ways to sign in (D4); each is its own component, the page only offers the choice. */
 const methods: {
   id: string
-  label: (t: TFunction) => string
+  label: (t: TFunction<'auth'>) => string
   // onSignedIn gets the member when the method's response carries it; without, the session is fetched again.
   form: (props: { onSignedIn: (me?: Me) => void }) => ReactNode
 }[] = [
   {
     id: 'password',
-    label: (t) => t('pages.login.methods.password'),
+    label: (t) => t('login.methods.password'),
     form: (props) => <PasswordSignIn {...props} />,
   },
   {
     id: 'passkey',
-    label: (t) => t('pages.login.methods.passkey'),
+    label: (t) => t('login.methods.passkey'),
     form: ({ onSignedIn }) => (
       <PasskeySignIn
         onSignedIn={() => {
@@ -42,7 +42,7 @@ const methods: {
  * sign-in does the same.
  */
 export function LoginPage() {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [searchParams] = useSearchParams()
   const session = useSession()
   const queryClient = useQueryClient()
@@ -93,10 +93,10 @@ export function LoginPage() {
   }
   return (
     <>
-      <PageHeading>{t('pages.login.title')}</PageHeading>
+      <PageHeading>{t('login.title')}</PageHeading>
       <div className="flex flex-col gap-4 px-4 pb-4">
         {methods.length > 1 && (
-          <div role="group" aria-label={t('pages.login.method')} className="flex flex-wrap gap-2">
+          <div role="group" aria-label={t('login.method')} className="flex flex-wrap gap-2">
             {methods.map((m) => (
               <Button
                 key={m.id}

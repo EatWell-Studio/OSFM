@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import zhCN from '@/i18n/locales/zh-CN.json'
+import { zhCN } from '@/i18n/resources'
 import { PasskeySignIn } from '@/login/PasskeySignIn'
 import { PasskeyRegistration } from '@/register/PasskeyRegistration'
 import {
@@ -122,7 +122,7 @@ describe('passkey sign-in', () => {
   it('explains when the browser has no passkey support', () => {
     vi.stubGlobal('PublicKeyCredential', undefined)
     render(<PasskeySignIn onSignedIn={vi.fn()} />)
-    expect(screen.getByRole('alert')).toHaveTextContent(zhCN.passkey.errors.unsupported)
+    expect(screen.getByRole('alert')).toHaveTextContent(zhCN.auth.passkey.errors.unsupported)
     expect(screen.queryByRole('button')).toBeNull()
   })
 
@@ -147,7 +147,7 @@ describe('passkey sign-in', () => {
     })
     const onSignedIn = vi.fn()
     render(<PasskeySignIn onSignedIn={onSignedIn} />)
-    await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.signIn.button }))
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.passkey.signIn.button }))
     await waitFor(() => {
       expect(onSignedIn).toHaveBeenCalled()
     })
@@ -163,8 +163,8 @@ describe('passkey sign-in', () => {
       '/api/osfm/passkey/login/options': () => Response.json({ options: requestJSON, state: 'test-state' }),
     })
     render(<PasskeySignIn onSignedIn={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.signIn.button }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.passkey.errors.cancelled)
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.passkey.signIn.button }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.auth.passkey.errors.cancelled)
 
     stubWebAuthn({
       get: () =>
@@ -176,15 +176,15 @@ describe('passkey sign-in', () => {
       '/api/osfm/passkey/login/options': () => Response.json({ options: requestJSON, state: 'test-state' }),
       '/api/osfm/passkey/login': () => Response.json({ status: 401, code: 'passkey_failed' }, { status: 401 }),
     })
-    await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.signIn.button }))
-    expect(await screen.findByText(zhCN.passkey.signIn.errors.failed)).toHaveAttribute('role', 'alert')
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.passkey.signIn.button }))
+    expect(await screen.findByText(zhCN.auth.passkey.signIn.errors.failed)).toHaveAttribute('role', 'alert')
 
     stubFetch({
       '/api/osfm/passkey/login/options': () =>
         Response.json({ status: 429, code: 'rate_limited' }, { status: 429, headers: { 'Retry-After': '600' } }),
     })
-    await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.signIn.button }))
-    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '10'))).toHaveAttribute(
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.passkey.signIn.button }))
+    expect(await screen.findByText(zhCN.common.rateLimit.wait_other.replace('{{count}}', '10'))).toHaveAttribute(
       'role',
       'alert',
     )
@@ -216,16 +216,16 @@ describe('passkey registration', () => {
     })
     const onDone = vi.fn()
     render(<PasskeyRegistration entitlement={{ invite: 'test-code' }} onDone={onDone} />)
-    await userEvent.type(screen.getByLabelText(zhCN.passkey.register.loginName), 'test_new')
-    await userEvent.type(screen.getByLabelText(zhCN.passkey.register.displayName), 'Test New')
-    await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.register.submit }))
+    await userEvent.type(screen.getByLabelText(zhCN.auth.passkey.register.loginName), 'test_new')
+    await userEvent.type(screen.getByLabelText(zhCN.auth.passkey.register.displayName), 'Test New')
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.passkey.register.submit }))
 
     expect(await screen.findByText(codes[9] ?? '')).toBeInTheDocument()
     expect(bodies[0]).toEqual({ invite: 'test-code', loginName: 'test_new', displayName: 'Test New' })
     expect(bodies[1]).toMatchObject({ invite: 'test-code', state: 'test-state', credential: { rawId: 'Bwg' } })
-    const go = screen.getByRole('button', { name: zhCN.recoveryCodes.continue })
+    const go = screen.getByRole('button', { name: zhCN.auth.recoveryCodes.continue })
     expect(go).toBeDisabled()
-    await userEvent.click(screen.getByLabelText(zhCN.recoveryCodes.confirm))
+    await userEvent.click(screen.getByLabelText(zhCN.auth.recoveryCodes.confirm))
     await userEvent.click(go)
     expect(onDone).toHaveBeenCalled()
   })
@@ -237,9 +237,9 @@ describe('passkey registration', () => {
         Response.json({ status: 409, code: 'login_name_taken' }, { status: 409 }),
     })
     render(<PasskeyRegistration entitlement={{ invite: 'test-code' }} onDone={vi.fn()} />)
-    await userEvent.type(screen.getByLabelText(zhCN.passkey.register.loginName), 'test_taken')
-    await userEvent.click(screen.getByRole('button', { name: zhCN.passkey.register.submit }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.passkey.register.errors.loginNameTaken)
-    expect(screen.getByLabelText(zhCN.passkey.register.loginName)).toHaveAttribute('aria-invalid', 'true')
+    await userEvent.type(screen.getByLabelText(zhCN.auth.passkey.register.loginName), 'test_taken')
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.passkey.register.submit }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.auth.passkey.register.errors.loginNameTaken)
+    expect(screen.getByLabelText(zhCN.auth.passkey.register.loginName)).toHaveAttribute('aria-invalid', 'true')
   })
 })

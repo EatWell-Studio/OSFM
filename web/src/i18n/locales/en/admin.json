@@ -1,0 +1,43 @@
+{
+  "title": "Administration",
+  "notAllowed": "Only maintainers can use the administration page.",
+  "instance": {
+    "title": "Instance settings",
+    "intro": "Cities: a city you untick or remove no longer appears on the map; its basemap file is not deleted.",
+    "save": "Save settings",
+    "saved": "Saved.",
+    "nameHint": "Shown in the top bar. Entries already in authenticator apps keep their old name."
+  },
+  "nav": {
+    "label": "Administration sections",
+    "invites": "Invites",
+    "members": "Members",
+    "tree": "Tree",
+    "reports": "Reports",
+    "settings": "Settings",
+    "backup": "Backups"
+  },
+  "circle": {
+    "title": "Reports, invites and place search",
+    "loadError": "Could not load the settings. Check the connection and try again.",
+    "unavailable": "This server does not support these settings yet. Set them after an upgrade.",
+    "reportThreshold": "Reports that hide a recommendation",
+    "reportThresholdHint": "A recommendation with this many open reports is hidden until a maintainer reviews it. At least 1.",
+    "inviteCooldownDays": "Invite cooling-off period for new members (days)",
+    "inviteCooldownDaysHint": "New members can invite others this many days after joining; 0 means no waiting. A change applies to every member at once.",
+    "geocoderEnabled": "Turn on place search",
+    "geocoderEnabledHint": "Search terms are sent by this instance's server to Photon (komoot's public instance) and, when that fails, to the OpenStreetMap Foundation's Nominatim, without the member's identity. When it is off, the map shows no search box and members place points by moving the map.",
+    "geocoderContact": "Contact (optional)",
+    "geocoderContactHint": "Sent with the requests to the search services so that they can reach this instance's administrator if something goes wrong, for example an email address.",
+    "save": "Save",
+    "working": "Saving…",
+    "saved": "Saved.",
+    "errors": {
+      "reportThreshold": "The number of reports is a whole number of at least 1.",
+      "inviteCooldownDays": "The cooling-off period is a whole number of days, at least 0.",
+      "geocoderContact": "The contact has at most 200 characters.",
+      "invalid": "The server did not accept these settings. Check them and try again.",
+      "network": "Could not save. Check the connection and try again."
+    }
+  }
+}

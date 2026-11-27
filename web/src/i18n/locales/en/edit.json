@@ -1,0 +1,11 @@
+{
+  "place": {
+    "title": "Edit the place"
+  },
+  "recommendation": {
+    "title": "Edit the recommendation"
+  },
+  "history": {
+    "title": "Revisions"
+  }
+}

@@ -14,14 +14,23 @@ export class AuthenticatorApp {
   private readonly totp: OTPAuth.TOTP
   private lastStep = -1
 
-  /** secret is the base32 key as the registration page shows it (spaces between groups are ignored). */
-  constructor(secret: string) {
+  /**
+   * secret is the base32 key as the registration page shows it (spaces between groups are ignored); usedStep is the
+   * last time step already used elsewhere (for example by the registration), if known.
+   */
+  constructor(secret: string, usedStep = -1) {
+    this.lastStep = usedStep
     this.totp = new OTPAuth.TOTP({
       secret: OTPAuth.Secret.fromBase32(secret.replace(/\s/g, '')),
       algorithm: 'SHA1',
       digits: 6,
       period,
     })
+  }
+
+  /** The time step of the last code given out. */
+  get usedStep(): number {
+    return this.lastStep
   }
 
   /** The code of the current step, after waiting for a step later than the last one used. */

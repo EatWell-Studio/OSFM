@@ -21,7 +21,7 @@ export function VerifyPanel({
   onVerified: (verifiedUntil: string) => void
   onCancel: () => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const headingId = useId()
   const methods: ('password' | 'passkey')[] = []
   if (credentials.passwordTotp) {
@@ -66,7 +66,7 @@ export function VerifyPanel({
 }
 
 function PasswordVerify({ onVerified }: { onVerified: (until: string) => void }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -74,13 +74,13 @@ function PasswordVerify({ onVerified }: { onVerified: (until: string) => void })
     mutationFn: () => verifyWithPassword(password, code.trim()),
     onSuccess: onVerified,
     onError: (err) => {
-      setError(credentialErrorMessage(t, err))
+      setError(credentialErrorMessage(err))
     },
   })
   const submit = (e: SyntheticEvent) => {
     e.preventDefault()
     if (password === '' || code.trim() === '') {
-      setError(t('pages.login.password.errors.missing'))
+      setError(t('login.password.errors.missing'))
       return
     }
     setError(null)
@@ -89,7 +89,7 @@ function PasswordVerify({ onVerified }: { onVerified: (until: string) => void })
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-3">
       <Field
-        label={t('pages.login.password.password')}
+        label={t('login.password.password')}
         type="password"
         name="password"
         autoComplete="current-password"
@@ -118,20 +118,20 @@ function PasswordVerify({ onVerified }: { onVerified: (until: string) => void })
         </p>
       )}
       <Button type="submit" disabled={verify.isPending} className="self-start">
-        {verify.isPending ? t('pages.register.password.working') : t('credentials.verify.submit')}
+        {verify.isPending ? t('register.password.working') : t('credentials.verify.submit')}
       </Button>
     </form>
   )
 }
 
 function PasskeyVerify({ onVerified }: { onVerified: (until: string) => void }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [error, setError] = useState<string | null>(null)
   const verify = useMutation({
     mutationFn: verifyWithPasskey,
     onSuccess: onVerified,
     onError: (err) => {
-      setError(credentialErrorMessage(t, err))
+      setError(credentialErrorMessage(err))
     },
   })
   return (

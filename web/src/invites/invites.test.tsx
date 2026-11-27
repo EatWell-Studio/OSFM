@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { createMemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from '@/App'
-import zhCN from '@/i18n/locales/zh-CN.json'
+import { zhCN } from '@/i18n/resources'
 import { createQueryClient } from '@/lib/queryClient'
 import { routes } from '@/routes'
 import type { Me } from '@/session/session'
@@ -91,8 +91,8 @@ describe('register page', () => {
   it('checks the code from the link, removes it from the address and says it is valid', async () => {
     const fetchMock = stubApi(null, { 'POST /api/osfm/invites/check': () => Response.json({ valid: true }) })
     const router = renderAt(`/register#invite=${code}`)
-    expect(await screen.findByText(zhCN.pages.register.validInvite)).toHaveAttribute('role', 'status')
-    expect(screen.getByLabelText(zhCN.pages.register.password.loginName)).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.auth.register.validInvite)).toHaveAttribute('role', 'status')
+    expect(screen.getByLabelText(zhCN.auth.register.password.loginName)).toBeInTheDocument()
     expect(router.state.location.hash).toBe('')
     expect(router.state.location.pathname).toBe('/register')
     const call = fetchMock.mock.calls.find(([input]) => input === '/api/osfm/invites/check')
@@ -104,27 +104,27 @@ describe('register page', () => {
   it('keeps the code for a reload of the page', async () => {
     stubApi(null, { 'POST /api/osfm/invites/check': () => Response.json({ valid: true }) })
     renderAt(`/register#invite=${code}`)
-    expect(await screen.findByText(zhCN.pages.register.validInvite)).toHaveAttribute('role', 'status')
+    expect(await screen.findByText(zhCN.auth.register.validInvite)).toHaveAttribute('role', 'status')
     expect(sessionStorage.getItem('osfm.inviteCode')).toBe(code)
   })
 
   it('says an invalid invite is invalid or expired', async () => {
     stubApi(null, { 'POST /api/osfm/invites/check': () => Response.json({ valid: false }) })
     renderAt(`/register#invite=${code}`)
-    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.pages.register.invalidInvite)
+    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.auth.register.invalidInvite)
   })
 
   it('does not ask the server about a malformed code', async () => {
     const fetchMock = stubApi(null)
     renderAt('/register#invite=not-a-code')
-    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.pages.register.invalidInvite)
+    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.auth.register.invalidInvite)
     expect(fetchMock.mock.calls.some(([input]) => input === '/api/osfm/invites/check')).toBe(false)
   })
 
   it('asks for an invite link without one', async () => {
     stubApi(null)
     renderAt('/register')
-    expect(await screen.findByText(zhCN.pages.register.noInvite)).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.auth.register.noInvite)).toBeInTheDocument()
   })
 })
 
@@ -132,7 +132,7 @@ describe('admin page', () => {
   it('tells a member who is not a maintainer that it is not for them', async () => {
     const fetchMock = stubApi(member)
     renderAt('/admin')
-    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.pages.admin.notAllowed)
+    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.admin.notAllowed)
     expect(fetchMock.mock.calls.some(([input]) => input === '/api/osfm/invites')).toBe(false)
   })
 
@@ -158,17 +158,17 @@ describe('admin page', () => {
         }),
     })
     renderAt('/admin')
-    const list = await screen.findByRole('list', { name: zhCN.pages.admin.invites.title })
+    const list = await screen.findByRole('list', { name: zhCN.invites.title })
     const items = within(list).getAllByRole('listitem')
     expect(items.map((li) => li.querySelector('span')?.textContent)).toEqual([
-      zhCN.pages.admin.invites.state.active,
-      zhCN.pages.admin.invites.state.used,
-      zhCN.pages.admin.invites.state.expired,
-      zhCN.pages.admin.invites.state.revoked,
+      zhCN.invites.state.active,
+      zhCN.invites.state.used,
+      zhCN.invites.state.expired,
+      zhCN.invites.state.revoked,
     ])
     expect(items[1]).toHaveTextContent('Test Newcomer')
     // Only active invites can be revoked.
-    expect(screen.getAllByRole('button', { name: zhCN.pages.admin.invites.revoke })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: zhCN.invites.revoke })).toHaveLength(1)
   })
 
   it('creates an invite and shows its link once, with a copy button', async () => {
@@ -184,18 +184,18 @@ describe('admin page', () => {
     })
     renderAt('/admin')
     const user = userEvent.setup()
-    expect(await screen.findByText(zhCN.pages.admin.invites.empty)).toBeInTheDocument()
-    await user.selectOptions(screen.getByLabelText(zhCN.pages.admin.invites.validity), '14')
-    await user.click(screen.getByRole('button', { name: zhCN.pages.admin.invites.create }))
+    expect(await screen.findByText(zhCN.invites.empty)).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText(zhCN.invites.validity), '14')
+    await user.click(screen.getByRole('button', { name: zhCN.invites.create }))
 
-    const link = await screen.findByLabelText(zhCN.pages.admin.invites.link)
+    const link = await screen.findByLabelText(zhCN.invites.link)
     expect(link).toHaveValue(`${window.location.origin}/register#invite=${code}`)
-    expect(screen.getByText(zhCN.pages.admin.invites.shownOnce)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: zhCN.pages.admin.invites.copy }))
+    expect(screen.getByText(zhCN.invites.shownOnce)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: zhCN.common.copy }))
     // user-event provides the clipboard.
     expect(await navigator.clipboard.readText()).toBe(`${window.location.origin}/register#invite=${code}`)
-    expect(await screen.findByRole('button', { name: zhCN.pages.admin.invites.copied })).toBeInTheDocument()
-    const list = await screen.findByRole('list', { name: zhCN.pages.admin.invites.title })
+    expect(await screen.findByRole('button', { name: zhCN.common.copied })).toBeInTheDocument()
+    const list = await screen.findByRole('list', { name: zhCN.invites.title })
     expect(within(list).getAllByRole('listitem')).toHaveLength(1)
     const post = fetchMock.mock.calls.find(([input, init]) => input === '/api/osfm/invites' && init?.method === 'POST')
     expect(new Headers(post?.[1]?.headers).get('X-OSFM')).toBe('1')
@@ -212,18 +212,18 @@ describe('admin page', () => {
     })
     renderAt('/admin')
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: zhCN.pages.admin.invites.revoke }))
+    await user.click(await screen.findByRole('button', { name: zhCN.invites.revoke }))
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: zhCN.pages.admin.invites.revoke })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: zhCN.invites.revoke })).not.toBeInTheDocument()
     })
-    const item = within(screen.getByRole('list', { name: zhCN.pages.admin.invites.title })).getByRole('listitem')
-    expect(within(item).getByText(zhCN.pages.admin.invites.state.revoked)).toBeInTheDocument()
+    const item = within(screen.getByRole('list', { name: zhCN.invites.title })).getByRole('listitem')
+    expect(within(item).getByText(zhCN.invites.state.revoked)).toBeInTheDocument()
     expect(fetchMock.mock.calls.some(([input]) => typeof input === 'string' && input.endsWith('/revoke'))).toBe(true)
   })
 
   it('links maintainers to it from the me page', async () => {
     stubApi(maintainer)
     renderAt('/me')
-    expect(await screen.findByRole('link', { name: zhCN.pages.me.admin })).toHaveAttribute('href', '/admin')
+    expect(await screen.findByRole('link', { name: zhCN.me.admin })).toHaveAttribute('href', '/admin')
   })
 })

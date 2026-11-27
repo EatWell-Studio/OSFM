@@ -35,7 +35,7 @@ function messageKey(e: PasskeyError) {
  * called once the server has started the session.
  */
 export function PasskeySignIn({ onSignedIn }: { onSignedIn: () => void }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<PasskeyError | null>(null)
 
@@ -85,7 +85,7 @@ export function PasskeySignIn({ onSignedIn }: { onSignedIn: () => void }) {
       </Button>
       {error !== null && (
         <p role="alert" className="text-destructive">
-          {error.code === 'rate_limited' ? rateLimitMessage(t, error.retryAfter) : t(messageKey(error))}
+          {error.code === 'rate_limited' ? rateLimitMessage(error.retryAfter) : t(messageKey(error))}
         </p>
       )}
     </div>

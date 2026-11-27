@@ -47,20 +47,20 @@ function isRateLimited(error: unknown): error is ApiError {
 /** The ways to register (D3); each is its own component, the page only offers the choice. */
 const methods: {
   id: string
-  label: (t: TFunction) => string
+  label: (t: TFunction<'auth'>) => string
   // onRegistered gets the member when the method's response carries it; without, the session is fetched again.
   form: (props: { invite: string; onRegistered: (me?: Me) => void }) => ReactNode
 }[] = [
   {
     id: 'password',
-    label: (t) => t('pages.register.methods.password'),
+    label: (t) => t('register.methods.password'),
     form: ({ invite, onRegistered }) => (
       <PasswordTotpRegistration entitlement={{ invite }} onRegistered={onRegistered} />
     ),
   },
   {
     id: 'passkey',
-    label: (t) => t('pages.register.methods.passkey'),
+    label: (t) => t('register.methods.passkey'),
     form: ({ invite, onRegistered }) => (
       <PasskeyRegistration
         entitlement={{ invite }}
@@ -79,7 +79,7 @@ const methods: {
  * opens the map.
  */
 export function RegisterPage() {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -122,19 +122,19 @@ export function RegisterPage() {
 
   let content
   if (code === null) {
-    content = <p>{t('pages.register.noInvite')}</p>
+    content = <p>{t('register.noInvite')}</p>
   } else if (!wellFormed || check.data === false) {
     content = (
       <p role="alert" className="text-destructive">
-        {t('pages.register.invalidInvite')}
+        {t('register.invalidInvite')}
       </p>
     )
   } else if (check.data === true) {
     content = (
       <>
-        <p role="status">{t('pages.register.validInvite')}</p>
+        <p role="status">{t('register.validInvite')}</p>
         {methods.length > 1 && (
-          <div role="group" aria-label={t('pages.register.method')} className="flex flex-wrap gap-2">
+          <div role="group" aria-label={t('register.method')} className="flex flex-wrap gap-2">
             {methods.map((m) => (
               <Button
                 key={m.id}
@@ -155,29 +155,27 @@ export function RegisterPage() {
   } else if (check.isError) {
     content = (
       <div role="alert" className="flex flex-col items-start gap-3">
-        <p>
-          {isRateLimited(check.error) ? rateLimitMessage(t, check.error.retryAfter) : t('pages.register.checkError')}
-        </p>
+        <p>{isRateLimited(check.error) ? rateLimitMessage(check.error.retryAfter) : t('register.checkError')}</p>
         <Button
           onClick={() => {
             void check.refetch()
           }}
         >
-          {t('pages.register.retry')}
+          {t('register.retry')}
         </Button>
       </div>
     )
   } else {
     content = (
       <p role="status" className="text-muted-foreground">
-        {t('pages.register.checking')}
+        {t('register.checking')}
       </p>
     )
   }
 
   return (
     <>
-      <PageHeading>{t('pages.register.title')}</PageHeading>
+      <PageHeading>{t('register.title')}</PageHeading>
       <div className="flex flex-col gap-3 px-4">{content}</div>
     </>
   )

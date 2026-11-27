@@ -4,7 +4,7 @@
 import { existsSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { chromium, defineConfig, devices } from '@playwright/test'
-import { portVariable } from './e2e/support/env.ts'
+import { portVariable, sharedPortVariable } from './e2e/support/env.ts'
 
 /** A free TCP port on 127.0.0.1. */
 function freePort(): Promise<number> {
@@ -24,8 +24,10 @@ function freePort(): Promise<number> {
   })
 }
 
-// Chosen once, in the main process; the workers load this file again and inherit the variable.
+// Chosen once, in the main process; the workers load this file again and inherit the variables. One port for the
+// first-start instance, one for the shared instance of the feature specs (e2e/global-setup.ts).
 process.env[portVariable] ??= String(await freePort())
+process.env[sharedPortVariable] ??= String(await freePort())
 
 /**
  * The browser: OSFM_E2E_CHANNEL names a Playwright channel ("chrome" for the installed Google Chrome), or "bundled" for
@@ -44,7 +46,7 @@ export default defineConfig({
   testDir: './e2e',
   testMatch: '*.e2e.ts',
   globalSetup: './e2e/global-setup.ts',
-  // One instance, one setup wizard: the flows build on each other and run in order, in one worker.
+  // The flows of a spec file build on each other; the spec files share the instances and run in order, in one worker.
   workers: 1,
   fullyParallel: false,
   retries: 0,

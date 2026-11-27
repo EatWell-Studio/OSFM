@@ -19,7 +19,7 @@ export function RecoveryCodes({
   /** The label of the button that continues, when it does not lead to the map. */
   continueLabel?: string
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const headingId = useId()
   const savedId = useId()
   const [saved, setSaved] = useState(false)

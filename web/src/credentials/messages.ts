@@ -1,4 +1,4 @@
-import type { TFunction } from 'i18next'
+import { i18n } from '@/i18n'
 import { rateLimitedCode } from '@/lib/authApi'
 import { rateLimitMessage } from '@/lib/rateLimit'
 import { PasskeyError } from '@/lib/webauthn'
@@ -8,9 +8,9 @@ import { errorCode, errorRetryAfter } from './api'
 // that did not complete, by why the browser stopped it.
 const byCode = {
   invalid_request: 'credentials.errors.network',
-  password_too_short: 'pages.register.password.errors.passwordTooShort',
-  password_too_long: 'pages.register.password.errors.passwordTooLong',
-  password_is_login_name: 'pages.register.password.errors.passwordIsLoginName',
+  password_too_short: 'register.password.errors.passwordTooShort',
+  password_too_long: 'register.password.errors.passwordTooLong',
+  password_is_login_name: 'register.password.errors.passwordIsLoginName',
   code_invalid: 'credentials.errors.codeInvalid',
   credentials_invalid: 'credentials.errors.passwordWrong',
   enrolment_expired: 'credentials.errors.expired',
@@ -37,16 +37,16 @@ const byReason = {
   failed: 'passkey.errors.failed',
 } as const
 
-export function credentialErrorMessage(t: TFunction, error: unknown): string {
+export function credentialErrorMessage(error: unknown): string {
   const code = errorCode(error)
   if (code === rateLimitedCode) {
-    return rateLimitMessage(t, errorRetryAfter(error))
+    return rateLimitMessage(errorRetryAfter(error))
   }
   if (code !== null && code in byCode) {
-    return t(byCode[code as keyof typeof byCode])
+    return i18n.t(byCode[code as keyof typeof byCode], { ns: 'auth' })
   }
   if (error instanceof PasskeyError) {
-    return t(byReason[error.reason])
+    return i18n.t(byReason[error.reason], { ns: 'auth' })
   }
-  return t('credentials.errors.network')
+  return i18n.t('credentials.errors.network', { ns: 'auth' })
 }

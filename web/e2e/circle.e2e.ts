@@ -66,13 +66,13 @@ function url(path: string): RegExp {
 
 /** Reads the TOTP secret the page shows for typing into an app. */
 async function authenticatorApp(page: Page): Promise<AuthenticatorApp> {
-  await expect(page.getByRole('img', { name: zh.pages.register.password.qrTitle })).toBeVisible()
+  await expect(page.getByRole('img', { name: zh.auth.register.password.qrTitle })).toBeVisible()
   return new AuthenticatorApp(await page.locator('code').innerText())
 }
 
 /** Fills the password form of registration (or setup) and confirms it with a code from the authenticator app. */
 async function registerWithPassword(page: Page, loginName: string, displayName: string): Promise<AuthenticatorApp> {
-  const form = zh.pages.register.password
+  const form = zh.auth.register.password
   await page.getByLabel(form.loginName, { exact: true }).fill(loginName)
   await page.getByLabel(form.displayName, { exact: true }).fill(displayName)
   await page.getByLabel(form.password, { exact: true }).fill(password)
@@ -88,10 +88,10 @@ async function registerWithPassword(page: Page, loginName: string, displayName: 
 
 /** The recovery codes step: ten codes, confirmed as saved, then the button that leaves the step. Returns the codes. */
 async function saveRecoveryCodes(page: Page, continueLabel: string): Promise<string[]> {
-  const list = page.getByRole('list', { name: zh.recoveryCodes.title })
+  const list = page.getByRole('list', { name: zh.auth.recoveryCodes.title })
   await expect(list.getByRole('listitem')).toHaveCount(10)
   const codes = await list.getByRole('listitem').allInnerTexts()
-  await page.getByLabel(zh.recoveryCodes.confirm).check()
+  await page.getByLabel(zh.auth.recoveryCodes.confirm).check()
   await page.getByRole('button', { name: continueLabel, exact: true }).click()
   return codes
 }
@@ -111,22 +111,25 @@ function tileLoaded(page: Page) {
 }
 
 async function openMePage(page: Page) {
-  await page.getByRole('navigation', { name: zh.nav.label }).getByRole('link', { name: zh.nav.me, exact: true }).click()
+  await page
+    .getByRole('navigation', { name: zh.common.nav.label })
+    .getByRole('link', { name: zh.common.nav.me, exact: true })
+    .click()
   await expect(page).toHaveURL(url('/me'))
 }
 
 /** Signs in with a passkey from the login page; the page must show it. */
 async function signInWithPasskey(page: Page) {
   await page
-    .getByRole('group', { name: zh.pages.login.method })
-    .getByRole('button', { name: zh.pages.login.methods.passkey, exact: true })
+    .getByRole('group', { name: zh.auth.login.method })
+    .getByRole('button', { name: zh.auth.login.methods.passkey, exact: true })
     .click()
-  await page.getByRole('button', { name: zh.passkey.signIn.button, exact: true }).click()
+  await page.getByRole('button', { name: zh.auth.passkey.signIn.button, exact: true }).click()
 }
 
 async function signOut(page: Page) {
   await openMePage(page)
-  await page.getByRole('button', { name: zh.pages.me.logout }).click()
+  await page.getByRole('button', { name: zh.me.logout }).click()
   await expect(page).toHaveURL(url('/login'))
   expect((await page.context().cookies()).map((c) => c.name)).not.toContain('osfm_session')
 }
@@ -161,10 +164,10 @@ test('the operator sets up the instance with the setup code from the server log'
 test('the maintainer creates two invites', async () => {
   const { page } = maintainer
   await openMePage(page)
-  await page.getByRole('link', { name: zh.pages.me.admin }).click()
-  await expect(page).toHaveURL(url('/admin'))
-  const create = page.getByRole('button', { name: zh.pages.admin.invites.create })
-  const link = page.getByLabel(zh.pages.admin.invites.link, { exact: true })
+  await page.getByRole('link', { name: zh.me.admin }).click()
+  await expect(page).toHaveURL(url('/admin/invites'))
+  const create = page.getByRole('button', { name: zh.invites.create })
+  const link = page.getByLabel(zh.invites.link, { exact: true })
   for (let i = 0; i < 2; i++) {
     const previous = invites.at(-1) ?? ''
     await create.click()
@@ -173,18 +176,18 @@ test('the maintainer creates two invites', async () => {
     expect(value).toMatch(new RegExp(`^${baseURL()}/register#invite=[A-Za-z0-9_-]{43}$`))
     invites.push(value)
   }
-  await expect(page.getByRole('list', { name: zh.pages.admin.invites.title }).getByRole('listitem')).toHaveCount(2)
+  await expect(page.getByRole('list', { name: zh.invites.title }).getByRole('listitem')).toHaveCount(2)
 })
 
 test('a member registers with password and TOTP', async () => {
   const { page } = alice
   await page.goto(invites[0] ?? '')
-  await expect(page.getByText(zh.pages.register.validInvite)).toBeVisible()
+  await expect(page.getByText(zh.auth.register.validInvite)).toBeVisible()
   // The code is read from the link and removed from the address bar.
   await expect(page).toHaveURL(url('/register'))
   aliceApp = await registerWithPassword(page, 'test_alice', 'Test Alice')
   const tile = tileLoaded(page)
-  await saveRecoveryCodes(page, zh.recoveryCodes.continue)
+  await saveRecoveryCodes(page, zh.auth.recoveryCodes.continue)
   await expect(page).toHaveURL(url('/'))
   await expectMap(page, tile)
 })
@@ -192,16 +195,16 @@ test('a member registers with password and TOTP', async () => {
 test('a member registers with a passkey', async () => {
   const { page } = bob
   await page.goto(invites[1] ?? '')
-  await expect(page.getByText(zh.pages.register.validInvite)).toBeVisible()
+  await expect(page.getByText(zh.auth.register.validInvite)).toBeVisible()
   await page
-    .getByRole('group', { name: zh.pages.register.method })
-    .getByRole('button', { name: zh.pages.register.methods.passkey, exact: true })
+    .getByRole('group', { name: zh.auth.register.method })
+    .getByRole('button', { name: zh.auth.register.methods.passkey, exact: true })
     .click()
-  await page.getByLabel(zh.passkey.register.loginName, { exact: true }).fill('test_bob')
-  await page.getByLabel(zh.passkey.register.displayName, { exact: true }).fill('Test Bob')
-  await page.getByRole('button', { name: zh.passkey.register.submit, exact: true }).click()
+  await page.getByLabel(zh.auth.passkey.register.loginName, { exact: true }).fill('test_bob')
+  await page.getByLabel(zh.auth.passkey.register.displayName, { exact: true }).fill('Test Bob')
+  await page.getByRole('button', { name: zh.auth.passkey.register.submit, exact: true }).click()
   const tile = tileLoaded(page)
-  bobCodes = await saveRecoveryCodes(page, zh.recoveryCodes.continue)
+  bobCodes = await saveRecoveryCodes(page, zh.auth.recoveryCodes.continue)
   await expect(page).toHaveURL(url('/'))
   await expectMap(page, tile)
 })
@@ -209,7 +212,7 @@ test('a member registers with a passkey', async () => {
 test('the password member signs out and in again with a new TOTP code', async () => {
   const { page } = alice
   await signOut(page)
-  const form = zh.pages.login.password
+  const form = zh.auth.login.password
   await page.getByLabel(form.loginName, { exact: true }).fill('test_alice')
   await page.getByLabel(form.password, { exact: true }).fill(password)
   await page.getByRole('button', { name: form.next, exact: true }).click()
@@ -228,11 +231,11 @@ test('the passkey member signs out and in again with the passkey', async () => {
   const { page } = bob
   await signOut(page)
   await page
-    .getByRole('group', { name: zh.pages.login.method })
-    .getByRole('button', { name: zh.pages.login.methods.passkey, exact: true })
+    .getByRole('group', { name: zh.auth.login.method })
+    .getByRole('button', { name: zh.auth.login.methods.passkey, exact: true })
     .click()
   const tile = tileLoaded(page)
-  await page.getByRole('button', { name: zh.passkey.signIn.button, exact: true }).click()
+  await page.getByRole('button', { name: zh.auth.passkey.signIn.button, exact: true }).click()
   await expect(page).toHaveURL(url('/'))
   await expectMap(page, tile)
 })
@@ -255,10 +258,10 @@ test('a session ended on the server leads back to sign-in, and from there to the
   await page.goto('/list')
   await expect(page).toHaveURL(url('/login?next=%2Flist'))
   await page
-    .getByRole('group', { name: zh.pages.login.method })
-    .getByRole('button', { name: zh.pages.login.methods.passkey, exact: true })
+    .getByRole('group', { name: zh.auth.login.method })
+    .getByRole('button', { name: zh.auth.login.methods.passkey, exact: true })
     .click()
-  await page.getByRole('button', { name: zh.passkey.signIn.button, exact: true }).click()
+  await page.getByRole('button', { name: zh.auth.passkey.signIn.button, exact: true }).click()
   await expect(page).toHaveURL(url('/list'))
 })
 
@@ -268,20 +271,20 @@ function text(template: string, values: Record<string, string | number>): string
 }
 
 function passkeyList(page: Page) {
-  return page.getByRole('list', { name: zh.credentials.passkeys.title })
+  return page.getByRole('list', { name: zh.auth.credentials.passkeys.title })
 }
 
 /** Removes the passkey in the row with the text, confirming once more. */
 async function removePasskey(page: Page, rowText: string) {
   const row = passkeyList(page).getByRole('listitem').filter({ hasText: rowText })
-  await row.getByRole('button', { name: zh.credentials.remove, exact: true }).click()
-  await row.getByRole('button', { name: zh.credentials.confirmRemove, exact: true }).click()
-  await expect(page.getByText(zh.credentials.removed)).toBeVisible()
+  await row.getByRole('button', { name: zh.auth.credentials.remove, exact: true }).click()
+  await row.getByRole('button', { name: zh.auth.credentials.confirmRemove, exact: true }).click()
+  await expect(page.getByText(zh.auth.credentials.removed)).toBeVisible()
 }
 
 /** The recovery entry of the login page: login name and recovery code. */
 async function startRecovery(page: Page, loginName: string, code: string) {
-  const form = zh.pages.login.password
+  const form = zh.auth.login.password
   await page.getByLabel(form.loginName, { exact: true }).fill(loginName)
   await page.getByLabel(form.recovery, { exact: true }).fill(code)
   await page.getByRole('button', { name: form.next, exact: true }).click()
@@ -294,18 +297,18 @@ test('the passkey member adds a second passkey and removes the first, which then
   const list = passkeyList(page)
   await expect(list.getByRole('listitem')).toHaveCount(1)
   // The only way to sign in cannot be removed.
-  await expect(list.getByRole('button', { name: zh.credentials.remove, exact: true })).toBeDisabled()
-  await expect(page.getByText(zh.credentials.lastCredentialHint)).toBeVisible()
+  await expect(list.getByRole('button', { name: zh.auth.credentials.remove, exact: true })).toBeDisabled()
+  await expect(page.getByText(zh.auth.credentials.lastCredentialHint)).toBeVisible()
 
   // A second passkey provider on the phone (the first holds a passkey of this account already and would refuse).
   const first = await bobProvider.replace()
-  await page.getByRole('button', { name: zh.credentials.passkeys.add, exact: true }).click()
-  await page.getByLabel(zh.credentials.passkeys.deviceName, { exact: true }).fill('Test Phone B')
-  await page.getByRole('button', { name: zh.passkey.register.submit, exact: true }).click()
-  await expect(page.getByText(zh.credentials.added)).toBeVisible()
+  await page.getByRole('button', { name: zh.auth.credentials.passkeys.add, exact: true }).click()
+  await page.getByLabel(zh.auth.credentials.passkeys.deviceName, { exact: true }).fill('Test Phone B')
+  await page.getByRole('button', { name: zh.auth.passkey.register.submit, exact: true }).click()
+  await expect(page.getByText(zh.auth.credentials.added)).toBeVisible()
   await expect(list.getByRole('listitem')).toHaveCount(2)
 
-  await removePasskey(page, zh.credentials.passkeys.unnamed)
+  await removePasskey(page, zh.auth.credentials.passkeys.unnamed)
   await expect(list.getByRole('listitem')).toHaveCount(1)
   await expect(list.getByRole('listitem')).toContainText('Test Phone B')
 
@@ -313,19 +316,19 @@ test('the passkey member adds a second passkey and removes the first, which then
   await signOut(page)
   const second = await bobProvider.replace(first)
   await signInWithPasskey(page)
-  await expect(page.getByText(zh.passkey.signIn.errors.failed)).toBeVisible()
+  await expect(page.getByText(zh.auth.passkey.signIn.errors.failed)).toBeVisible()
   await bobProvider.replace(second)
-  await page.getByRole('button', { name: zh.passkey.signIn.button, exact: true }).click()
+  await page.getByRole('button', { name: zh.auth.passkey.signIn.button, exact: true }).click()
   await expect(page).toHaveURL(url('/'))
 })
 
 test('the passkey member regenerates the recovery codes', async () => {
   const { page } = bob
   await openMePage(page)
-  await expect(page.getByText(text(zh.credentials.recovery.left_other, { count: 10 }))).toBeVisible()
-  await page.getByRole('button', { name: zh.credentials.recovery.regenerate, exact: true }).click()
-  const codes = await saveRecoveryCodes(page, zh.credentials.done)
-  await expect(page.getByText(zh.credentials.recovery.regenerated)).toBeVisible()
+  await expect(page.getByText(text(zh.auth.credentials.recovery.left_other, { count: 10 }))).toBeVisible()
+  await page.getByRole('button', { name: zh.auth.credentials.recovery.regenerate, exact: true }).click()
+  const codes = await saveRecoveryCodes(page, zh.auth.credentials.done)
+  await expect(page.getByText(zh.auth.credentials.recovery.regenerated)).toBeVisible()
   expect(codes.filter((c) => bobCodes.includes(c))).toEqual([])
   // The old codes are refused at the recovery below.
   oldBobCodes = bobCodes
@@ -337,26 +340,26 @@ test('the passkey member loses the phone and recovers with a recovery code on a 
   await PasskeyProvider.on(bobNew.page)
   const { page } = bobNew
   await page.goto('/login')
-  await page.getByRole('button', { name: zh.credentials.recover.entry, exact: true }).click()
+  await page.getByRole('button', { name: zh.auth.credentials.recover.entry, exact: true }).click()
 
   // A code from before the regeneration is refused.
   await startRecovery(page, 'test_bob', oldBobCodes[0] ?? '')
-  await expect(page.getByText(zh.credentials.recover.errors.failed)).toBeVisible()
+  await expect(page.getByText(zh.auth.credentials.recover.errors.failed)).toBeVisible()
 
   await startRecovery(page, 'test_bob', bobCodes[0] ?? '')
-  await expect(page.getByText(zh.credentials.recover.enrol)).toBeVisible()
+  await expect(page.getByText(zh.auth.credentials.recover.enrol)).toBeVisible()
   // The recovery is no session yet: a new credential first.
   expect((await page.context().cookies()).map((c) => c.name)).not.toContain('osfm_session')
   await page
-    .getByRole('group', { name: zh.credentials.enrol.method })
-    .getByRole('button', { name: zh.pages.register.methods.passkey, exact: true })
+    .getByRole('group', { name: zh.auth.credentials.enrol.method })
+    .getByRole('button', { name: zh.auth.register.methods.passkey, exact: true })
     .click()
-  await page.getByRole('button', { name: zh.passkey.register.submit, exact: true }).click()
-  bobCodes = await saveRecoveryCodes(page, zh.credentials.recover.toMe)
+  await page.getByRole('button', { name: zh.auth.passkey.register.submit, exact: true }).click()
+  bobCodes = await saveRecoveryCodes(page, zh.auth.credentials.recover.toMe)
 
   // On the "me" page, with the old passkey listed for removal.
   await expect(page).toHaveURL(url('/me'))
-  await expect(page.getByText(zh.credentials.recover.checkPasskeys)).toBeVisible()
+  await expect(page.getByText(zh.auth.credentials.recover.checkPasskeys)).toBeVisible()
   await expect(passkeyList(page).getByRole('listitem')).toHaveCount(2)
   await removePasskey(page, 'Test Phone B')
   await expect(passkeyList(page).getByRole('listitem')).toHaveCount(1)
@@ -369,9 +372,13 @@ test('the passkey member loses the phone and recovers with a recovery code on a 
 test('the maintainer sees the members, without login names', async () => {
   const { page } = maintainer
   await openMePage(page)
-  await page.getByRole('link', { name: zh.pages.me.admin }).click()
-  await expect(page).toHaveURL(url('/admin'))
-  const t = zh.pages.admin.members
+  await page.getByRole('link', { name: zh.me.admin }).click()
+  await page
+    .getByRole('navigation', { name: zh.admin.nav.label })
+    .getByRole('link', { name: zh.admin.nav.members, exact: true })
+    .click()
+  await expect(page).toHaveURL(url('/admin/members'))
+  const t = zh.members
   const rows = page.getByRole('list', { name: t.title }).getByRole('listitem')
   await expect(rows).toHaveCount(3)
   // In the order they joined; the other rows mention the maintainer as their inviter.
@@ -395,27 +402,27 @@ test('the maintainer re-verifies when asked and creates a reset link from the me
   // reset link. The page still counts it as fresh, so the server refuses and the page asks for a re-verification.
   await makeSessionStale(context)
   const bobRow = page
-    .getByRole('list', { name: zh.pages.admin.members.title })
+    .getByRole('list', { name: zh.members.title })
     .getByRole('listitem')
     .filter({ hasText: 'Test Bob' })
-  const create = bobRow.getByRole('button', { name: zh.pages.admin.reset.create, exact: true })
+  const create = bobRow.getByRole('button', { name: zh.members.reset.create, exact: true })
   await create.click()
-  const panel = page.getByRole('region', { name: zh.credentials.verify.title })
+  const panel = page.getByRole('region', { name: zh.auth.credentials.verify.title })
   await expect(panel).toBeVisible()
-  await expect(panel).toContainText(zh.credentials.verify.repeat)
-  await panel.getByLabel(zh.pages.login.password.password, { exact: true }).fill(password)
-  await panel.getByLabel(zh.credentials.verify.code, { exact: true }).fill(await maintainerApp.code())
-  await panel.getByRole('button', { name: zh.credentials.verify.submit, exact: true }).click()
+  await expect(panel).toContainText(zh.auth.credentials.verify.repeat)
+  await panel.getByLabel(zh.auth.login.password.password, { exact: true }).fill(password)
+  await panel.getByLabel(zh.auth.credentials.verify.code, { exact: true }).fill(await maintainerApp.code())
+  await panel.getByRole('button', { name: zh.auth.credentials.verify.submit, exact: true }).click()
   await expect(panel).toBeHidden()
 
   await create.click()
-  const link = page.getByRole('textbox', { name: zh.pages.admin.reset.link, exact: true })
+  const link = page.getByRole('textbox', { name: zh.members.reset.link, exact: true })
   await expect(link).toHaveValue(new RegExp(`^${baseURL()}/reset#token=[A-Za-z0-9_-]{43}$`))
   resetLink = await link.inputValue()
-  await expect(bobRow).toContainText(zh.pages.admin.members.pendingReset.split('{{')[0] ?? '')
-  const links = page.getByRole('list', { name: zh.pages.admin.reset.title }).getByRole('listitem')
+  await expect(bobRow).toContainText(zh.members.pendingReset.split('{{')[0] ?? '')
+  const links = page.getByRole('list', { name: zh.members.reset.title }).getByRole('listitem')
   await expect(links).toHaveCount(1)
-  await expect(links).toContainText(zh.pages.admin.invites.state.active)
+  await expect(links).toContainText(zh.invites.state.active)
 })
 
 test('the member resets to password and TOTP with the link; the old credentials and the link stop working', async ({
@@ -425,17 +432,17 @@ test('the member resets to password and TOTP with the link; the old credentials 
   const { page } = reset
   await page.goto(resetLink)
   await expect(
-    page.getByText(text(zh.credentials.reset.account, { displayName: 'Test Bob', loginName: 'test_bob' })),
+    page.getByText(text(zh.auth.credentials.reset.account, { displayName: 'Test Bob', loginName: 'test_bob' })),
   ).toBeVisible()
   await expect(page).toHaveURL(url('/reset'))
-  await page.getByLabel(zh.credentials.enrol.password, { exact: true }).fill(password)
-  await page.getByLabel(zh.pages.register.password.repeat, { exact: true }).fill(password)
-  await page.getByRole('button', { name: zh.pages.register.password.next, exact: true }).click()
+  await page.getByLabel(zh.auth.credentials.enrol.password, { exact: true }).fill(password)
+  await page.getByLabel(zh.auth.register.password.repeat, { exact: true }).fill(password)
+  await page.getByRole('button', { name: zh.auth.register.password.next, exact: true }).click()
   const app = await authenticatorApp(page)
-  await page.getByLabel(zh.pages.register.password.code, { exact: true }).fill(await app.code())
-  await page.getByRole('button', { name: zh.pages.register.password.confirm, exact: true }).click()
+  await page.getByLabel(zh.auth.register.password.code, { exact: true }).fill(await app.code())
+  await page.getByRole('button', { name: zh.auth.register.password.confirm, exact: true }).click()
   const tile = tileLoaded(page)
-  const codes = await saveRecoveryCodes(page, zh.recoveryCodes.continue)
+  const codes = await saveRecoveryCodes(page, zh.auth.recoveryCodes.continue)
   await expect(page).toHaveURL(url('/'))
   await expectMap(page, tile)
 
@@ -444,25 +451,25 @@ test('the member resets to password and TOTP with the link; the old credentials 
   await old.goto('/list')
   await expect(old).toHaveURL(url('/login?next=%2Flist'))
   await signInWithPasskey(old)
-  await expect(old.getByText(zh.passkey.signIn.errors.failed)).toBeVisible()
-  await old.getByRole('button', { name: zh.credentials.recover.entry, exact: true }).click()
+  await expect(old.getByText(zh.auth.passkey.signIn.errors.failed)).toBeVisible()
+  await old.getByRole('button', { name: zh.auth.credentials.recover.entry, exact: true }).click()
   await startRecovery(old, 'test_bob', bobCodes[1] ?? '')
-  await expect(old.getByText(zh.credentials.recover.errors.failed)).toBeVisible()
+  await expect(old.getByText(zh.auth.credentials.recover.errors.failed)).toBeVisible()
   expect(codes.filter((c) => bobCodes.includes(c))).toEqual([])
 
   // The link works once.
   const again = await anotherPhone(browser, 'reset-again')
   await again.page.goto(resetLink)
-  await expect(again.page.getByText(zh.credentials.reset.invalid)).toBeVisible()
+  await expect(again.page.getByText(zh.auth.credentials.reset.invalid)).toBeVisible()
 
   // The maintainer's lists show the reset.
   const admin = maintainer.page
   await admin.reload()
-  const t = zh.pages.admin.members
+  const t = zh.members
   const bobRow = admin.getByRole('list', { name: t.title }).getByRole('listitem').filter({ hasText: 'Test Bob' })
   await expect(bobRow).toContainText(text(t.methods, { methods: t.passwordTotp }))
   await expect(bobRow).not.toContainText(t.pendingReset.split('{{')[0] ?? '')
-  await expect(admin.getByRole('list', { name: zh.pages.admin.reset.title }).getByRole('listitem')).toContainText(
-    zh.pages.admin.invites.state.used,
+  await expect(admin.getByRole('list', { name: zh.members.reset.title }).getByRole('listitem')).toContainText(
+    zh.invites.state.used,
   )
 })

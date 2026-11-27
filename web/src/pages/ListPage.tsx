@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next'
-import { PageHeading } from '@/components/PageHeading'
+import { ComingSoonPage } from '@/components/ComingSoon'
 
-/** Placeholder. The places in the current view, by distance (docs/architecture.md §4.2). */
+/** The places in the current view, by distance, /list (docs/architecture.md §4.2). Placeholder until T028. */
 export function ListPage() {
-  const { t } = useTranslation()
-  return <PageHeading>{t('pages.list.title')}</PageHeading>
+  const { t } = useTranslation('map')
+  return <ComingSoonPage title={t('list.title')} />
 }

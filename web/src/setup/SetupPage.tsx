@@ -24,7 +24,7 @@ import { checkSetupCode, isValidInstanceName, normalizeSetupCode, setupQuery, se
  * (GET /api/osfm/setup); once there is nothing left to set up, the page leads to the map.
  */
 export function SetupPage() {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['setup', 'auth'])
   const session = useSession()
   const setup = useQuery({
     ...setupQuery(session.status === 'signed-in' ? session.me.uuid : null),
@@ -39,19 +39,19 @@ export function SetupPage() {
   if (setup.isPending || session.status === 'loading') {
     content = (
       <p role="status" className="text-muted-foreground">
-        {t('setup.loading')}
+        {t('loading')}
       </p>
     )
   } else if (setup.isError) {
     content = (
       <div role="alert" className="flex flex-col items-start gap-3">
-        <p>{t('setup.loadError')}</p>
+        <p>{t('loadError')}</p>
         <Button
           onClick={() => {
             void setup.refetch()
           }}
         >
-          {t('setup.retry')}
+          {t('retry')}
         </Button>
       </div>
     )
@@ -90,7 +90,7 @@ export function SetupPage() {
     <div className="flex min-h-dvh flex-col">
       <TopBar name={instance.data?.name} />
       <main className="flex-1 pb-8">
-        <PageHeading>{t('setup.title')}</PageHeading>
+        <PageHeading>{t('title')}</PageHeading>
         <div className="flex flex-col gap-4 px-4">{content}</div>
       </main>
     </div>
@@ -98,8 +98,8 @@ export function SetupPage() {
 }
 
 function StepHeading({ n, name }: { n: 1 | 2 | 3 | 4; name: 'code' | 'name' | 'account' | 'cities' }) {
-  const { t } = useTranslation()
-  return <h2 className="text-lg font-medium">{t('setup.step', { n, name: t(`setup.steps.${name}`) })}</h2>
+  const { t } = useTranslation(['setup', 'auth'])
+  return <h2 className="text-lg font-medium">{t('step', { n, name: t(`steps.${name}`) })}</h2>
 }
 
 /**
@@ -107,7 +107,7 @@ function StepHeading({ n, name }: { n: 1 | 2 | 3 | 4; name: 'code' | 'name' | 'a
  * account. onDone gets the member when the method returns it.
  */
 function MaintainerSteps({ onDone }: { onDone: (me?: Me) => void }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['setup', 'auth'])
   const [code, setCode] = useState<string | null>(null)
   const [name, setName] = useState<string | null>(null)
   const [method, setMethod] = useState<'password' | 'passkey'>('password')
@@ -116,7 +116,7 @@ function MaintainerSteps({ onDone }: { onDone: (me?: Me) => void }) {
     return (
       <>
         <StepHeading n={1} name="code" />
-        <p>{t('setup.code.intro')}</p>
+        <p>{t('code.intro')}</p>
         <SetupCodeForm onValid={setCode} />
       </>
     )
@@ -133,8 +133,8 @@ function MaintainerSteps({ onDone }: { onDone: (me?: Me) => void }) {
   return (
     <>
       <StepHeading n={3} name="account" />
-      <p>{t('setup.account.intro')}</p>
-      <div role="group" aria-label={t('setup.account.method')} className="flex flex-wrap gap-2">
+      <p>{t('account.intro')}</p>
+      <div role="group" aria-label={t('account.method')} className="flex flex-wrap gap-2">
         {(['password', 'passkey'] as const).map((m) => (
           <Button
             key={m}
@@ -144,7 +144,7 @@ function MaintainerSteps({ onDone }: { onDone: (me?: Me) => void }) {
               setMethod(m)
             }}
           >
-            {t(`pages.register.methods.${m}`)}
+            {t(`auth:register.methods.${m}`)}
           </Button>
         ))}
       </div>
@@ -152,12 +152,12 @@ function MaintainerSteps({ onDone }: { onDone: (me?: Me) => void }) {
         <PasswordTotpRegistration
           entitlement={entitlement}
           onRegistered={onDone}
-          continueLabel={t('setup.account.continue')}
+          continueLabel={t('account.continue')}
         />
       ) : (
         <PasskeyRegistration
           entitlement={entitlement}
-          continueLabel={t('setup.account.continue')}
+          continueLabel={t('account.continue')}
           onDone={() => {
             onDone()
           }}
@@ -170,14 +170,14 @@ function MaintainerSteps({ onDone }: { onDone: (me?: Me) => void }) {
           setName(null)
         }}
       >
-        {t('setup.account.back')}
+        {t('account.back')}
       </Button>
     </>
   )
 }
 
 function SetupCodeForm({ onValid }: { onValid: (code: string) => void }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['setup', 'auth'])
   const [input, setInput] = useState('')
   const [error, setError] = useState<string | null>(null)
   const check = useMutation({
@@ -186,16 +186,16 @@ function SetupCodeForm({ onValid }: { onValid: (code: string) => void }) {
       if (valid) {
         onValid(code)
       } else {
-        setError(t('setup.code.invalid'))
+        setError(t('code.invalid'))
       }
     },
     onError: (err) => {
       setError(
         authErrorCode(err) === rateLimitedCode
-          ? rateLimitMessage(t, authRetryAfter(err))
+          ? rateLimitMessage(authRetryAfter(err))
           : authErrorCode(err) === 'setup_done'
-            ? t('setup.errors.done')
-            : t('setup.code.network'),
+            ? t('errors.done')
+            : t('code.network'),
       )
     },
   })
@@ -203,7 +203,7 @@ function SetupCodeForm({ onValid }: { onValid: (code: string) => void }) {
   const submit = (e: SyntheticEvent) => {
     e.preventDefault()
     if (normalizeSetupCode(input) === null) {
-      setError(t('setup.code.form'))
+      setError(t('code.form'))
       return
     }
     setError(null)
@@ -213,8 +213,8 @@ function SetupCodeForm({ onValid }: { onValid: (code: string) => void }) {
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
       <Field
-        label={t('setup.code.label')}
-        hint={t('setup.code.hint')}
+        label={t('code.label')}
+        hint={t('code.hint')}
         error={error}
         name="setup-code"
         autoComplete="off"
@@ -229,7 +229,7 @@ function SetupCodeForm({ onValid }: { onValid: (code: string) => void }) {
         }}
       />
       <Button type="submit" size="lg" disabled={check.isPending} className="self-start">
-        {check.isPending ? t('setup.code.checking') : t('setup.code.check')}
+        {check.isPending ? t('code.checking') : t('code.check')}
       </Button>
     </form>
   )
@@ -237,13 +237,13 @@ function SetupCodeForm({ onValid }: { onValid: (code: string) => void }) {
 
 /** The instance name, kept in the page until the maintainer is created with it. */
 function NameForm({ onDone }: { onDone: (name: string) => void }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['setup', 'auth'])
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const submit = (e: SyntheticEvent) => {
     e.preventDefault()
     if (!isValidInstanceName(name)) {
-      setError(t('setup.name.required'))
+      setError(t('name.required'))
       return
     }
     setError(null)
@@ -252,8 +252,8 @@ function NameForm({ onDone }: { onDone: (name: string) => void }) {
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
       <Field
-        label={t('setup.name.label')}
-        hint={t('setup.name.hint')}
+        label={t('name.label')}
+        hint={t('name.hint')}
         error={error}
         name="instance-name"
         autoComplete="off"
@@ -265,7 +265,7 @@ function NameForm({ onDone }: { onDone: (name: string) => void }) {
         }}
       />
       <Button type="submit" size="lg" className="self-start">
-        {t('setup.name.next')}
+        {t('name.next')}
       </Button>
     </form>
   )

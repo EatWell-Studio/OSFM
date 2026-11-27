@@ -20,9 +20,9 @@ const messageKeys = {
   display_name_invalid: 'passkey.register.errors.invalidDisplayName',
   login_name_taken: 'passkey.register.errors.loginNameTaken',
   invite_invalid: 'passkey.register.errors.invalidInvite',
-  setup_code_invalid: 'setup.errors.codeInvalid',
-  setup_done: 'setup.errors.done',
-  instance_name_invalid: 'setup.name.required',
+  setup_code_invalid: 'setup:errors.codeInvalid',
+  setup_done: 'setup:errors.done',
+  instance_name_invalid: 'setup:name.required',
   passkey_failed: 'passkey.register.errors.verifyFailed',
   passkeys_unavailable: 'passkey.errors.unavailable',
   cancelled: 'passkey.errors.cancelled',
@@ -54,7 +54,7 @@ export function PasskeyRegistration({
   /** The label of the button after the recovery codes, when it does not lead to the map. */
   continueLabel?: string
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['auth', 'setup'])
   const id = useId()
   const [loginName, setLoginName] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -173,7 +173,7 @@ export function PasskeyRegistration({
       </div>
       {error !== null && (
         <p role="alert" className="text-destructive">
-          {error.code === 'rate_limited' ? rateLimitMessage(t, error.retryAfter) : t(messageKey(error))}
+          {error.code === 'rate_limited' ? rateLimitMessage(error.retryAfter) : t(messageKey(error))}
         </p>
       )}
       <Button type="submit" size="lg" disabled={busy} className="self-start">

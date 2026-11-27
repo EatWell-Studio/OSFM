@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { createMemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 import { App } from '@/App'
-import zhCN from '@/i18n/locales/zh-CN.json'
+import { zhCN } from '@/i18n/resources'
 import { createQueryClient } from '@/lib/queryClient'
 import { routes } from '@/routes'
 import { type Me, sessionQueryKey } from '@/session/session'
@@ -101,13 +101,13 @@ describe('setup wizard', () => {
 
     // Password and TOTP first and chosen, passkey second, as on the registration page.
     const methods = await screen.findAllByRole('button', { pressed: true })
-    expect(methods.map((b) => b.textContent)).toEqual([zhCN.pages.register.methods.password])
-    expect(screen.getByRole('button', { name: zhCN.pages.register.methods.passkey })).toHaveAttribute(
+    expect(methods.map((b) => b.textContent)).toEqual([zhCN.auth.register.methods.password])
+    expect(screen.getByRole('button', { name: zhCN.auth.register.methods.passkey })).toHaveAttribute(
       'aria-pressed',
       'false',
     )
 
-    const reg = zhCN.pages.register.password
+    const reg = zhCN.auth.register.password
     await user.type(screen.getByLabelText(reg.loginName), 'test_first')
     await user.type(screen.getByLabelText(reg.password), 'test password, made up')
     await user.type(screen.getByLabelText(reg.repeat), 'test password, made up')
@@ -201,7 +201,7 @@ describe('setup wizard', () => {
     await user.type(screen.getByLabelText(s.cities.add.bbox), '7.1,0.2,7.2,0.3')
     await user.click(screen.getByRole('button', { name: s.cities.add.submit }))
     await user.click(screen.getByRole('button', { name: s.cities.finish }))
-    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '2'))).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.common.rateLimit.wait_other.replace('{{count}}', '2'))).toBeInTheDocument()
     expect(bodiesOf(fetchMock, '/api/osfm/setup/complete')).toMatchObject([{ name: 'Test Other Circle' }])
   })
 
@@ -221,7 +221,7 @@ describe('setup wizard', () => {
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(s.code.label), setupCode)
     await user.click(screen.getByRole('button', { name: s.code.check }))
-    expect(await screen.findByText(zhCN.rateLimit.wait_one.replace('{{count}}', '1'))).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.common.rateLimit.wait_one.replace('{{count}}', '1'))).toBeInTheDocument()
   })
 
   it('resumes at the cities when the maintainer signs in after an anonymous visit', async () => {
@@ -237,7 +237,7 @@ describe('setup wizard', () => {
     const queryClient = createQueryClient()
     const router = createMemoryRouter(routes, { initialEntries: ['/login'] })
     render(<App router={router} queryClient={queryClient} />)
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(zhCN.pages.login.title)
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(zhCN.auth.login.title)
     // Signing in, as the sign-in forms do: the session is set, and the app goes on.
     signedIn = true
     queryClient.setQueryData(sessionQueryKey, maintainer)

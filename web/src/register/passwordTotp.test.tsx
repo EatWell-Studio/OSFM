@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { createMemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from '@/App'
-import zhCN from '@/i18n/locales/zh-CN.json'
+import { zhCN } from '@/i18n/resources'
 import {
   groupSecret,
   isValidLoginName,
@@ -63,8 +63,8 @@ afterEach(() => {
   sessionStorage.clear()
 })
 
-const reg = zhCN.pages.register.password
-const login = zhCN.pages.login.password
+const reg = zhCN.auth.register.password
+const login = zhCN.auth.login.password
 
 describe('password and TOTP helpers', () => {
   it('normalises like the server', () => {
@@ -130,16 +130,16 @@ describe('registration with password and TOTP', () => {
     await user.click(screen.getByRole('button', { name: reg.confirm }))
 
     // The recovery codes: the map only after confirming they were saved.
-    const list = await screen.findByRole('list', { name: zhCN.recoveryCodes.title })
+    const list = await screen.findByRole('list', { name: zhCN.auth.recoveryCodes.title })
     expect(
       within(list)
         .getAllByRole('listitem')
         .map((li) => li.textContent),
     ).toEqual(recoveryCodes)
-    const go = screen.getByRole('button', { name: zhCN.recoveryCodes.continue })
+    const go = screen.getByRole('button', { name: zhCN.auth.recoveryCodes.continue })
     expect(go).toBeDisabled()
     expect(router.state.location.pathname).toBe('/register')
-    await user.click(screen.getByLabelText(zhCN.recoveryCodes.confirm))
+    await user.click(screen.getByLabelText(zhCN.auth.recoveryCodes.confirm))
     await user.click(go)
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/')
@@ -158,7 +158,7 @@ describe('registration with password and TOTP', () => {
     const { unmount } = render(
       <App router={createMemoryRouter(routes, { initialEntries: ['/register'] })} queryClient={createQueryClient()} />,
     )
-    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '1'))).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.common.rateLimit.wait_other.replace('{{count}}', '1'))).toBeInTheDocument()
     unmount()
 
     checkAnswer = () => Response.json({ valid: true })
@@ -167,7 +167,7 @@ describe('registration with password and TOTP', () => {
     await user.type(screen.getByLabelText(reg.password), password)
     await user.type(screen.getByLabelText(reg.repeat), password)
     await user.click(screen.getByRole('button', { name: reg.next }))
-    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '2'))).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.common.rateLimit.wait_other.replace('{{count}}', '2'))).toBeInTheDocument()
   })
 
   it('checks the form before sending it, and shows the server errors at their field', async () => {
@@ -299,13 +299,15 @@ describe('sign-in with password', () => {
     await user.type(await screen.findByLabelText(login.loginName), 'test_new')
     await user.type(screen.getByLabelText(login.password), password)
     await user.click(screen.getByRole('button', { name: login.next }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.rateLimit.wait_other.replace('{{count}}', '2'))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.common.rateLimit.wait_other.replace('{{count}}', '2'),
+    )
 
     passwordAnswer = () => Response.json({ ticket: 'sealed-ticket', expiresAt: 'x' })
     await user.type(screen.getByLabelText(login.password), password)
     await user.click(screen.getByRole('button', { name: login.next }))
     await user.type(await screen.findByLabelText(login.totp), '123456')
     await user.click(screen.getByRole('button', { name: login.signIn }))
-    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '60'))).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.common.rateLimit.wait_other.replace('{{count}}', '60'))).toBeInTheDocument()
   })
 })

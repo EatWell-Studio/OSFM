@@ -33,11 +33,16 @@ function nextClientAddress(): string {
   return `198.51.100.${String(phones)}`
 }
 
+/**
+ * A new phone: a browser context with the device's options (e.g. devices['Pixel 7']), opening options.baseURL (the
+ * first-start instance's by default; sharedInstance().baseURL for the shared one).
+ */
 export async function newPerson(browser: Browser, name: string, options: Parameters<Browser['newContext']>[0]) {
-  const origin = new URL(baseURL()).origin
+  const base = options?.baseURL ?? baseURL()
+  const origin = new URL(base).origin
   const context = await browser.newContext({
     ...options,
-    baseURL: baseURL(),
+    baseURL: base,
     extraHTTPHeaders: { ...options?.extraHTTPHeaders, 'X-Forwarded-For': nextClientAddress() },
   })
   await context.tracing.start({ screenshots: true, snapshots: true, title: name })

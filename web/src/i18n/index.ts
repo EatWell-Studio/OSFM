@@ -1,22 +1,21 @@
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
-import enJson from './locales/en.json'
-import zhCN from './locales/zh-CN.json'
+import { en, namespaces, zhCN } from './resources'
 
-// Every visible string goes through a translation key (docs/architecture.md §4.1). zh-CN is the source locale: its
-// keys define the type of all others, so a key missing from en fails the type check.
+// Every visible string goes through a translation key (docs/architecture.md §4.1), in namespaces by feature
+// (resources.ts).
 export const defaultLanguage = 'zh-CN'
 export const supportedLanguages = ['zh-CN', 'en'] as const
 
-const en: typeof zhCN = enJson
-
 export const resources = {
-  'zh-CN': { translation: zhCN },
-  en: { translation: en },
+  'zh-CN': zhCN,
+  en,
 } as const
 
 void i18n.use(initReactI18next).init({
   resources,
+  ns: namespaces,
+  defaultNS: 'common',
   lng: defaultLanguage,
   fallbackLng: defaultLanguage,
   supportedLngs: supportedLanguages,

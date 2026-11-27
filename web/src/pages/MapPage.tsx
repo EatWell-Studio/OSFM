@@ -9,14 +9,14 @@ const MapView = lazy(() => import('@/map/MapView'))
  * border), so that nothing covers its attribution.
  */
 export function MapPage() {
-  const { t } = useTranslation()
+  const { t } = useTranslation('map')
   return (
     <div className="h-[calc(100dvh-6.5rem-2px-env(safe-area-inset-top)-env(safe-area-inset-bottom))]">
-      <h1 className="sr-only">{t('pages.map.title')}</h1>
+      <h1 className="sr-only">{t('title')}</h1>
       <Suspense
         fallback={
           <div role="status" className="flex h-full items-center justify-center text-sm">
-            {t('map.loading')}
+            {t('loading')}
           </div>
         }
       >

@@ -1,0 +1,26 @@
+{
+  "title": "Invites",
+  "validity": "Valid for",
+  "days_one": "{{count}} day",
+  "days_other": "{{count}} days",
+  "create": "Create invite link",
+  "createError": "Could not create the invite. Check your connection and try again.",
+  "link": "Invite link",
+  "shownOnce": "This link is shown only now: the server keeps only its hash and cannot show it again. Each link registers one member.",
+  "loadError": "Could not load the invites. Check your connection and try again.",
+  "retry": "Try again",
+  "empty": "No invites yet.",
+  "revoke": "Revoke",
+  "revokeError": "Could not revoke the invite. Reload and try again.",
+  "state": {
+    "active": "Active",
+    "used": "Used",
+    "expired": "Expired",
+    "revoked": "Revoked"
+  },
+  "createdBy": "Created by {{name}} on {{date}}",
+  "usedBy": "Used by {{name}} on {{date}}",
+  "revokedAt": "Revoked on {{date}}",
+  "expiresAt": "Valid until {{date}}",
+  "unknownMember": "(unknown member)"
+}
