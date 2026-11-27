@@ -47,7 +47,7 @@ function store(token: string | null) {
  * map. Every old credential and session is gone by then. An unusable link gets one message, whatever happened to it.
  */
 export function ResetPage() {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -120,20 +120,20 @@ export function ResetPage() {
   } else if (check.isError) {
     content = (
       <div role="alert" className="flex flex-col items-start gap-3">
-        <p>{credentialErrorMessage(t, check.error)}</p>
+        <p>{credentialErrorMessage(check.error)}</p>
         <Button
           onClick={() => {
             void check.refetch()
           }}
         >
-          {t('pages.register.retry')}
+          {t('register.retry')}
         </Button>
       </div>
     )
   } else {
     content = (
       <p role="status" className="text-muted-foreground">
-        {t('pages.register.checking')}
+        {t('register.checking')}
       </p>
     )
   }

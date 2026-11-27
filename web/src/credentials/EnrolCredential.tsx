@@ -40,7 +40,7 @@ export function EnrolCredential({
   onEnrolled: (body: unknown) => void
   onError?: (error: unknown) => boolean
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [method, setMethod] = useState<Method>(methods[0] ?? 'password')
   return (
     <div className="flex flex-col gap-4">
@@ -55,7 +55,7 @@ export function EnrolCredential({
                 setMethod(m)
               }}
             >
-              {m === 'password' ? t('pages.register.methods.password') : t('pages.register.methods.passkey')}
+              {m === 'password' ? t('register.methods.password') : t('register.methods.passkey')}
             </Button>
           ))}
         </div>
@@ -80,7 +80,7 @@ function PasswordEnrol({
   onEnrolled: (body: unknown) => void
   onError?: (error: unknown) => boolean
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [password, setPassword] = useState('')
   const [repeat, setRepeat] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -94,7 +94,7 @@ function PasswordEnrol({
     },
     onError: (err) => {
       if (!onError?.(err)) {
-        setError(credentialErrorMessage(t, err))
+        setError(credentialErrorMessage(err))
       }
     },
   })
@@ -118,11 +118,11 @@ function PasswordEnrol({
     e.preventDefault()
     const length = passwordLength(password)
     if (length < minPasswordLength) {
-      setError(t('pages.register.password.errors.passwordTooShort'))
+      setError(t('register.password.errors.passwordTooShort'))
     } else if (length > maxPasswordLength) {
-      setError(t('pages.register.password.errors.passwordTooLong'))
+      setError(t('register.password.errors.passwordTooLong'))
     } else if (password !== repeat) {
-      setError(t('pages.register.password.errors.passwordsDiffer'))
+      setError(t('register.password.errors.passwordsDiffer'))
     } else {
       setError(null)
       start.mutate()
@@ -135,7 +135,7 @@ function PasswordEnrol({
       {loginName && <input type="text" name="username" autoComplete="username" value={loginName} readOnly hidden />}
       <Field
         label={t('credentials.enrol.password')}
-        hint={t('pages.register.password.passwordHint', { min: minPasswordLength })}
+        hint={t('register.password.passwordHint', { min: minPasswordLength })}
         type="password"
         name="new-password"
         autoComplete="new-password"
@@ -146,7 +146,7 @@ function PasswordEnrol({
         }}
       />
       <Field
-        label={t('pages.register.password.repeat')}
+        label={t('register.password.repeat')}
         type="password"
         name="repeat-password"
         autoComplete="new-password"
@@ -162,7 +162,7 @@ function PasswordEnrol({
         </p>
       )}
       <Button type="submit" size="lg" disabled={start.isPending} className="self-start">
-        {start.isPending ? t('pages.register.password.working') : t('pages.register.password.next')}
+        {start.isPending ? t('register.password.working') : t('register.password.next')}
       </Button>
     </form>
   )
@@ -185,7 +185,7 @@ export function TotpConfirm<R>({
   onRestart: (message: string) => void
   onError?: (error: unknown) => boolean
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const verify = useMutation({
@@ -198,7 +198,7 @@ export function TotpConfirm<R>({
       if (errorCode(err) === 'enrolment_expired') {
         onRestart(t('credentials.errors.expired'))
       } else {
-        setError(credentialErrorMessage(t, err))
+        setError(credentialErrorMessage(err))
       }
     },
   })
@@ -206,7 +206,7 @@ export function TotpConfirm<R>({
     e.preventDefault()
     const normalized = normalizeTotpCode(code)
     if (normalized === null) {
-      setError(t('pages.register.password.errors.codeForm'))
+      setError(t('register.password.errors.codeForm'))
       return
     }
     setError(null)
@@ -214,12 +214,12 @@ export function TotpConfirm<R>({
   }
   return (
     <div className="flex flex-col gap-4">
-      <p>{t('pages.register.password.totpExplanation')}</p>
+      <p>{t('register.password.totpExplanation')}</p>
       <TotpSecret otpauthUri={enrolment.otpauthUri} secret={enrolment.secret} />
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         <Field
-          label={t('pages.register.password.code')}
-          hint={t('pages.register.password.codeHint')}
+          label={t('register.password.code')}
+          hint={t('register.password.codeHint')}
           error={error}
           name="one-time-code"
           autoComplete="one-time-code"
@@ -232,7 +232,7 @@ export function TotpConfirm<R>({
           }}
         />
         <Button type="submit" size="lg" disabled={verify.isPending} className="self-start">
-          {verify.isPending ? t('pages.register.password.working') : t('pages.register.password.confirm')}
+          {verify.isPending ? t('register.password.working') : t('register.password.confirm')}
         </Button>
       </form>
     </div>
@@ -250,7 +250,7 @@ function PasskeyEnrol({
   onEnrolled: (body: unknown) => void
   onError?: (error: unknown) => boolean
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [deviceName, setDeviceName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const create = useMutation({
@@ -258,7 +258,7 @@ function PasskeyEnrol({
     onSuccess: onEnrolled,
     onError: (err) => {
       if (!onError?.(err)) {
-        setError(credentialErrorMessage(t, err))
+        setError(credentialErrorMessage(err))
       }
     },
   })

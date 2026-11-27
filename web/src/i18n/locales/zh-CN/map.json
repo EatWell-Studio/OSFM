@@ -1,0 +1,27 @@
+{
+  "title": "地图",
+  "list": {
+    "title": "列表"
+  },
+  "loading": "正在加载地图…",
+  "loadError": "无法加载城市列表，请检查网络后重试。",
+  "retry": "重试",
+  "noCities": "还没有可以显示的城市：维护者需要先为城市准备底图文件。",
+  "city": "城市",
+  "locate": {
+    "button": "定位到我",
+    "locating": "正在定位…",
+    "unsupported": "这个浏览器不能定位。",
+    "denied": "没有定位权限，请在浏览器设置中允许。",
+    "failed": "无法获取当前位置。",
+    "outside": "你的位置不在任何城市的地图范围内。",
+    "marker": "我的位置"
+  },
+  "controls": {
+    "map": "地图",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "toggleAttribution": "显示或隐藏署名"
+  },
+  "noTiles": "{{city}} 还没有底图。服务器管理员用 deploy/tiles.sh 放好这个城市的底图文件后，这里就会显示地图。"
+}

@@ -1,7 +1,8 @@
 // What the global setup hands to the tests, through environment variables (the test workers inherit them), and the
-// made-up instance the tests set up.
+// made-up instance the tests set up. These values are of the first-start instance (circle.e2e.ts); the shared instance
+// of the feature specs is in shared.ts.
 
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import type { ArchiveSpec } from './archive.ts'
 
 /** The port the binary listens on; chosen in playwright.config.ts, before the workers start. */
@@ -10,6 +11,10 @@ export const portVariable = 'OSFM_E2E_PORT'
 export const setupCodeVariable = 'OSFM_E2E_SETUP_CODE'
 /** The instance's data directory, created by the global setup. */
 export const dataDirVariable = 'OSFM_E2E_DATA_DIR'
+/** The port of the shared instance (support/shared.ts); chosen like portVariable. */
+export const sharedPortVariable = 'OSFM_E2E_SHARED_PORT'
+/** The file in which the global setup leaves the shared instance's state (support/shared.ts). */
+export const sharedStateVariable = 'OSFM_E2E_SHARED_STATE'
 
 /**
  * The address the tests open: localhost, not 127.0.0.1, because the passkey relying party of a local instance is
@@ -48,7 +53,41 @@ export const city = {
 
 export const instanceName = 'Test Circle'
 
-/** The source locale's texts: the tests find controls by the accessible names the app gives them. */
-export const zh = JSON.parse(
-  readFileSync(new URL('../../src/i18n/locales/zh-CN.json', import.meta.url), 'utf8'),
-) as typeof import('../../src/i18n/locales/zh-CN.json')
+// The namespaces of the source locale (src/i18n/resources.ts), as the app has them.
+interface Locale {
+  common: typeof import('../../src/i18n/locales/zh-CN/common.json')
+  auth: typeof import('../../src/i18n/locales/zh-CN/auth.json')
+  setup: typeof import('../../src/i18n/locales/zh-CN/setup.json')
+  map: typeof import('../../src/i18n/locales/zh-CN/map.json')
+  place: typeof import('../../src/i18n/locales/zh-CN/place.json')
+  create: typeof import('../../src/i18n/locales/zh-CN/create.json')
+  edit: typeof import('../../src/i18n/locales/zh-CN/edit.json')
+  share: typeof import('../../src/i18n/locales/zh-CN/share.json')
+  me: typeof import('../../src/i18n/locales/zh-CN/me.json')
+  profile: typeof import('../../src/i18n/locales/zh-CN/profile.json')
+  invites: typeof import('../../src/i18n/locales/zh-CN/invites.json')
+  notices: typeof import('../../src/i18n/locales/zh-CN/notices.json')
+  leave: typeof import('../../src/i18n/locales/zh-CN/leave.json')
+  personalExport: typeof import('../../src/i18n/locales/zh-CN/personalExport.json')
+  layerExport: typeof import('../../src/i18n/locales/zh-CN/layerExport.json')
+  admin: typeof import('../../src/i18n/locales/zh-CN/admin.json')
+  members: typeof import('../../src/i18n/locales/zh-CN/members.json')
+  reports: typeof import('../../src/i18n/locales/zh-CN/reports.json')
+  backup: typeof import('../../src/i18n/locales/zh-CN/backup.json')
+  search: typeof import('../../src/i18n/locales/zh-CN/search.json')
+}
+
+function readLocale(language: string): Locale {
+  const dir = new URL(`../../src/i18n/locales/${language}/`, import.meta.url)
+  return Object.fromEntries(
+    readdirSync(dir)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => [f.slice(0, -'.json'.length), JSON.parse(readFileSync(new URL(f, dir), 'utf8')) as unknown]),
+  ) as unknown as Locale
+}
+
+/**
+ * The source locale's texts by namespace (zh.common.nav.me, zh.admin.title, …): the tests find controls by the
+ * accessible names the app gives them.
+ */
+export const zh = readLocale('zh-CN')

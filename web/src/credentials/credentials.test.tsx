@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { createMemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from '@/App'
-import zhCN from '@/i18n/locales/zh-CN.json'
+import { zhCN } from '@/i18n/resources'
 import { createQueryClient } from '@/lib/queryClient'
 import { routes } from '@/routes'
 import type { Me } from '@/session/session'
@@ -86,14 +86,14 @@ describe('the me page', () => {
       'POST /api/osfm/me/recovery-codes': () => Response.json({ recoveryCodes: codes }, { status: 201 }),
     })
     renderAt('/me')
-    const list = await screen.findByRole('list', { name: zhCN.credentials.passkeys.title })
+    const list = await screen.findByRole('list', { name: zhCN.auth.credentials.passkeys.title })
     expect(within(list).getByText('Test Phone')).toBeInTheDocument()
     // The only passkey of a member without a password cannot be removed.
-    expect(within(list).getByRole('button', { name: zhCN.credentials.remove })).toBeDisabled()
-    expect(screen.getAllByText(zhCN.credentials.lastCredentialHint).length).toBeGreaterThan(0)
-    expect(screen.getByRole('button', { name: zhCN.credentials.password.add })).toBeInTheDocument()
+    expect(within(list).getByRole('button', { name: zhCN.auth.credentials.remove })).toBeDisabled()
+    expect(screen.getAllByText(zhCN.auth.credentials.lastCredentialHint).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: zhCN.auth.credentials.password.add })).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: zhCN.credentials.recovery.regenerate }))
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.credentials.recovery.regenerate }))
     expect(await screen.findByText(codes[0] ?? '')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith('/api/osfm/me/recovery-codes', expect.objectContaining({ method: 'POST' }))
   })
@@ -108,12 +108,12 @@ describe('the me page', () => {
       'POST /api/osfm/me/recovery-codes': () => Response.json({ recoveryCodes: codes }, { status: 201 }),
     })
     renderAt('/me')
-    await userEvent.click(await screen.findByRole('button', { name: zhCN.credentials.recovery.regenerate }))
-    expect(await screen.findByRole('heading', { name: zhCN.credentials.verify.title })).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: zhCN.auth.credentials.recovery.regenerate }))
+    expect(await screen.findByRole('heading', { name: zhCN.auth.credentials.verify.title })).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith('/api/osfm/me/recovery-codes', expect.anything())
-    await userEvent.type(screen.getByLabelText(zhCN.pages.login.password.password), 'test password')
-    await userEvent.type(screen.getByLabelText(zhCN.credentials.verify.code), '123456')
-    await userEvent.click(screen.getByRole('button', { name: zhCN.credentials.verify.submit }))
+    await userEvent.type(screen.getByLabelText(zhCN.auth.login.password.password), 'test password')
+    await userEvent.type(screen.getByLabelText(zhCN.auth.credentials.verify.code), '123456')
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.credentials.verify.submit }))
     expect(await screen.findByText(codes[0] ?? '')).toBeInTheDocument()
     const verify = fetchMock.mock.calls.find(([p]) => p === '/api/osfm/me/verify')
     expect(body(verify?.[1])).toEqual({ password: 'test password', code: '123456' })
@@ -127,11 +127,11 @@ describe('the me page', () => {
         Response.json({ status: 403, code: 'reauth_required', message: '', data: {} }, { status: 403 }),
     })
     renderAt('/me')
-    const remove = await screen.findAllByRole('button', { name: zhCN.credentials.remove })
+    const remove = await screen.findAllByRole('button', { name: zhCN.auth.credentials.remove })
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- found above
     await userEvent.click(remove[0]!)
-    await userEvent.click(screen.getByRole('button', { name: zhCN.credentials.confirmRemove }))
-    expect(await screen.findByText(zhCN.credentials.verify.repeat)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.credentials.confirmRemove }))
+    expect(await screen.findByText(zhCN.auth.credentials.verify.repeat)).toBeInTheDocument()
   })
 })
 
@@ -141,15 +141,15 @@ describe('recovery on the sign-in page', () => {
       'POST /api/osfm/recover': () => Response.json({ ticket: 'test-ticket', expiresAt: '2026-01-01T00:15:00Z' }),
     })
     renderAt('/login')
-    await userEvent.click(await screen.findByRole('button', { name: zhCN.credentials.recover.entry }))
-    await userEvent.type(screen.getByLabelText(zhCN.pages.login.password.loginName), ' Test_Member ')
-    await userEvent.type(screen.getByLabelText(zhCN.pages.login.password.recovery), 'AAAA-BBBB-CCCC-DDDD')
-    await userEvent.click(screen.getByRole('button', { name: zhCN.pages.login.password.next }))
-    expect(await screen.findByText(zhCN.credentials.recover.enrol)).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: zhCN.auth.credentials.recover.entry }))
+    await userEvent.type(screen.getByLabelText(zhCN.auth.login.password.loginName), ' Test_Member ')
+    await userEvent.type(screen.getByLabelText(zhCN.auth.login.password.recovery), 'AAAA-BBBB-CCCC-DDDD')
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.login.password.next }))
+    expect(await screen.findByText(zhCN.auth.credentials.recover.enrol)).toBeInTheDocument()
     const call = fetchMock.mock.calls.find(([p]) => p === '/api/osfm/recover')
     expect(body(call?.[1])).toEqual({ loginName: 'test_member', code: 'AAAA-BBBB-CCCC-DDDD' })
     // The password method comes first.
-    expect(screen.getByRole('button', { name: zhCN.pages.register.methods.password })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: zhCN.auth.register.methods.password })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
@@ -161,11 +161,11 @@ describe('recovery on the sign-in page', () => {
         Response.json({ status: 401, code: 'recovery_failed', message: '', data: {} }, { status: 401 }),
     })
     renderAt('/login')
-    await userEvent.click(await screen.findByRole('button', { name: zhCN.credentials.recover.entry }))
-    await userEvent.type(screen.getByLabelText(zhCN.pages.login.password.loginName), 'test_member')
-    await userEvent.type(screen.getByLabelText(zhCN.pages.login.password.recovery), 'x')
-    await userEvent.click(screen.getByRole('button', { name: zhCN.pages.login.password.next }))
-    expect(await screen.findByText(zhCN.credentials.recover.errors.failed)).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: zhCN.auth.credentials.recover.entry }))
+    await userEvent.type(screen.getByLabelText(zhCN.auth.login.password.loginName), 'test_member')
+    await userEvent.type(screen.getByLabelText(zhCN.auth.login.password.recovery), 'x')
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.login.password.next }))
+    expect(await screen.findByText(zhCN.auth.credentials.recover.errors.failed)).toBeInTheDocument()
   })
 
   it('shows the wait after too many attempts', async () => {
@@ -177,11 +177,11 @@ describe('recovery on the sign-in page', () => {
         ),
     })
     renderAt('/login')
-    await userEvent.click(await screen.findByRole('button', { name: zhCN.credentials.recover.entry }))
-    await userEvent.type(screen.getByLabelText(zhCN.pages.login.password.loginName), 'test_member')
-    await userEvent.type(screen.getByLabelText(zhCN.pages.login.password.recovery), 'x')
-    await userEvent.click(screen.getByRole('button', { name: zhCN.pages.login.password.next }))
-    expect(await screen.findByText(zhCN.rateLimit.wait_other.replace('{{count}}', '2'))).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: zhCN.auth.credentials.recover.entry }))
+    await userEvent.type(screen.getByLabelText(zhCN.auth.login.password.loginName), 'test_member')
+    await userEvent.type(screen.getByLabelText(zhCN.auth.login.password.recovery), 'x')
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.login.password.next }))
+    expect(await screen.findByText(zhCN.common.rateLimit.wait_other.replace('{{count}}', '2'))).toBeInTheDocument()
   })
 })
 
@@ -194,7 +194,7 @@ describe('the reset page', () => {
     const router = renderAt(`/reset#token=${token}`)
     expect(
       await screen.findByText(
-        zhCN.credentials.reset.account
+        zhCN.auth.credentials.reset.account
           .replace('{{displayName}}', 'Test Member')
           .replace('{{loginName}}', 'test_member'),
       ),
@@ -209,7 +209,7 @@ describe('the reset page', () => {
   it('has one message for an unusable link', async () => {
     stubApi(null, { 'POST /api/osfm/reset/check': () => Response.json({ valid: false }) })
     renderAt(`/reset#token=${token}`)
-    expect(await screen.findByText(zhCN.credentials.reset.invalid)).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.auth.credentials.reset.invalid)).toBeInTheDocument()
   })
 })
 
@@ -280,32 +280,32 @@ describe('the admin page', () => {
 
   it('lists the members with their sign-in methods, those who left apart', async () => {
     adminApi()
-    renderAt('/admin')
-    const list = await screen.findByRole('list', { name: zhCN.pages.admin.members.title })
+    renderAt('/admin/members')
+    const list = await screen.findByRole('list', { name: zhCN.members.title })
     const rows = within(list).getAllByRole('listitem')
     expect(rows).toHaveLength(2)
-    expect(rows[0]).toHaveTextContent(`Test Maintainer · ${zhCN.pages.admin.members.maintainer}`)
-    expect(rows[0]).toHaveTextContent(zhCN.pages.admin.members.you)
-    expect(rows[0]).toHaveTextContent(zhCN.pages.admin.members.passwordTotp)
+    expect(rows[0]).toHaveTextContent(`Test Maintainer · ${zhCN.members.maintainer}`)
+    expect(rows[0]).toHaveTextContent(zhCN.members.you)
+    expect(rows[0]).toHaveTextContent(zhCN.members.passwordTotp)
     // No reset link for oneself.
     expect(within(rowOf(list, 0)).queryByRole('button')).toBeNull()
-    expect(rows[1]).toHaveTextContent(zhCN.pages.admin.members.passkeys_other.replace('{{count}}', '2'))
+    expect(rows[1]).toHaveTextContent(zhCN.members.passkeys_other.replace('{{count}}', '2'))
     expect(rows[1]).toHaveTextContent(
-      zhCN.pages.admin.members.joinedInvited.replace(/.*\{\{date\}\}/, '').replace('{{name}}', 'Test Maintainer'),
+      zhCN.members.joinedInvited.replace(/.*\{\{date\}\}/, '').replace('{{name}}', 'Test Maintainer'),
     )
-    expect(rows[1]).toHaveTextContent(zhCN.pages.admin.members.cannotInvite)
-    const left = screen.getByRole('list', { name: zhCN.pages.admin.members.left })
+    expect(rows[1]).toHaveTextContent(zhCN.members.cannotInvite)
+    const left = screen.getByRole('list', { name: zhCN.members.left })
     expect(within(left).getByRole('listitem')).toHaveTextContent('Test Gone')
     expect(within(left).queryByRole('button')).toBeNull()
   })
 
   it('creates a reset link from a member row, by uuid, and shows it once', async () => {
     const fetchMock = adminApi()
-    renderAt('/admin')
-    const list = await screen.findByRole('list', { name: zhCN.pages.admin.members.title })
+    renderAt('/admin/members')
+    const list = await screen.findByRole('list', { name: zhCN.members.title })
     const row = rowOf(list, 1)
-    await userEvent.click(within(row).getByRole('button', { name: zhCN.pages.admin.reset.create }))
-    const shown = await screen.findByRole('textbox', { name: zhCN.pages.admin.reset.link })
+    await userEvent.click(within(row).getByRole('button', { name: zhCN.members.reset.create }))
+    const shown = await screen.findByRole('textbox', { name: zhCN.members.reset.link })
     expect(shown).toHaveValue(`${window.location.origin}/reset#token=${token}`)
     const call = fetchMock.mock.calls.find(([p, init]) => p === '/api/osfm/reset-links' && init?.method === 'POST')
     expect(body(call?.[1])).toEqual({ member: memberUuid })
@@ -323,12 +323,12 @@ describe('the admin page', () => {
         return Response.json({ status: 403, message: '', data: {}, code: 'reauth_required' }, { status: 403 })
       },
     })
-    renderAt('/admin')
-    const list = await screen.findByRole('list', { name: zhCN.pages.admin.members.title })
+    renderAt('/admin/members')
+    const list = await screen.findByRole('list', { name: zhCN.members.title })
     const row = rowOf(list, 1)
-    await userEvent.click(within(row).getByRole('button', { name: zhCN.pages.admin.reset.create }))
-    expect(await screen.findByRole('heading', { name: zhCN.credentials.verify.title })).toBeInTheDocument()
-    expect(screen.getByText(zhCN.credentials.verify.repeat)).toBeInTheDocument()
+    await userEvent.click(within(row).getByRole('button', { name: zhCN.members.reset.create }))
+    expect(await screen.findByRole('heading', { name: zhCN.auth.credentials.verify.title })).toBeInTheDocument()
+    expect(screen.getByText(zhCN.auth.credentials.verify.repeat)).toBeInTheDocument()
     expect(calls).toBe(1)
   })
 })

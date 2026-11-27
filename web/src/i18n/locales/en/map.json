@@ -1,0 +1,27 @@
+{
+  "title": "Map",
+  "list": {
+    "title": "List"
+  },
+  "loading": "Loading the map…",
+  "loadError": "Could not load the list of cities. Check your connection and try again.",
+  "retry": "Try again",
+  "noCities": "There is no city to show yet: a maintainer has to provide the basemap files of the cities first.",
+  "city": "City",
+  "locate": {
+    "button": "Show my location",
+    "locating": "Locating…",
+    "unsupported": "This browser cannot determine your location.",
+    "denied": "No permission to use your location. Allow it in the browser settings.",
+    "failed": "Could not determine your location.",
+    "outside": "Your location is outside the map of every city.",
+    "marker": "My location"
+  },
+  "controls": {
+    "map": "Map",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "toggleAttribution": "Show or hide attribution"
+  },
+  "noTiles": "There is no basemap for {{city}} yet. It shows here once the server's operator has placed the city's basemap file (deploy/tiles.sh)."
+}

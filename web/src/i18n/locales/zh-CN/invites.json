@@ -1,0 +1,26 @@
+{
+  "title": "邀请",
+  "validity": "有效期",
+  "days_one": "{{count}} 天",
+  "days_other": "{{count}} 天",
+  "create": "创建邀请链接",
+  "createError": "无法创建邀请，请检查网络后重试。",
+  "link": "邀请链接",
+  "shownOnce": "这个链接只显示这一次：服务器只保存它的哈希，以后无法再查看。每个链接只能注册一次。",
+  "loadError": "无法加载邀请列表，请检查网络后重试。",
+  "retry": "重试",
+  "empty": "还没有邀请。",
+  "revoke": "撤销",
+  "revokeError": "无法撤销邀请，请刷新后重试。",
+  "state": {
+    "active": "有效",
+    "used": "已使用",
+    "expired": "已过期",
+    "revoked": "已撤销"
+  },
+  "createdBy": "{{name}} 创建于 {{date}}",
+  "usedBy": "{{name}} 于 {{date}} 使用",
+  "revokedAt": "撤销于 {{date}}",
+  "expiresAt": "有效至 {{date}}",
+  "unknownMember": "（未知成员）"
+}

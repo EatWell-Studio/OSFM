@@ -40,12 +40,12 @@ export function ShownOnceLink({ link, label, note }: { link: string; label: stri
           }}
         >
           {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-          {copied ? t('pages.admin.invites.copied') : t('pages.admin.invites.copy')}
+          {copied ? t('copied') : t('copy')}
         </Button>
       </div>
       {copied === false && (
         <p role="alert" className="text-sm text-destructive">
-          {t('pages.admin.invites.copyError')}
+          {t('copyError')}
         </p>
       )}
       <p className="text-sm text-muted-foreground">{note}</p>

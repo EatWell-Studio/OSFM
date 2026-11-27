@@ -18,16 +18,14 @@ type Step =
  * The server starts the session only after the second step; onSignedIn then gets the member.
  */
 export function PasswordSignIn({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [step, setStep] = useState<Step>({ kind: 'password', notice: null })
   const [loginName, setLoginName] = useState('')
 
   if (step.kind === 'recovered') {
     return (
       <div className="flex flex-col gap-4">
-        <p role="status">
-          {t('pages.login.password.recoveryCodesLeft', { count: step.signedIn.recoveryCodesLeft ?? 0 })}
-        </p>
+        <p role="status">{t('login.password.recoveryCodesLeft', { count: step.signedIn.recoveryCodesLeft ?? 0 })}</p>
         <Button
           size="lg"
           className="self-start"
@@ -35,7 +33,7 @@ export function PasswordSignIn({ onSignedIn }: { onSignedIn: (me: Me) => void })
             onSignedIn(step.signedIn.me)
           }}
         >
-          {t('pages.login.password.continue')}
+          {t('login.password.continue')}
         </Button>
       </div>
     )
@@ -80,7 +78,7 @@ function PasswordStep({
   notice: string | null
   onTicket: (ticket: string) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -91,13 +89,13 @@ function PasswordStep({
       setPassword('')
       switch (authErrorCode(err)) {
         case 'credentials_invalid':
-          setError(t('pages.login.password.errors.credentials'))
+          setError(t('login.password.errors.credentials'))
           break
         case rateLimitedCode:
-          setError(rateLimitMessage(t, authRetryAfter(err)))
+          setError(rateLimitMessage(authRetryAfter(err)))
           break
         default:
-          setError(t('pages.login.password.errors.network'))
+          setError(t('login.password.errors.network'))
       }
     },
   })
@@ -105,7 +103,7 @@ function PasswordStep({
   const submit = (e: SyntheticEvent) => {
     e.preventDefault()
     if (loginName.trim() === '' || password === '') {
-      setError(t('pages.login.password.errors.missing'))
+      setError(t('login.password.errors.missing'))
       return
     }
     setError(null)
@@ -120,7 +118,7 @@ function PasswordStep({
         </p>
       )}
       <Field
-        label={t('pages.login.password.loginName')}
+        label={t('login.password.loginName')}
         name="username"
         autoComplete="username"
         autoCapitalize="none"
@@ -133,7 +131,7 @@ function PasswordStep({
         }}
       />
       <Field
-        label={t('pages.login.password.password')}
+        label={t('login.password.password')}
         type="password"
         name="password"
         autoComplete="current-password"
@@ -149,7 +147,7 @@ function PasswordStep({
         </p>
       )}
       <Button type="submit" size="lg" disabled={signIn.isPending} className="self-start">
-        {signIn.isPending ? t('pages.login.password.working') : t('pages.login.password.next')}
+        {signIn.isPending ? t('login.password.working') : t('login.password.next')}
       </Button>
     </form>
   )
@@ -164,7 +162,7 @@ function SecondFactor({
   onSignedIn: (signedIn: SignedIn) => void
   onRestart: (notice: string) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [kind, setKind] = useState<'totp' | 'recovery'>('totp')
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -176,22 +174,20 @@ function SecondFactor({
       switch (authErrorCode(err)) {
         case 'code_invalid':
           setError(
-            kind === 'totp'
-              ? t('pages.login.password.errors.totpInvalid')
-              : t('pages.login.password.errors.recoveryInvalid'),
+            kind === 'totp' ? t('login.password.errors.totpInvalid') : t('login.password.errors.recoveryInvalid'),
           )
           break
         case 'ticket_expired':
-          onRestart(t('pages.login.password.errors.expired'))
+          onRestart(t('login.password.errors.expired'))
           break
         case 'cannot_sign_in':
-          onRestart(t('pages.login.password.errors.cannotSignIn'))
+          onRestart(t('login.password.errors.cannotSignIn'))
           break
         case rateLimitedCode:
-          setError(rateLimitMessage(t, authRetryAfter(err)))
+          setError(rateLimitMessage(authRetryAfter(err)))
           break
         default:
-          setError(t('pages.login.password.errors.network'))
+          setError(t('login.password.errors.network'))
       }
     },
   })
@@ -202,11 +198,11 @@ function SecondFactor({
     if (kind === 'totp') {
       c = normalizeTotpCode(code)
       if (c === null) {
-        setError(t('pages.login.password.errors.totpForm'))
+        setError(t('login.password.errors.totpForm'))
         return
       }
     } else if (c === '') {
-      setError(t('pages.login.password.errors.missing'))
+      setError(t('login.password.errors.missing'))
       return
     }
     setError(null)
@@ -221,13 +217,11 @@ function SecondFactor({
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-      <p>
-        {kind === 'totp' ? t('pages.login.password.totpExplanation') : t('pages.login.password.recoveryExplanation')}
-      </p>
+      <p>{kind === 'totp' ? t('login.password.totpExplanation') : t('login.password.recoveryExplanation')}</p>
       {kind === 'totp' ? (
         <Field
           key="totp"
-          label={t('pages.login.password.totp')}
+          label={t('login.password.totp')}
           error={error}
           name="one-time-code"
           autoComplete="one-time-code"
@@ -242,8 +236,8 @@ function SecondFactor({
       ) : (
         <Field
           key="recovery"
-          label={t('pages.login.password.recovery')}
-          hint={t('pages.login.password.recoveryHint')}
+          label={t('login.password.recovery')}
+          hint={t('login.password.recoveryHint')}
           error={error}
           name="recovery-code"
           autoComplete="off"
@@ -259,10 +253,10 @@ function SecondFactor({
         />
       )}
       <Button type="submit" size="lg" disabled={verify.isPending} className="self-start">
-        {verify.isPending ? t('pages.login.password.working') : t('pages.login.password.signIn')}
+        {verify.isPending ? t('login.password.working') : t('login.password.signIn')}
       </Button>
       <Button type="button" variant="link" onClick={switchKind} className="self-start px-0">
-        {kind === 'totp' ? t('pages.login.password.useRecovery') : t('pages.login.password.useTotp')}
+        {kind === 'totp' ? t('login.password.useRecovery') : t('login.password.useTotp')}
       </Button>
     </form>
   )

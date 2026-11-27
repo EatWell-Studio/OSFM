@@ -1,0 +1,43 @@
+{
+  "title": "管理",
+  "notAllowed": "只有维护者可以使用管理页面。",
+  "instance": {
+    "title": "实例设置",
+    "intro": "城市：取消勾选或删除的城市不再出现在地图上，底图文件不会被删除。",
+    "save": "保存设置",
+    "saved": "已保存。",
+    "nameHint": "显示在顶栏。已加进验证器 App 的条目名称不会跟着改。"
+  },
+  "nav": {
+    "label": "管理页的分区",
+    "invites": "邀请",
+    "members": "成员",
+    "tree": "邀请树",
+    "reports": "举报",
+    "settings": "设置",
+    "backup": "备份"
+  },
+  "circle": {
+    "title": "举报、邀请与地名搜索",
+    "loadError": "无法加载设置，请检查网络后重试。",
+    "unavailable": "这个服务器还不支持这些设置，升级后再来设置。",
+    "reportThreshold": "自动隐藏需要的举报数",
+    "reportThresholdHint": "一条推荐收到这么多份未处理的举报时自动隐藏，等待维护者复核。至少为 1。",
+    "inviteCooldownDays": "新成员的邀请冷静期（天）",
+    "inviteCooldownDaysHint": "新成员加入这么多天后才能邀请别人，0 表示不设冷静期。修改后对所有成员立即生效。",
+    "geocoderEnabled": "开启地名搜索",
+    "geocoderEnabledHint": "搜索词会由本实例的服务器发给 Photon（komoot 的公共实例），失败时发给 OpenStreetMap 基金会的 Nominatim，不带成员的身份。关闭后地图上不显示搜索框，成员拖动地图打点。",
+    "geocoderContact": "联系方式（可选）",
+    "geocoderContactHint": "附在发给搜索服务的请求里，让服务方在出问题时能联系到这个实例的管理员，例如一个邮箱地址。",
+    "save": "保存",
+    "working": "正在保存…",
+    "saved": "已保存。",
+    "errors": {
+      "reportThreshold": "举报数是不小于 1 的整数。",
+      "inviteCooldownDays": "冷静期是不小于 0 的整数天。",
+      "geocoderContact": "联系方式最多 200 个字符。",
+      "invalid": "服务器没有接受这些设置，请检查后重试。",
+      "network": "无法保存，请检查网络后重试。"
+    }
+  }
+}

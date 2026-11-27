@@ -1,0 +1,131 @@
+{
+  "app": {
+    "instanceNamePlaceholder": "OSFM",
+    "loading": "加载中…"
+  },
+  "nav": {
+    "label": "主导航",
+    "map": "地图",
+    "list": "列表",
+    "me": "我的"
+  },
+  "session": {
+    "error": "无法确认登录状态，请检查网络后重试。",
+    "retry": "重试"
+  },
+  "rateLimit": {
+    "wait_one": "尝试次数太多，请 {{count}} 分钟后再试。",
+    "wait_other": "尝试次数太多，请 {{count}} 分钟后再试。",
+    "later": "尝试次数太多，请稍后再试。"
+  },
+  "notFound": {
+    "title": "页面不存在"
+  },
+  "retry": "重试",
+  "close": "关闭",
+  "comingSoon": "这部分还在开发中，即将推出。",
+  "invalidLink": "这个地址不正确。",
+  "attitude": {
+    "must_try": "强推",
+    "good": "可以",
+    "ok": "一般",
+    "avoid": "避雷"
+  },
+  "timeSlot": {
+    "breakfast": "早餐",
+    "lunch": "午餐",
+    "afternoon": "下午茶",
+    "dinner": "晚餐",
+    "late_night": "夜宵"
+  },
+  "precision": {
+    "exact": "精确",
+    "approx": "大致",
+    "area": "片区"
+  },
+  "category": {
+    "restaurant": "餐馆",
+    "fast_food": "快餐小吃",
+    "cafe": "咖啡茶饮",
+    "food_court": "美食广场",
+    "ice_cream": "冰淇淋",
+    "bakery": "面包店",
+    "pastry": "甜品",
+    "street_vendor": "摊位",
+    "bar": "酒吧",
+    "pub": "酒馆",
+    "biergarten": "啤酒花园"
+  },
+  "cuisine": {
+    "chinese": "中餐",
+    "sichuan": "川菜",
+    "cantonese": "粤菜",
+    "hunan": "湘菜",
+    "dongbei": "东北菜",
+    "uyghur": "新疆菜",
+    "taiwanese": "台湾菜",
+    "hot_pot": "火锅",
+    "dim_sum": "点心",
+    "dumpling": "饺子",
+    "noodle": "面食",
+    "barbecue": "烧烤",
+    "japanese": "日本料理",
+    "sushi": "寿司",
+    "ramen": "日式拉面",
+    "korean": "韩国料理",
+    "vietnamese": "越南菜",
+    "thai": "泰国菜",
+    "indian": "印度菜",
+    "asian": "亚洲菜",
+    "german": "德国菜",
+    "italian": "意大利菜",
+    "pizza": "披萨",
+    "french": "法国菜",
+    "spanish": "西班牙菜",
+    "greek": "希腊菜",
+    "turkish": "土耳其菜",
+    "kebab": "土耳其烤肉",
+    "balkan": "巴尔干菜",
+    "middle_eastern": "中东菜",
+    "mexican": "墨西哥菜",
+    "american": "美式",
+    "burger": "汉堡",
+    "sandwich": "三明治",
+    "seafood": "海鲜",
+    "steak_house": "牛排",
+    "coffee_shop": "咖啡",
+    "bubble_tea": "奶茶"
+  },
+  "sourceKind": {
+    "visited": "去过",
+    "chat": "群聊",
+    "note": "笔记",
+    "other": "其他"
+  },
+  "visibility": {
+    "private": "仅自己可见",
+    "circle": "圈内可见"
+  },
+  "signature": {
+    "main": "主名",
+    "pseudonym": "化名"
+  },
+  "reportReason": {
+    "advertising": "广告或利益相关",
+    "abuse": "人身攻击或歧视",
+    "political_illegal": "政治或违法内容",
+    "unverified_claim": "未经证实的指控（如卫生问题）",
+    "false_or_duplicate": "明显不实或重复",
+    "other": "其他（须填写说明）"
+  },
+  "noticeKind": {
+    "maintainer_edited": "维护者修改了你的推荐",
+    "hidden_by_maintainer": "维护者隐藏了你的推荐",
+    "hidden_by_reports": "你的推荐因多人举报被隐藏，等待维护者复核",
+    "restored": "你的推荐已恢复显示",
+    "violation_deleted": "你的推荐因违规被删除"
+  },
+  "copy": "复制",
+  "copied": "已复制",
+  "copyError": "无法复制，请手动选中链接复制。"
+}

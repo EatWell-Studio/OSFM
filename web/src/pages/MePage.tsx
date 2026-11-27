@@ -1,57 +1,41 @@
-import { LogOut, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Link, useLocation } from 'react-router'
+import { useLocation } from 'react-router'
 import { PageHeading } from '@/components/PageHeading'
-import { Button } from '@/components/ui/button'
 import { CredentialsSection } from '@/credentials/CredentialsSection'
-import { useLogout } from '@/session/useLogout'
-import { useSession } from '@/session/useSession'
+import { AccountSection } from '@/me/AccountSection'
+import { InvitesSection } from '@/me/InvitesSection'
+import { LayerExport } from '@/me/LayerExport'
+import { LeaveSection } from '@/me/LeaveSection'
+import { NoticesSection } from '@/me/NoticesSection'
+import { PersonalExport } from '@/me/PersonalExport'
+import { ProfileSection } from '@/me/ProfileSection'
 
 /**
- * The member's own page: the credentials (D5), signing out, and for maintainers the way to the administration page.
- * The profile, pseudonym and data export come later. After a recovery, the page says to check the old passkeys.
+ * The member's own page, one section per file (src/me/, and the credentials of D5 in src/credentials/): notices first
+ * (M2-Q14), the profile, invites, ways to sign in, the exports, signing out (and the administration for maintainers),
+ * and leaving the circle last. After a recovery, the page says to check the old passkeys.
  */
 export function MePage() {
-  const { t } = useTranslation()
-  const logout = useLogout()
-  const session = useSession()
+  const { t } = useTranslation(['me', 'auth'])
   const location = useLocation()
   const recovered = (location.state as { recovered?: boolean } | null)?.recovered === true
   return (
     <>
-      <PageHeading>{t('pages.me.title')}</PageHeading>
-      <div className="flex flex-col gap-4 px-4">
+      <PageHeading>{t('title')}</PageHeading>
+      <div className="flex flex-col gap-8 px-4 pb-4">
         {recovered && (
           <p role="status" className="rounded-lg border border-primary/40 p-3 text-sm">
-            {t('credentials.recover.checkPasskeys')}
+            {t('auth:credentials.recover.checkPasskeys')}
           </p>
         )}
+        <NoticesSection />
+        <ProfileSection />
+        <InvitesSection />
         <CredentialsSection />
-      </div>
-      <div className="flex flex-col items-start gap-3 p-4">
-        {session.status === 'signed-in' && session.me.role === 'maintainer' && (
-          <Button variant="outline" asChild>
-            <Link to="/admin">
-              <Settings aria-hidden="true" />
-              {t('pages.me.admin')}
-            </Link>
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          disabled={logout.isPending}
-          onClick={() => {
-            logout.mutate()
-          }}
-        >
-          <LogOut aria-hidden="true" />
-          {t('pages.me.logout')}
-        </Button>
-        {logout.isError && (
-          <p role="alert" className="text-sm text-destructive">
-            {t('pages.me.logoutError')}
-          </p>
-        )}
+        <PersonalExport />
+        <LayerExport />
+        <AccountSection />
+        <LeaveSection />
       </div>
     </>
   )

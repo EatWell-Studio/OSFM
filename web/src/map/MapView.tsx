@@ -44,32 +44,32 @@ function rememberCity(id: string) {
 const transformRequest: maplibregl.RequestTransformFunction = (url) => ({ url, credentials: 'same-origin' })
 
 export default function MapView() {
-  const { t } = useTranslation()
+  const { t } = useTranslation('map')
   const cities = useQuery({ queryKey: citiesQueryKey, queryFn: ({ signal }) => fetchCities(signal) })
   // The display names of the cities, and the cities that have no tiles yet. Without them the archives are still shown.
   const instance = useQuery(instanceQuery)
 
   if (cities.isPending || instance.isPending) {
-    return <MapMessage>{t('map.loading')}</MapMessage>
+    return <MapMessage>{t('loading')}</MapMessage>
   }
   if (cities.isError) {
     return (
       <MapMessage>
-        <p>{t('map.loadError')}</p>
+        <p>{t('loadError')}</p>
         <Button
           variant="outline"
           onClick={() => {
             void cities.refetch()
           }}
         >
-          {t('map.retry')}
+          {t('retry')}
         </Button>
       </MapMessage>
     )
   }
   const choices = mergeCities(cities.data, instance.data?.cities ?? [])
   if (choices.length === 0) {
-    return <MapMessage>{t('map.noCities')}</MapMessage>
+    return <MapMessage>{t('noCities')}</MapMessage>
   }
   return <CityView choices={choices} />
 }
@@ -84,7 +84,7 @@ function MapMessage({ children }: { children: ReactNode }) {
 
 /** The city chosen in the URL (or remembered, or the first), on the map or, without tiles yet, as a notice. */
 function CityView({ choices }: { choices: MapCity[] }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('map')
   const [searchParams, setSearchParams] = useSearchParams()
   const chosen = pickCity(choices, searchParams.get(cityParam), readRememberedCity())
   if (!chosen) {
@@ -111,7 +111,7 @@ function CityView({ choices }: { choices: MapCity[] }) {
   const select = (
     <div className="absolute top-2.5 left-2.5 z-[2]">
       <label className="sr-only" htmlFor="map-city">
-        {t('map.city')}
+        {t('city')}
       </label>
       <select
         id="map-city"
@@ -134,7 +134,7 @@ function CityView({ choices }: { choices: MapCity[] }) {
     return (
       <div className="relative h-full">
         {select}
-        <MapMessage>{t('map.noTiles', { city: chosen.label })}</MapMessage>
+        <MapMessage>{t('noTiles', { city: chosen.label })}</MapMessage>
       </div>
     )
   }
@@ -153,7 +153,7 @@ function CityMap({
   select: ReactNode
   selectCity: (id: string) => void
 }) {
-  const { t, i18n } = useTranslation()
+  const { t, i18n } = useTranslation('map')
   const mapRef = useRef<MapRef>(null)
   const [position, setPosition] = useState<Position | null>(null)
   // A position to center on once the map shows the city it lies in.
@@ -163,8 +163,8 @@ function CityMap({
   const style = useMemo(() => buildStyle(city, lang, window.location.origin), [city, lang])
   const locale = useMemo(
     () => ({
-      'Map.Title': t('map.controls.map'),
-      'AttributionControl.ToggleAttribution': t('map.controls.toggleAttribution'),
+      'Map.Title': t('controls.map'),
+      'AttributionControl.ToggleAttribution': t('controls.toggleAttribution'),
     }),
     [t],
   )
@@ -241,7 +241,7 @@ function CityMap({
           <Marker longitude={position.lon} latitude={position.lat}>
             <span
               role="img"
-              aria-label={t('map.locate.marker')}
+              aria-label={t('locate.marker')}
               className="block size-4 rounded-full border-2 border-white bg-blue-600 shadow"
             />
           </Marker>
@@ -255,7 +255,7 @@ function CityMap({
         <Button
           variant="outline"
           size="icon"
-          aria-label={t('map.controls.zoomIn')}
+          aria-label={t('controls.zoomIn')}
           onClick={() => mapRef.current?.zoomIn()}
           className="bg-background shadow-sm"
         >
@@ -264,7 +264,7 @@ function CityMap({
         <Button
           variant="outline"
           size="icon"
-          aria-label={t('map.controls.zoomOut')}
+          aria-label={t('controls.zoomOut')}
           disabled={atMinZoom}
           onClick={() => mapRef.current?.zoomOut()}
           className="bg-background shadow-sm"
@@ -274,7 +274,7 @@ function CityMap({
         <Button
           variant="outline"
           size="icon"
-          aria-label={t('map.locate.button')}
+          aria-label={t('locate.button')}
           disabled={locating}
           onClick={locate}
           className="mt-2 bg-background shadow-sm"
@@ -288,10 +288,10 @@ function CityMap({
         aria-live="polite"
         className="pointer-events-none absolute inset-x-0 top-14 z-[2] flex justify-center px-16"
       >
-        {locating && <p className="sr-only">{t('map.locate.locating')}</p>}
+        {locating && <p className="sr-only">{t('locate.locating')}</p>}
         {message && (
           <p className="rounded-md bg-foreground/85 px-3 py-2 text-sm text-background shadow">
-            {t(`map.locate.${message}`)}
+            {t(`locate.${message}`)}
           </p>
         )}
       </div>

@@ -11,18 +11,18 @@ import { groupSecret } from '@/lib/passwordTotp'
  * or replaces the authenticator app.
  */
 export function TotpSecret({ otpauthUri, secret }: { otpauthUri: string; secret: string }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [copied, setCopied] = useState(false)
   return (
     <>
       <div className="self-center rounded-lg bg-white p-2">
-        <QRCodeSVG value={otpauthUri} size={208} level="M" title={t('pages.register.password.qrTitle')} />
+        <QRCodeSVG value={otpauthUri} size={208} level="M" title={t('register.password.qrTitle')} />
       </div>
       <Button asChild variant="outline" className="self-start">
-        <a href={otpauthUri}>{t('pages.register.password.openApp')}</a>
+        <a href={otpauthUri}>{t('register.password.openApp')}</a>
       </Button>
       <div className="flex flex-col gap-1">
-        <p className="text-sm">{t('pages.register.password.secretLabel')}</p>
+        <p className="text-sm">{t('register.password.secretLabel')}</p>
         <div className="flex flex-wrap items-center gap-2">
           <code className="rounded border bg-muted/40 px-2 py-1 font-mono text-sm break-all select-all">
             {groupSecret(secret)}
@@ -42,7 +42,7 @@ export function TotpSecret({ otpauthUri, secret }: { otpauthUri: string; secret:
             }}
           >
             {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-            {copied ? t('pages.register.password.copied') : t('pages.register.password.copySecret')}
+            {copied ? t('register.password.copied') : t('register.password.copySecret')}
           </Button>
         </div>
       </div>

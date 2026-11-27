@@ -1,0 +1,6 @@
+{
+  "title": "Me",
+  "logout": "Sign out",
+  "logoutError": "Could not sign out. Check your connection and try again.",
+  "admin": "Administration"
+}

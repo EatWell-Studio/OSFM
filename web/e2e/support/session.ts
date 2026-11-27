@@ -13,8 +13,11 @@ import { dataDir } from './env.ts'
 /** The window plus a minute. */
 const staleBy = 11 * 60_000
 
-/** Makes the session of the context's cookie stale: verified eleven minutes ago. */
-export async function makeSessionStale(context: BrowserContext) {
+/**
+ * Makes the session of the context's cookie stale: verified eleven minutes ago. instanceDir is the instance's data
+ * directory: the first-start instance's by default, sharedInstance().dataDir for the shared one.
+ */
+export async function makeSessionStale(context: BrowserContext, instanceDir = dataDir()) {
   const cookie = (await context.cookies()).find((c) => c.name === 'osfm_session')
   if (!cookie) {
     throw new Error('e2e: no session cookie')
@@ -22,7 +25,7 @@ export async function makeSessionStale(context: BrowserContext) {
   // sessions.token_hash is the hex SHA-256 of the cookie's token; dates are stored as PocketBase writes them.
   const hash = createHash('sha256').update(cookie.value).digest('hex')
   const verifiedAt = new Date(Date.now() - staleBy).toISOString().replace('T', ' ')
-  const db = new DatabaseSync(join(dataDir(), 'pb_data', 'data.db'))
+  const db = new DatabaseSync(join(instanceDir, 'pb_data', 'data.db'))
   try {
     db.exec('PRAGMA busy_timeout = 5000')
     const result = db.prepare('UPDATE sessions SET verified_at = ? WHERE token_hash = ?').run(verifiedAt, hash)

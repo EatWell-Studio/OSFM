@@ -19,7 +19,7 @@ type Step =
  * onDone gets the result.
  */
 export function RecoverySignIn({ onDone }: { onDone: (enrolled: Enrolled) => void }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [step, setStep] = useState<Step>({ kind: 'code', notice: null })
   const [loginName, setLoginName] = useState('')
 
@@ -78,20 +78,20 @@ function CodeForm({
   notice: string | null
   onTicket: (ticket: string) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('auth')
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const start = useMutation({
     mutationFn: () => recover(normalizeLoginName(loginName), code.trim()),
     onSuccess: onTicket,
     onError: (err) => {
-      setError(credentialErrorMessage(t, err))
+      setError(credentialErrorMessage(err))
     },
   })
   const submit = (e: SyntheticEvent) => {
     e.preventDefault()
     if (loginName.trim() === '' || code.trim() === '') {
-      setError(t('pages.login.password.errors.missing'))
+      setError(t('login.password.errors.missing'))
       return
     }
     setError(null)
@@ -106,7 +106,7 @@ function CodeForm({
         </p>
       )}
       <Field
-        label={t('pages.login.password.loginName')}
+        label={t('login.password.loginName')}
         name="username"
         autoComplete="username"
         autoCapitalize="none"
@@ -118,8 +118,8 @@ function CodeForm({
         }}
       />
       <Field
-        label={t('pages.login.password.recovery')}
-        hint={t('pages.login.password.recoveryHint')}
+        label={t('login.password.recovery')}
+        hint={t('login.password.recoveryHint')}
         name="recovery-code"
         autoComplete="off"
         autoCapitalize="characters"
@@ -137,7 +137,7 @@ function CodeForm({
         </p>
       )}
       <Button type="submit" size="lg" disabled={start.isPending} className="self-start">
-        {start.isPending ? t('pages.login.password.working') : t('pages.login.password.next')}
+        {start.isPending ? t('login.password.working') : t('login.password.next')}
       </Button>
     </form>
   )

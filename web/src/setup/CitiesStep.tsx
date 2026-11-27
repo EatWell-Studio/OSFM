@@ -57,7 +57,7 @@ export function CitiesStep({
   editing?: boolean
   finishLabel?: string
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['setup', 'admin', 'common', 'map'])
   const instance = useQuery(instanceQuery)
   // The name as edited here; null while it is the saved one.
   const [name, setName] = useState<string | null>(null)
@@ -105,17 +105,17 @@ export function CitiesStep({
     onError: (err) => {
       switch (authErrorCode(err)) {
         case rateLimitedCode:
-          setError(rateLimitMessage(t, authRetryAfter(err)))
+          setError(rateLimitMessage(authRetryAfter(err)))
           break
         case 'cities_invalid':
         case 'instance_name_invalid':
-          setError(t('setup.cities.errors.invalid'))
+          setError(t('cities.errors.invalid'))
           break
         case 'setup_done':
-          setError(t('setup.errors.done'))
+          setError(t('errors.done'))
           break
         default:
-          setError(t('setup.cities.errors.network'))
+          setError(t('cities.errors.network'))
       }
     },
   })
@@ -138,15 +138,15 @@ export function CitiesStep({
       })
     }
     if (cities.length === 0) {
-      setError(t('setup.cities.errors.none'))
+      setError(t('cities.errors.none'))
       return
     }
     if (!cities.every((c) => validName(c.name))) {
-      setError(t('setup.cities.errors.name'))
+      setError(t('cities.errors.name'))
       return
     }
     if (name !== null && !isValidInstanceName(name)) {
-      setError(t('setup.name.required'))
+      setError(t('name.required'))
       return
     }
     setError(null)
@@ -157,8 +157,8 @@ export function CitiesStep({
   return (
     <div className="flex flex-col gap-4">
       <Field
-        label={t('setup.name.label')}
-        hint={editing ? t('pages.admin.instance.nameHint') : t('setup.cities.nameHint')}
+        label={t('name.label')}
+        hint={editing ? t('admin:instance.nameHint') : t('cities.nameHint')}
         name="instance-name"
         autoComplete="off"
         maxLength={100}
@@ -167,13 +167,13 @@ export function CitiesStep({
           setName(e.target.value)
         }}
       />
-      <p>{editing ? t('pages.admin.instance.intro') : t('setup.cities.intro')}</p>
+      <p>{editing ? t('admin:instance.intro') : t('cities.intro')}</p>
 
       <section className="flex flex-col gap-3">
-        <h3 className="font-medium">{t('setup.cities.archives')}</h3>
-        {archives.isPending && <p className="text-muted-foreground">{t('app.loading')}</p>}
-        {archives.isError && <p role="alert">{t('map.loadError')}</p>}
-        {archives.data && offered.length === 0 && <p>{t('setup.cities.noArchives')}</p>}
+        <h3 className="font-medium">{t('cities.archives')}</h3>
+        {archives.isPending && <p className="text-muted-foreground">{t('common:app.loading')}</p>}
+        {archives.isError && <p role="alert">{t('map:loadError')}</p>}
+        {archives.data && offered.length === 0 && <p>{t('cities.noArchives')}</p>}
         {offered.map((a) => {
           const e = edit(a.id)
           return (
@@ -196,19 +196,19 @@ export function CitiesStep({
             void archives.refetch()
           }}
         >
-          {t('setup.cities.recheck')}
+          {t('cities.recheck')}
         </Button>
       </section>
 
       {manual.map((m) => (
         <section key={m.slug} className="flex flex-col gap-2 rounded-lg border p-3">
           <p className="font-medium">{m.name}</p>
-          <p className="text-sm text-muted-foreground">{t('setup.cities.slugLabel', { slug: m.slug })}</p>
+          <p className="text-sm text-muted-foreground">{t('cities.slugLabel', { slug: m.slug })}</p>
           {archiveIds.has(m.slug) ? (
-            <p className="text-sm">{t('setup.cities.hasTiles')}</p>
+            <p className="text-sm">{t('cities.hasTiles')}</p>
           ) : (
             <>
-              <p className="text-sm">{t('setup.cities.noTiles')}</p>
+              <p className="text-sm">{t('cities.noTiles')}</p>
               <code className="rounded border bg-muted/40 px-2 py-1 font-mono text-sm break-all select-all">
                 {`deploy/tiles.sh ${m.slug} ${bboxText(m.bbox)}`}
               </code>
@@ -222,7 +222,7 @@ export function CitiesStep({
               setManual((all) => all.filter((x) => x.slug !== m.slug))
             }}
           >
-            {t('setup.cities.add.remove')}
+            {t('cities.add.remove')}
           </Button>
         </section>
       ))}
@@ -245,7 +245,7 @@ export function CitiesStep({
           disabled={save.isPending || (editing && (archives.isPending || instance.isPending))}
           onClick={finish}
         >
-          {save.isPending ? t('setup.cities.working') : (finishLabel ?? t('setup.cities.finish'))}
+          {save.isPending ? t('cities.working') : (finishLabel ?? t('cities.finish'))}
         </Button>
       </div>
     </div>
@@ -263,7 +263,7 @@ function ArchiveRow({
   name: string
   onChange: (next: { use: boolean; name: string }) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['setup', 'admin', 'common', 'map'])
   const id = useId()
   return (
     <div className="flex flex-col gap-2 rounded-lg border p-3">
@@ -277,12 +277,12 @@ function ArchiveRow({
           }}
           className="size-4"
         />
-        <label htmlFor={id}>{t('setup.cities.include')}</label>
-        <span className="text-sm text-muted-foreground">{t('setup.cities.slugLabel', { slug })}</span>
+        <label htmlFor={id}>{t('cities.include')}</label>
+        <span className="text-sm text-muted-foreground">{t('cities.slugLabel', { slug })}</span>
       </div>
       {use && (
         <Field
-          label={t('setup.cities.name')}
+          label={t('cities.name')}
           maxLength={maxCityName}
           value={name}
           onChange={(e) => {
@@ -295,7 +295,7 @@ function ArchiveRow({
 }
 
 function AddCityForm({ taken, onAdd }: { taken: (slug: string) => boolean; onAdd: (city: ManualCity) => void }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['setup', 'admin', 'common', 'map'])
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [bbox, setBbox] = useState('')
@@ -307,15 +307,15 @@ function AddCityForm({ taken, onAdd }: { taken: (slug: string) => boolean; onAdd
     const box = parseBbox(bbox)
     const next: typeof errors = {}
     if (!validName(name)) {
-      next.name = t('setup.cities.errors.name')
+      next.name = t('cities.errors.name')
     }
     if (!slugPattern.test(s)) {
-      next.slug = t('setup.cities.errors.slug')
+      next.slug = t('cities.errors.slug')
     } else if (taken(s)) {
-      next.slug = t('setup.cities.errors.slugTaken')
+      next.slug = t('cities.errors.slugTaken')
     }
     if (box === null) {
-      next.bbox = t('setup.cities.errors.bbox')
+      next.bbox = t('cities.errors.bbox')
     }
     setErrors(next)
     if (Object.keys(next).length > 0 || box === null) {
@@ -329,9 +329,9 @@ function AddCityForm({ taken, onAdd }: { taken: (slug: string) => boolean; onAdd
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-3 rounded-lg border border-dashed p-3">
-      <h3 className="font-medium">{t('setup.cities.add.title')}</h3>
+      <h3 className="font-medium">{t('cities.add.title')}</h3>
       <Field
-        label={t('setup.cities.add.name')}
+        label={t('cities.add.name')}
         error={errors.name}
         maxLength={maxCityName}
         value={name}
@@ -340,8 +340,8 @@ function AddCityForm({ taken, onAdd }: { taken: (slug: string) => boolean; onAdd
         }}
       />
       <Field
-        label={t('setup.cities.add.slug')}
-        hint={t('setup.cities.add.slugHint')}
+        label={t('cities.add.slug')}
+        hint={t('cities.add.slugHint')}
         error={errors.slug}
         autoCapitalize="none"
         autoCorrect="off"
@@ -353,8 +353,8 @@ function AddCityForm({ taken, onAdd }: { taken: (slug: string) => boolean; onAdd
         }}
       />
       <Field
-        label={t('setup.cities.add.bbox')}
-        hint={t('setup.cities.add.bboxHint')}
+        label={t('cities.add.bbox')}
+        hint={t('cities.add.bboxHint')}
         error={errors.bbox}
         inputMode="decimal"
         autoCorrect="off"
@@ -365,7 +365,7 @@ function AddCityForm({ taken, onAdd }: { taken: (slug: string) => boolean; onAdd
         }}
       />
       <Button type="submit" variant="outline" className="self-start">
-        {t('setup.cities.add.submit')}
+        {t('cities.add.submit')}
       </Button>
     </form>
   )

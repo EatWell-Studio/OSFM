@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { type SyntheticEvent, useId, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { Field } from '@/components/Field'
 import { Button } from '@/components/ui/button'
@@ -28,35 +29,35 @@ type Step =
 type FieldName = 'loginName' | 'displayName' | 'password' | 'repeat' | 'form'
 
 type Errors = Partial<Record<FieldName, string>>
-type T = ReturnType<typeof useTranslation>['t']
+type T = TFunction<['auth', 'setup']>
 
 /** The field a start error belongs to, with its message. */
 function startError(t: T, error: unknown): Errors {
   switch (authErrorCode(error)) {
     case rateLimitedCode:
-      return { form: rateLimitMessage(t, authRetryAfter(error)) }
+      return { form: rateLimitMessage(authRetryAfter(error)) }
     case 'invite_invalid':
-      return { form: t('pages.register.invalidInvite') }
+      return { form: t('register.invalidInvite') }
     case 'setup_code_invalid':
-      return { form: t('setup.errors.codeInvalid') }
+      return { form: t('setup:errors.codeInvalid') }
     case 'setup_done':
-      return { form: t('setup.errors.done') }
+      return { form: t('setup:errors.done') }
     case 'instance_name_invalid':
-      return { form: t('setup.name.required') }
+      return { form: t('setup:name.required') }
     case 'login_name_invalid':
-      return { loginName: t('pages.register.password.errors.loginNameInvalid') }
+      return { loginName: t('register.password.errors.loginNameInvalid') }
     case 'login_name_taken':
-      return { loginName: t('pages.register.password.errors.loginNameTaken') }
+      return { loginName: t('register.password.errors.loginNameTaken') }
     case 'display_name_invalid':
-      return { displayName: t('pages.register.password.errors.displayNameInvalid') }
+      return { displayName: t('register.password.errors.displayNameInvalid') }
     case 'password_too_short':
-      return { password: t('pages.register.password.errors.passwordTooShort') }
+      return { password: t('register.password.errors.passwordTooShort') }
     case 'password_too_long':
-      return { password: t('pages.register.password.errors.passwordTooLong') }
+      return { password: t('register.password.errors.passwordTooLong') }
     case 'password_is_login_name':
-      return { password: t('pages.register.password.errors.passwordIsLoginName') }
+      return { password: t('register.password.errors.passwordIsLoginName') }
     default:
-      return { form: t('pages.register.password.errors.network') }
+      return { form: t('register.password.errors.network') }
   }
 }
 
@@ -134,7 +135,7 @@ function AccountForm({
   onNamesChange: (names: { loginName: string; displayName: string }) => void
   onStarted: (enrolment: PasswordEnrolment) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['auth', 'setup'])
   const { loginName, displayName } = names
   const [password, setPassword] = useState('')
   const [repeat, setRepeat] = useState('')
@@ -154,17 +155,17 @@ function AccountForm({
     const login = normalizeLoginName(loginName)
     const next: Errors = {}
     if (!isValidLoginName(login)) {
-      next.loginName = t('pages.register.password.errors.loginNameInvalid')
+      next.loginName = t('register.password.errors.loginNameInvalid')
     }
     const length = passwordLength(password)
     if (length < minPasswordLength) {
-      next.password = t('pages.register.password.errors.passwordTooShort')
+      next.password = t('register.password.errors.passwordTooShort')
     } else if (length > maxPasswordLength) {
-      next.password = t('pages.register.password.errors.passwordTooLong')
+      next.password = t('register.password.errors.passwordTooLong')
     } else if (normalizeLoginName(password) === login) {
-      next.password = t('pages.register.password.errors.passwordIsLoginName')
+      next.password = t('register.password.errors.passwordIsLoginName')
     } else if (password !== repeat) {
-      next.repeat = t('pages.register.password.errors.passwordsDiffer')
+      next.repeat = t('register.password.errors.passwordsDiffer')
     }
     setErrors(next)
     if (Object.keys(next).length > 0) {
@@ -181,8 +182,8 @@ function AccountForm({
         </p>
       )}
       <Field
-        label={t('pages.register.password.loginName')}
-        hint={t('pages.register.password.loginNameHint')}
+        label={t('register.password.loginName')}
+        hint={t('register.password.loginNameHint')}
         error={errors.loginName}
         name="username"
         autoComplete="username"
@@ -197,8 +198,8 @@ function AccountForm({
         }}
       />
       <Field
-        label={t('pages.register.password.displayName')}
-        hint={t('pages.register.password.displayNameHint')}
+        label={t('register.password.displayName')}
+        hint={t('register.password.displayNameHint')}
         error={errors.displayName}
         name="nickname"
         autoComplete="nickname"
@@ -209,8 +210,8 @@ function AccountForm({
         }}
       />
       <Field
-        label={t('pages.register.password.password')}
-        hint={t('pages.register.password.passwordHint', { min: minPasswordLength })}
+        label={t('register.password.password')}
+        hint={t('register.password.passwordHint', { min: minPasswordLength })}
         error={errors.password}
         type="password"
         name="new-password"
@@ -222,7 +223,7 @@ function AccountForm({
         }}
       />
       <Field
-        label={t('pages.register.password.repeat')}
+        label={t('register.password.repeat')}
         error={errors.repeat}
         type="password"
         name="repeat-password"
@@ -239,7 +240,7 @@ function AccountForm({
         </p>
       )}
       <Button type="submit" size="lg" disabled={start.isPending} className="self-start">
-        {start.isPending ? t('pages.register.password.working') : t('pages.register.password.next')}
+        {start.isPending ? t('register.password.working') : t('register.password.next')}
       </Button>
     </form>
   )
@@ -256,7 +257,7 @@ function TotpStep({
   onRegistered: (registered: Registered) => void
   onRestart: (message: string) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['auth', 'setup'])
   const headingId = useId()
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -267,28 +268,28 @@ function TotpStep({
     onError: (err) => {
       switch (authErrorCode(err)) {
         case 'code_invalid':
-          setError(t('pages.register.password.errors.codeInvalid'))
+          setError(t('register.password.errors.codeInvalid'))
           break
         case 'enrolment_expired':
-          onRestart(t('pages.register.password.errors.enrolmentExpired'))
+          onRestart(t('register.password.errors.enrolmentExpired'))
           break
         case 'login_name_taken':
-          onRestart(t('pages.register.password.errors.loginNameTaken'))
+          onRestart(t('register.password.errors.loginNameTaken'))
           break
         case 'invite_invalid':
-          setError(t('pages.register.invalidInvite'))
+          setError(t('register.invalidInvite'))
           break
         case 'setup_code_invalid':
-          setError(t('setup.errors.codeInvalid'))
+          setError(t('setup:errors.codeInvalid'))
           break
         case 'setup_done':
-          setError(t('setup.errors.done'))
+          setError(t('setup:errors.done'))
           break
         case rateLimitedCode:
-          setError(rateLimitMessage(t, authRetryAfter(err)))
+          setError(rateLimitMessage(authRetryAfter(err)))
           break
         default:
-          setError(t('pages.register.password.errors.network'))
+          setError(t('register.password.errors.network'))
       }
     },
   })
@@ -297,7 +298,7 @@ function TotpStep({
     e.preventDefault()
     const normalized = normalizeTotpCode(code)
     if (normalized === null) {
-      setError(t('pages.register.password.errors.codeForm'))
+      setError(t('register.password.errors.codeForm'))
       return
     }
     setError(null)
@@ -307,14 +308,14 @@ function TotpStep({
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-4">
       <h2 id={headingId} className="text-lg font-medium">
-        {t('pages.register.password.totpTitle')}
+        {t('register.password.totpTitle')}
       </h2>
-      <p>{t('pages.register.password.totpExplanation')}</p>
+      <p>{t('register.password.totpExplanation')}</p>
       <TotpSecret otpauthUri={enrolment.otpauthUri} secret={enrolment.secret} />
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         <Field
-          label={t('pages.register.password.code')}
-          hint={t('pages.register.password.codeHint')}
+          label={t('register.password.code')}
+          hint={t('register.password.codeHint')}
           error={error}
           name="one-time-code"
           autoComplete="one-time-code"
@@ -327,7 +328,7 @@ function TotpStep({
           }}
         />
         <Button type="submit" size="lg" disabled={confirm.isPending} className="self-start">
-          {confirm.isPending ? t('pages.register.password.working') : t('pages.register.password.confirm')}
+          {confirm.isPending ? t('register.password.working') : t('register.password.confirm')}
         </Button>
       </form>
     </section>

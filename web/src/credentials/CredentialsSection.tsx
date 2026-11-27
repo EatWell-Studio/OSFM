@@ -39,7 +39,7 @@ type Mode =
  * cannot be removed (the server refuses it too).
  */
 export function CredentialsSection({ loginName }: { loginName?: string }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['auth', 'common'])
   const queryClient = useQueryClient()
   const headingId = useId()
   const query = useQuery({ queryKey: credentialsQueryKey, queryFn: fetchCredentials })
@@ -57,7 +57,7 @@ export function CredentialsSection({ loginName }: { loginName?: string }) {
   }
   const failed = (err: unknown) => {
     if (!stepUp.handleError(err)) {
-      setError(credentialErrorMessage(t, err))
+      setError(credentialErrorMessage(err))
     }
   }
   const open = (next: Mode) => {
@@ -94,7 +94,7 @@ export function CredentialsSection({ loginName }: { loginName?: string }) {
   if (query.isPending) {
     return (
       <p role="status" className="text-muted-foreground">
-        {t('app.loading')}
+        {t('common:app.loading')}
       </p>
     )
   }
@@ -108,7 +108,7 @@ export function CredentialsSection({ loginName }: { loginName?: string }) {
             void query.refetch()
           }}
         >
-          {t('pages.admin.invites.retry')}
+          {t('common:retry')}
         </Button>
       </div>
     )
@@ -164,7 +164,7 @@ export function CredentialsSection({ loginName }: { loginName?: string }) {
       )}
 
       <div className="flex flex-col gap-2 rounded-lg border p-3">
-        <h3 className="font-medium">{t('pages.register.methods.password')}</h3>
+        <h3 className="font-medium">{t('register.methods.password')}</h3>
         {credentials.passwordTotp ? (
           <>
             <p className="text-sm text-muted-foreground">
@@ -351,7 +351,7 @@ export function CredentialsSection({ loginName }: { loginName?: string }) {
 
 /** A remove button that asks once more before it acts. */
 function RemoveButton({ disabled, onConfirm }: { disabled: boolean; onConfirm: () => void }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['auth', 'common'])
   const [asking, setAsking] = useState(false)
   if (asking) {
     return (
@@ -409,7 +409,7 @@ function PasskeyRow({
   onRemove: () => void
   onError: (err: unknown) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['auth', 'common'])
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState(passkey.deviceName)
   const rename = useMutation({
@@ -487,7 +487,7 @@ function ChangePasswordForm({
   onDone: (c: Credentials, message: string) => void
   onError: (err: unknown) => void
 }) {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['auth', 'common'])
   const [password, setPassword] = useState('')
   const [repeat, setRepeat] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -502,11 +502,11 @@ function ChangePasswordForm({
     e.preventDefault()
     const length = passwordLength(password)
     if (length < minPasswordLength) {
-      setError(t('pages.register.password.errors.passwordTooShort'))
+      setError(t('register.password.errors.passwordTooShort'))
     } else if (length > maxPasswordLength) {
-      setError(t('pages.register.password.errors.passwordTooLong'))
+      setError(t('register.password.errors.passwordTooLong'))
     } else if (password !== repeat) {
-      setError(t('pages.register.password.errors.passwordsDiffer'))
+      setError(t('register.password.errors.passwordsDiffer'))
     } else {
       setError(null)
       change.mutate()
@@ -517,7 +517,7 @@ function ChangePasswordForm({
       {loginName && <input type="text" name="username" autoComplete="username" value={loginName} readOnly hidden />}
       <Field
         label={t('credentials.password.new')}
-        hint={t('pages.register.password.passwordHint', { min: minPasswordLength })}
+        hint={t('register.password.passwordHint', { min: minPasswordLength })}
         type="password"
         name="new-password"
         autoComplete="new-password"
@@ -527,7 +527,7 @@ function ChangePasswordForm({
         }}
       />
       <Field
-        label={t('pages.register.password.repeat')}
+        label={t('register.password.repeat')}
         type="password"
         name="repeat-password"
         autoComplete="new-password"

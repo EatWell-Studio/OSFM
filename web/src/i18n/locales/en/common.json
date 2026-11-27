@@ -1,0 +1,131 @@
+{
+  "app": {
+    "instanceNamePlaceholder": "OSFM",
+    "loading": "Loading…"
+  },
+  "nav": {
+    "label": "Main navigation",
+    "map": "Map",
+    "list": "List",
+    "me": "Me"
+  },
+  "session": {
+    "error": "Could not check whether you are signed in. Check your connection and try again.",
+    "retry": "Try again"
+  },
+  "rateLimit": {
+    "wait_one": "Too many attempts. Try again in {{count}} minute.",
+    "wait_other": "Too many attempts. Try again in {{count}} minutes.",
+    "later": "Too many attempts. Try again later."
+  },
+  "notFound": {
+    "title": "Page not found"
+  },
+  "retry": "Retry",
+  "close": "Close",
+  "comingSoon": "This part is still being built and is coming soon.",
+  "invalidLink": "This address is not valid.",
+  "attitude": {
+    "must_try": "Must try",
+    "good": "Good",
+    "ok": "OK",
+    "avoid": "Avoid"
+  },
+  "timeSlot": {
+    "breakfast": "Breakfast",
+    "lunch": "Lunch",
+    "afternoon": "Afternoon",
+    "dinner": "Dinner",
+    "late_night": "Late night"
+  },
+  "precision": {
+    "exact": "Exact",
+    "approx": "Approximate",
+    "area": "Area"
+  },
+  "category": {
+    "restaurant": "Restaurant",
+    "fast_food": "Fast food and snacks",
+    "cafe": "Café and tea",
+    "food_court": "Food court",
+    "ice_cream": "Ice cream",
+    "bakery": "Bakery",
+    "pastry": "Pastry and desserts",
+    "street_vendor": "Street vendor",
+    "bar": "Bar",
+    "pub": "Pub",
+    "biergarten": "Beer garden"
+  },
+  "cuisine": {
+    "chinese": "Chinese",
+    "sichuan": "Sichuan",
+    "cantonese": "Cantonese",
+    "hunan": "Hunan",
+    "dongbei": "Northeastern Chinese",
+    "uyghur": "Uyghur",
+    "taiwanese": "Taiwanese",
+    "hot_pot": "Hot pot",
+    "dim_sum": "Dim sum",
+    "dumpling": "Dumplings",
+    "noodle": "Noodles",
+    "barbecue": "Barbecue",
+    "japanese": "Japanese",
+    "sushi": "Sushi",
+    "ramen": "Ramen",
+    "korean": "Korean",
+    "vietnamese": "Vietnamese",
+    "thai": "Thai",
+    "indian": "Indian",
+    "asian": "Asian",
+    "german": "German",
+    "italian": "Italian",
+    "pizza": "Pizza",
+    "french": "French",
+    "spanish": "Spanish",
+    "greek": "Greek",
+    "turkish": "Turkish",
+    "kebab": "Kebab",
+    "balkan": "Balkan",
+    "middle_eastern": "Middle Eastern",
+    "mexican": "Mexican",
+    "american": "American",
+    "burger": "Burgers",
+    "sandwich": "Sandwiches",
+    "seafood": "Seafood",
+    "steak_house": "Steakhouse",
+    "coffee_shop": "Coffee",
+    "bubble_tea": "Bubble tea"
+  },
+  "sourceKind": {
+    "visited": "Visited",
+    "chat": "Group chat",
+    "note": "Note",
+    "other": "Other"
+  },
+  "visibility": {
+    "private": "Only me",
+    "circle": "The circle"
+  },
+  "signature": {
+    "main": "Main name",
+    "pseudonym": "Pseudonym"
+  },
+  "reportReason": {
+    "advertising": "Advertising or conflict of interest",
+    "abuse": "Personal attack or discrimination",
+    "political_illegal": "Political or illegal content",
+    "unverified_claim": "Unverified allegation (such as hygiene)",
+    "false_or_duplicate": "Clearly false or duplicate",
+    "other": "Other (explain in the note)"
+  },
+  "noticeKind": {
+    "maintainer_edited": "A maintainer edited your recommendation",
+    "hidden_by_maintainer": "A maintainer hid your recommendation",
+    "hidden_by_reports": "Your recommendation was hidden after several reports and awaits review",
+    "restored": "Your recommendation is shown again",
+    "violation_deleted": "Your recommendation was deleted for breaking the rules"
+  },
+  "copy": "Copy",
+  "copied": "Copied",
+  "copyError": "Could not copy. Select the link and copy it by hand."
+}

@@ -34,6 +34,10 @@ describe('findHardcodedCjk', () => {
   it('ignores the locale files and other file types', () => {
     writeFileSync(join(dir, 'i18n', 'locales', 'zh-CN.ts'), `export default { map: '${han}' }\n`)
     writeFileSync(join(dir, 'i18n', 'locales', 'zh-CN.json'), `{ "map": "${han}" }\n`)
+    // One file per namespace and language (src/i18n/resources.ts).
+    mkdirSync(join(dir, 'i18n', 'locales', 'zh-CN'))
+    writeFileSync(join(dir, 'i18n', 'locales', 'zh-CN', 'common.json'), `{ "map": "${han}" }\n`)
+    writeFileSync(join(dir, 'i18n', 'locales', 'zh-CN', 'index.ts'), `export const map = '${han}'\n`)
     writeFileSync(join(dir, 'notes.md'), `${han}\n`)
     writeFileSync(join(dir, 'pages', 'Good.tsx'), `export const A = () => <h1>{t('nav.map')}</h1>\n`)
     expect(findHardcodedCjk(dir)).toEqual([])
