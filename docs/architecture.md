@@ -377,14 +377,14 @@ flowchart LR
 
 | 集合 | 内容 | 里程碑 |
 | --- | --- | --- |
-| `members` | 成员（PocketBase 认证集合）：登录名、主名、化名、角色、邀请权与冷静期、邀请人、加入与离开时间；passkey 的用户句柄（§3.3） | M1 |
+| `members` | 成员（PocketBase 认证集合）：登录名、主名、化名、角色、邀请权与冷静期、邀请人、加入与离开时间；passkey 的用户句柄（§3.3）；主名与化名的规范化键（`display_name_key`、`pseudonym_key`，T023） | M1 |
 | `credentials` | passkey，或密码哈希（argon2id，PHC 字符串）+ 加密的 TOTP 密钥 + 最近一次接受的时间步（`D3`，§3.3）。每行有 `uuid` 与最近一次使用的日期（`last_used_at`，只记 UTC 日期，T012）；passkey 一行：凭据 ID 与 COSE 公钥（base64url）、签名计数、认证器型号 AAGUID、传输方式、备份资格与备份状态、用户验证标志、证明类型与格式、设备名称（由成员填写，T012） | M1 |
 | `recovery_codes`、`invites`、`reset_links` | 恢复码、邀请码、重置链接，都只存哈希（`N5`）；邀请另有邀请人、过期、使用者与使用时间、撤销时间；重置链接另有 `uuid`、成员、生成它的维护者、过期、使用时间与撤销时间（§3.3） | M1 |
 | `audit_log` | 维护者操作、认证事件（注册、登录、退出、第二步失败、锁定，§3.3）、地点的创建与营业状态确认（只追加） | M1 |
-| `instance_settings` | 实例设置，只有一行：实例名称、城市列表（首次启动向导写入，之后维护者在"管理"页修改，§3.3）、举报阈值、邀请冷静期、搜索服务的联系方式 | M1 |
+| `instance_settings` | 实例设置，只有一行：实例名称、城市列表（首次启动向导写入，之后维护者在"管理"页修改，§3.3）、举报阈值、邀请冷静期、地名搜索的开关（`geocoder_enabled`，默认开启，T023）与联系方式 | M1 |
 | `sessions` | 登录会话：成员、cookie 令牌的 SHA-256、过期时间、最近一次使用的日期、最近一次证明身份的时间（`verified_at`，再次验证，T012）；不记 IP 与 User-Agent（§3.3） | M1 |
-| `places`、`recommendations` | 地点层与推荐层（`F1`） | M2，字段现在就建好 |
-| `recommendation_revisions`、`reports`、`notices` | 修改记录（只追加）、举报、给成员的通知 | M2，字段现在就建好 |
+| `places`、`recommendations` | 地点层与推荐层（`F1`）；推荐另有隐藏状态：`hidden`、隐藏类型 `hidden_kind`、`hidden_reason`、`hidden_at`、`hidden_by`（T023） | M1 建结构，M2 补字段 |
+| `recommendation_revisions`、`reports`、`notices` | 修改记录（只追加）、举报（原因代码与说明、处理结果）、给成员的通知；三者都有 `uuid`（T023） | M1 建结构，M2 补字段 |
 
 ```mermaid
 erDiagram
@@ -401,6 +401,8 @@ erDiagram
     members ||--o{ recommendation_revisions : "editor"
     recommendations ||--o{ reports : "recommendation"
     members ||--o{ reports : "reporter"
+    members |o--o{ reports : "resolved_by"
+    members |o--o{ recommendations : "hidden_by"
     members ||--o{ notices : "member"
     instance_settings {
         text id "固定为 instancesetting"
@@ -410,24 +412,32 @@ erDiagram
 - **全部集合的访问规则都是 `nil`**（仅超级用户），客户端不能通过 `/api/collections/*` 读写任何集合（AD2）；测试以成员令牌和匿名身份逐一验证列表、查看、新建、修改、删除都被拒绝。
 - **`members` 由 PocketBase 默认的 `users` 集合改名而来**，而不是另建一个认证集合：只保留一个认证集合，沿用 PocketBase 为它生成的令牌配置，已有记录（如果有人在管理后台建过）也随之保留，迁移为它们补上 `uuid`、登录名和主名。`users` 自带的 `name`、`avatar` 字段删除。内置登录方式由后面的迁移 `1795600200_boundary` 关闭（§3.1）。
 - **不收集电子邮箱**：PocketBase 要求认证集合保留系统字段 `email`，但允许它不必填；它的唯一索引只覆盖非空值，所以全部留空没有问题。`password` 字段同样是系统字段，填随机值（§3.3）。
-- **对外 ID**：可被外部引用的实体（`members`、`invites`、`reset_links`、`credentials`（只对成员本人列出）、`places`、`recommendations`，以及目前还没有对外的 `sessions`）有 `uuid` 字段：UUIDv7，唯一索引，字段格式只接受小写的 v7。新建记录时若为空，由 `internal/store` 的记录钩子生成（`store.NewUUID`）；已有记录的 `uuid` 不能修改（AD4）。接口收到的 ID 先用 `store.IsUUID` 检查格式。
+- **对外 ID**：可被外部引用的实体（`members`、`invites`、`reset_links`、`credentials`（只对成员本人列出）、`places`、`recommendations`、`recommendation_revisions`、`reports`、`notices`，以及目前还没有对外的 `sessions`）有 `uuid` 字段：UUIDv7，唯一索引，字段格式只接受小写的 v7。新建记录时若为空，由 `internal/store` 的记录钩子生成（`store.NewUUID`）；已有记录的 `uuid` 不能修改（AD4）。接口收到的 ID 先用 `store.IsUUID` 检查格式。
 - **软删除**：`members`、`places`、`recommendations`（`store.SoftDeleted`）有 `deleted_at` 字段，为空表示有效。约定：
   - 删除只写 `deleted_at`（`store.SoftDelete`），记录作为墓碑留下，带着它的 `uuid`；导出与以后的联邦据此得知删除，而不是对象悄悄消失。这些集合的硬删除被 `internal/store` 的钩子拒绝，不论哪段代码发起。
   - 读取经 `store.Query(app, 集合)` 与 `store.FindByUUID`，默认过滤已删除的记录；需要墓碑的代码（导出、维护）显式调用 `.IncludeDeleted()`。查询条件一律以 AND 组合，无法用 `Where` 或 `OrWhere` 意外替换或绕过过滤条件；联表查询用 `store.NotDeleted(表名)`（列名带表名）。直接用 PocketBase 的查找函数会跳过过滤，只留给自己处理墓碑的代码。
   - 墓碑保留还是抹去正文（成员退出、作者删除推荐时的隐私要求）由做删除的业务规则决定，不在 `store` 层。
+- **地点必填项**：只有店名、坐标和精度必填；`category` 与 `status` 可以为空（T023）：未分类的地点在按类别筛选时不出现，没人确认过的营业状态为空，而不是"营业中"。
 - **两层分表**：`places` 不含任何成员字段（也没有任何指向 `members` 的关联）；谁创建了地点、谁确认了营业状态记在 `audit_log`（`F1`）。
 - **只追加**：`audit_log` 与 `recommendation_revisions` 只有 `created` 时间，`internal/store` 的钩子拒绝修改它们的记录。修改记录保存修改前的快照、修改人角色与修改人。
-- **单行设置**：`instance_settings` 的主键字段只接受固定值 `instancesetting`，因此第二行无论用什么 ID 都写不进去；这一行由迁移创建，带默认值（举报阈值 3、邀请冷静期 30 天）。
+- **单行设置**：`instance_settings` 的主键字段只接受固定值 `instancesetting`，因此第二行无论用什么 ID 都写不进去；这一行由迁移创建，带默认值（举报阈值 3、邀请冷静期 30 天、地名搜索开启）。
 - **实例名称与城市**（`internal/settings`，T013）：`name` 为 1–100 个字符、不能有控制字符；`cities` 是 JSON 列表，每个城市 `{"slug", "name", "bbox": [最小经度, 最小纬度, 最大经度, 最大纬度], "center": [经度, 纬度]}`，1–32 个。`slug` 是 1–64 个小写字母、数字或 `-`，各城市不同，**同时也是城市底图文件的名字**（`tiles/<slug>.pmtiles`，§3.6）；`name` 为显示名称（1–64 个字符）；`bbox` 必须最小值小于最大值且在经纬度范围内，`center` 在 `bbox` 之内。城市可以在底图文件放好之前就录入。不新增迁移：字段在 T005 就已建好。成员通过 `GET /api/osfm/instance`（需要登录，`no-store`）读取名称与城市，不合规的城市（例如在管理后台改坏的）被略去。设置完成的判断是"有维护者且城市列表不为空"，不另设标记。
 - **坐标**：只存 WGS-84，`internal/store` 的钩子在每次新建和修改时把 `lat`、`lon` 四舍五入到 5 位小数（`B12` `H3`）；原始输入坐标与坐标系另存于 `source_coord`。
 - **地点类别**：`category` 的取值是 OpenStreetMap 的标签值（`amenity=restaurant`、`fast_food`、`cafe`、`food_court`、`ice_cream`、`bar`、`pub`、`biergarten`，`shop=bakery`、`pastry`，以及对应 `street_vendor=yes` 的 `street_vendor`），与 `osm_ref` 关联的地点不需要对照表。
-- **索引**：每个 `uuid` 唯一；`places` 上建 `(lat, lon)` 组合索引，按城市范围和视野框查询，数据量过万后再评估 SQLite R*Tree；另有登录名、各类哈希、passkey 凭据 ID、passkey 用户句柄（只覆盖非空值）的唯一索引，举报的 `(recommendation, reporter)` 唯一索引（每人每条一次），以及按成员、邀请人、地点、作者、推荐、`osm_ref`、审计对象和时间查找的普通索引。
+- **一人一地一条推荐**：`recommendations` 上有部分唯一索引 `(place, author) WHERE deleted_at = ''`：每个成员在每个地点最多一条未删除的推荐，不论用主名还是化名署名（这样按作者去重的人数不会透露两个署名是同一个人）。条件与软删除的约定一致（未删除即 `deleted_at` 为空字符串），软删除之后可以再写一条。已有数据违反这一点时迁移失败并说明原因，不会只执行一半。
+- **隐藏**：`hidden` 为真时 `hidden_kind` 说明原因类型：`maintainer`（维护者隐藏，`C6`）、`reports`（未处理的举报达到阈值后自动隐藏，`D11`）、`member_removed`（维护者移出作者并选择隐藏，`D7`）；未隐藏时为空。`hidden_by` 是隐藏它（或移出作者）的维护者，自动隐藏时为空；`hidden_at` 是隐藏时间，`hidden_reason` 是维护者写的原因。取值常量在 `internal/store/names.go`。
+- **举报**：`reason` 是原因代码，只接受 `advertising`（广告或利益相关）、`abuse`（人身攻击或歧视）、`political_illegal`（政治或违法内容）、`unverified_claim`（未经证实的指控）、`false_or_duplicate`（明显不实或重复）、`other`（其他，须写说明；由业务层检查）；`note` 是可选说明（≤ 500 字符）。`resolved_at`、`resolved_by`、`resolution`（`restored` 恢复、`kept_hidden` 维持隐藏、`deleted` 违规删除）在维护者处理后填写，为空表示未处理；只有未处理的举报计入自动隐藏的阈值。`reason` 仍是文本字段（带只接受这些代码的格式），因为 PocketBase 不能修改字段类型。举报人只在这里，任何响应都不带（§3.4）。
+- **站内提示**：`notices.kind` 是自由文本，目前的取值（常量在 `internal/store/names.go`）：`maintainer_edited`（维护者修改了推荐）、`hidden_by_maintainer`、`hidden_by_reports`、`restored`、`violation_deleted`；`ref` 是对象的 uuid。客户端按翻译键显示。
+- **名称键**：`members.display_name_key`、`pseudonym_key` 是主名与化名经 `store.NameKey` 规范化后的形式：NFKC、大小写折叠后再 NFKC，去掉不可见字符（格式字符如零宽空格与连接符、控制字符、变体选择符、韩文填充符），连续空白合并为一个空格，去掉首尾空白；空名称的键为空。`internal/store` 的钩子在每次新建和修改成员时按名称重算（直接写 SQL 的代码要自己维护）。主名与化名要在全体成员的主名和化名之间唯一，跨两列的唯一性无法用单列唯一索引表达（一人的主名等于另一人的化名），M1 时期的成员也可能已经重名，所以两个键只建普通索引（化名键只覆盖非空值），唯一性由修改资料的代码在事务中检查。改变 `NameKey` 的规则需要一个重算这两列的迁移。
+- **索引**：每个 `uuid` 唯一；`places` 上建 `(lat, lon)` 组合索引，按城市范围和视野框查询，数据量过万后再评估 SQLite R*Tree；另有登录名、各类哈希、passkey 凭据 ID、passkey 用户句柄（只覆盖非空值）的唯一索引，举报的 `(recommendation, reporter)` 唯一索引（每人每条一次，处理之后也不能再举报同一条），推荐的 `(place, author)` 部分唯一索引（见上），以及按成员、邀请人、地点、作者、推荐、`osm_ref`、审计对象、时间与名称键查找的普通索引。
 
 **迁移与升级前备份**（`G6`）：迁移随程序注册，每次启动（`--help`、`--version` 除外）自动执行。PocketBase 在启动时打开数据库后立即执行它自己的系统迁移，中间没有可挂接的时机，所以备份在这之前进行：若 `pb_data/data.db` 已存在且有尚未执行的迁移（PocketBase 的或 OSFM 的），先用独立连接以 `VACUUM INTO` 复制数据库，与 `pb_data` 的其余文件一起打包为 `pb_data/backups/premigrate_<UTC 时间>.zip`。格式与 PocketBase 自己的备份相同，出现在它的备份列表中，可以照常恢复。随后 PocketBase 完成启动与系统迁移，紧接着执行 OSFM 的迁移；`serve` 开始监听前已没有待执行的迁移。新建的数据库不备份；如果数据库与最近一次迁移前备份完全相同（例如迁移失败后容器反复重启），不再重复备份。备份失败时程序不启动。
 
 迁移 `1795600500_passkeys`（T010）给 `members` 加 `passkey_user_handle`，给 `credentials` 加 `uuid` 与上表的 passkey 字段，并为已有的凭据补上 `uuid`。
 
 迁移 `1795600600_credential_management`（T012）给 `credentials` 加 `last_used_at`，给 `sessions` 加 `verified_at`，给 `reset_links` 加 `uuid`（为已有的行补上，再建唯一索引）与 `revoked_at`。
+
+迁移 `1795602300_m2_model`（T023）补上 M2 业务需要的字段：`recommendations` 的 `hidden_kind`、`hidden_at`、`hidden_by` 与 `(place, author)` 部分唯一索引；`reports` 的 `uuid`、原因代码与 `note`、`resolved_at`、`resolved_by`、`resolution`；`recommendation_revisions` 与 `notices` 的 `uuid`；`members` 的两个名称键；`places` 的 `category`、`status` 改为非必填；`instance_settings` 的 `geocoder_enabled`（新加时设为开启，再次执行时保留维护者的设置）。已有的行补上 `uuid` 与名称键（用 SQL 写入，修改记录的只追加钩子不受影响）；已有的自由文本举报原因变为 `other` 加说明（截到 500 字符）；已经隐藏的推荐记为 `maintainer`。回退时举报原因变回文本（代码加说明）。
 
 迁移可以重复执行：每个迁移把期望的状态应用到已有集合上（字段按名称、索引按名称替换），再执行一次不改变任何东西；每个迁移都有回退（down）。
 
@@ -627,7 +637,7 @@ erDiagram
 | 层 | 内容 |
 | --- | --- |
 | Go 单元测试 | `domain` 的业务规则（可见性、编辑与修改记录、举报阈值、冷静期、去重计数）、坐标转换、认证流程的状态机 |
-| Go 集成测试 | 使用 PocketBase 的测试应用，覆盖每个接口的权限：以"未登录 / 成员 / 作者 / 维护者"四种身份调用，断言响应中不含作者 ID 与化名映射（`E2`）。辅助包 `internal/testapp`（T019，只供测试使用）：`testapp.Start` 在新的数据目录上按 `osfm serve` 的方式启动程序（传入 `cmd/osfm` 的 `bind`，引导与迁移、OnServe 注册路由，不监听端口），预置编造的维护者、成员、作者（带一条推荐）、实例名称与一个城市，或以 `Unconfigured` 从未设置状态开始（`SetupCode` 读设置码）；`As(identity)` 返回某种身份的客户端（成员身份每次一个新会话），`Get`/`Post` 像浏览器一样带 cookie 与 `X-OSFM: 1`，响应设置或清除的会话 cookie 会被记住，每个客户端用自己的 IPv6 文档地址（各在不同的 /64，不共用认证限速）；`Invite`、`RegisterPasswordTOTP`、`RegisterPasskey` 经真实接口创建邀请与成员（密码 + TOTP 用生成的验证码，passkey 用 `passkeytest`），`SignIn` 再次登录（TOTP 只用尚未用过的时间步，必要时等待）；`CheckNoInternalIDs` 检查目前为止的全部响应不含任何记录或集合的内部 ID。`cmd/osfm` 的 `TestIdentities` 以四种身份调用现有接口（作者在 M2 有推荐接口之前与成员相同），`TestMembersRegisterAndSignIn` 用两种方式注册、退出、再登录，并确认在服务器上结束的会话被拒绝。密码 + TOTP（T009）：用生成的验证码完成注册与登录的端到端测试（只过密码一步时没有会话 cookie；同一验证码、较旧的验证码、用过的恢复码都被拒绝；并发提交同一验证码或恢复码只有一个成功；无效邀请一律被拒；登录名不存在、密码错误、没有密码凭据、已离开的成员得到完全相同的响应；票据在过期、改密码、离开后作废；响应中没有内部 ID）。passkey 用 `internal/auth/passkeytest` 的软件认证器（ES256、可发现凭据、证明 `none`，可以改来源、依赖方 ID、签名计数与标志）：带邀请注册、免登录名登录、计数回退、来源或依赖方错误、状态重放、无有效邀请、成员已离开。限速（T011）：超过阈值后 429，存在与不存在的登录名响应逐字节相同；单个客户端锁不住其他地址上的成员；同一张票据里反复试 TOTP 被锁定、换票据或换地址无效、恢复码仍可用；并发请求不能越过阈值；可信代理头与 IPv6 /64；计数表在大量不同键下不超过容量（`internal/ratelimit`）；审计事件齐全且不含密码、验证码、密钥、票据、邀请码、登录名与地址。凭据管理（T012）：再次验证窗口与过期后的 `reauth_required`，用密码加验证码或恢复码、用自己的 passkey 再次验证（别人的 passkey 不行），失败计入与登录共用的第二步锁定；不能删掉最后一种登录方式（包括并发删除）；添加 passkey 的选项带 `excludeCredentials` 与成员的用户句柄；设置、修改密码与更换 TOTP 后旧密码、旧票据、旧密钥失效、其他会话结束；重新生成恢复码后旧码失效。只有 passkey 的成员的恢复：恢复票据不是会话（不设 cookie，其他接口 401，不能当登录票据或重置令牌），注册新 passkey 或密码 + TOTP 后才签发会话，旧会话结束、旧恢复码作废、票据只能用一次、旧 passkey 保留；登录名不存在、成员已离开、恢复码错误、成员有密码的回答逐字节相同，有密码的成员的有效恢复码得到 409 且不被用掉；按客户端 + 登录名锁定。成员列表（T012 后续）：未登录 401、成员 403、维护者 200，按加入时间排列，含已离开的成员、不含已删除的，登录方式的个数、邀请人与待使用的重置链接正确，响应中没有登录名、化名、设备名与内部 ID（`internal/auth` 与 `cmd/osfm` 的 `TestMemberList`）。重置链接：按成员的 uuid 生成（不存在、格式不对、按登录名的请求都是 404）；只能用一次（包括并发）；重置后旧 passkey、旧密码与 TOTP（及旧登录票据）、旧恢复码都不能登录，旧会话失效，用户句柄更换；各种无效令牌在所有公开重置接口上回答相同；新链接替换旧链接；不能为自己或已离开的成员生成；生成要求再次验证；无效令牌计为失败。审计记录不含密码、验证码、恢复码、票据与令牌。首次启动向导（T013）：两种方式建出第一个维护者、设置码错误或缺失被拒、设置的待完成注册与仪式状态不能用于邀请注册、并发设置只有一个成功、设置完成后所有设置接口 404、名称与城市的校验与审计；实例名称在创建维护者时必填且按规则检查，与维护者在同一事务里保存（创建失败时不保存），是 TOTP 地址的发行方（含冒号与中文的名称的编码），确认请求改不了封进待完成注册的名称；`cmd/osfm` 另按 `osfm serve` 的方式从空数据目录走完整个向导（设置码取自服务器写的文件），检查响应中没有内部 ID |
+| Go 集成测试 | 使用 PocketBase 的测试应用，覆盖每个接口的权限：以"未登录 / 成员 / 作者 / 维护者"四种身份调用，断言响应中不含作者 ID 与化名映射（`E2`）。辅助包 `internal/testapp`（T019，只供测试使用）：`testapp.Start` 在新的数据目录上按 `osfm serve` 的方式启动程序（传入 `cmd/osfm` 的 `bind`，引导与迁移、OnServe 注册路由，不监听端口），预置编造的维护者、成员、作者（带一条推荐）、实例名称与一个城市，或以 `Unconfigured` 从未设置状态开始（`SetupCode` 读设置码）；`As(identity)` 返回某种身份的客户端（成员身份每次一个新会话），`Get`/`Post` 像浏览器一样带 cookie 与 `X-OSFM: 1`，响应设置或清除的会话 cookie 会被记住，每个客户端用自己的 IPv6 文档地址（各在不同的 /64，不共用认证限速）；`Invite`、`RegisterPasswordTOTP`、`RegisterPasskey` 经真实接口创建邀请与成员（密码 + TOTP 用生成的验证码，passkey 用 `passkeytest`），`SignIn` 再次登录（TOTP 只用尚未用过的时间步，必要时等待）；`CheckNoInternalIDs` 检查目前为止的全部响应不含任何记录或集合的内部 ID。辅助包 `internal/pbtest`（只供测试使用）：`pbtest.NewApp` 返回 PocketBase 的测试应用，数据目录是一份已执行全部迁移的模板目录的副本（每个测试进程只迁移一次，用完由该包的 `TestMain` 调 `pbtest.RemoveTemplate` 删除）：竞态检测下每次执行全部迁移要几秒，`internal/auth` 的测试要建几十个应用（T023 起用它）；迁移本身的测试仍从空数据目录开始。`cmd/osfm` 的 `TestIdentities` 以四种身份调用现有接口（作者在 M2 有推荐接口之前与成员相同），`TestMembersRegisterAndSignIn` 用两种方式注册、退出、再登录，并确认在服务器上结束的会话被拒绝。密码 + TOTP（T009）：用生成的验证码完成注册与登录的端到端测试（只过密码一步时没有会话 cookie；同一验证码、较旧的验证码、用过的恢复码都被拒绝；并发提交同一验证码或恢复码只有一个成功；无效邀请一律被拒；登录名不存在、密码错误、没有密码凭据、已离开的成员得到完全相同的响应；票据在过期、改密码、离开后作废；响应中没有内部 ID）。passkey 用 `internal/auth/passkeytest` 的软件认证器（ES256、可发现凭据、证明 `none`，可以改来源、依赖方 ID、签名计数与标志）：带邀请注册、免登录名登录、计数回退、来源或依赖方错误、状态重放、无有效邀请、成员已离开。限速（T011）：超过阈值后 429，存在与不存在的登录名响应逐字节相同；单个客户端锁不住其他地址上的成员；同一张票据里反复试 TOTP 被锁定、换票据或换地址无效、恢复码仍可用；并发请求不能越过阈值；可信代理头与 IPv6 /64；计数表在大量不同键下不超过容量（`internal/ratelimit`）；审计事件齐全且不含密码、验证码、密钥、票据、邀请码、登录名与地址。凭据管理（T012）：再次验证窗口与过期后的 `reauth_required`，用密码加验证码或恢复码、用自己的 passkey 再次验证（别人的 passkey 不行），失败计入与登录共用的第二步锁定；不能删掉最后一种登录方式（包括并发删除）；添加 passkey 的选项带 `excludeCredentials` 与成员的用户句柄；设置、修改密码与更换 TOTP 后旧密码、旧票据、旧密钥失效、其他会话结束；重新生成恢复码后旧码失效。只有 passkey 的成员的恢复：恢复票据不是会话（不设 cookie，其他接口 401，不能当登录票据或重置令牌），注册新 passkey 或密码 + TOTP 后才签发会话，旧会话结束、旧恢复码作废、票据只能用一次、旧 passkey 保留；登录名不存在、成员已离开、恢复码错误、成员有密码的回答逐字节相同，有密码的成员的有效恢复码得到 409 且不被用掉；按客户端 + 登录名锁定。成员列表（T012 后续）：未登录 401、成员 403、维护者 200，按加入时间排列，含已离开的成员、不含已删除的，登录方式的个数、邀请人与待使用的重置链接正确，响应中没有登录名、化名、设备名与内部 ID（`internal/auth` 与 `cmd/osfm` 的 `TestMemberList`）。重置链接：按成员的 uuid 生成（不存在、格式不对、按登录名的请求都是 404）；只能用一次（包括并发）；重置后旧 passkey、旧密码与 TOTP（及旧登录票据）、旧恢复码都不能登录，旧会话失效，用户句柄更换；各种无效令牌在所有公开重置接口上回答相同；新链接替换旧链接；不能为自己或已离开的成员生成；生成要求再次验证；无效令牌计为失败。审计记录不含密码、验证码、恢复码、票据与令牌。首次启动向导（T013）：两种方式建出第一个维护者、设置码错误或缺失被拒、设置的待完成注册与仪式状态不能用于邀请注册、并发设置只有一个成功、设置完成后所有设置接口 404、名称与城市的校验与审计；实例名称在创建维护者时必填且按规则检查，与维护者在同一事务里保存（创建失败时不保存），是 TOTP 地址的发行方（含冒号与中文的名称的编码），确认请求改不了封进待完成注册的名称；`cmd/osfm` 另按 `osfm serve` 的方式从空数据目录走完整个向导（设置码取自服务器写的文件），检查响应中没有内部 ID |
 | 内部 ID 扫描 | `cmd/osfm` 的测试按 `osfm serve` 的方式启动程序（同一个注册函数），`internal/idscan` 往每个集合写入编造的记录（含已软删除的；有集合没写入时失败），枚举路由器上的全部路由：OSFM 的每条路由必须在测试的探测表里有请求，PocketBase 自己的路由按占位符代入各集合名后逐一请求；任何响应的头部或正文（含 gzip 解码后、JSON Web Token 解码后，以及其中每个 base64 或 base64url 值解码后，例如 WebAuthn 选项里的用户句柄与凭据 ID）出现记录或集合的内部 ID 即失败（AD4）。passkey 注册与登录的成功响应另由一个测试用软件认证器走完整个仪式后检查（包括仪式中新建的成员、凭据、恢复码与会话的 ID）。每个请求按匿名、成员、维护者三种身份各发一次（成员与维护者每个请求用一个新会话，退出登录的探测不影响后面的请求），会话 cookie 本身也在被检查的请求里；同时检查会话规则：匿名访问需要登录的路径必须得到 401，公开路由必须在测试的清单里，只限维护者的路由（另一份清单）成员访问必须得到 403，带 `X-OSFM` 的写请求去掉这个头后必须得到 403。每个请求用自己的客户端地址（IPv6 文档地址段，各在不同的 /64），认证限速因此不会用 429 挡住扫描 |
 | 前端单元测试 | Vitest + Testing Library |
 | 前端文案检查 | `pnpm run check:i18n`：语言文件以外的源码不含中日韩字符（§4.1） |

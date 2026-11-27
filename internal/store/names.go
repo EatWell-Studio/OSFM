@@ -45,3 +45,53 @@ var PlaceCategories = []string{
 	"restaurant", "fast_food", "cafe", "food_court", "ice_cream", "bakery", "pastry", "street_vendor", "bar", "pub",
 	"biergarten",
 }
+
+// Reasons a member gives when reporting a recommendation (reports.reason, D11). The values are stable codes: clients
+// translate them, and they appear in exports. ReasonOther needs a note; the others take an optional one.
+const (
+	ReasonAdvertising      = "advertising"        // advertising or a conflict of interest
+	ReasonAbuse            = "abuse"              // personal attacks or discrimination
+	ReasonPoliticalIllegal = "political_illegal"  // political or illegal content
+	ReasonUnverifiedClaim  = "unverified_claim"   // an unverified accusation, such as about hygiene
+	ReasonFalseOrDuplicate = "false_or_duplicate" // clearly untrue, or a duplicate
+	ReasonOther            = "other"              // anything else; the note says what
+	MaxReportNoteLength    = 500                  // reports.note, in characters
+)
+
+// ReportReasons lists the report reason codes, the values reports.reason accepts.
+var ReportReasons = []string{
+	ReasonAdvertising, ReasonAbuse, ReasonPoliticalIllegal, ReasonUnverifiedClaim, ReasonFalseOrDuplicate, ReasonOther,
+}
+
+// Why a recommendation is hidden (recommendations.hidden_kind). It is empty while the recommendation is not hidden.
+// recommendations.hidden_by names the maintainer who hid it, or who removed its author; it is empty when it was hidden
+// automatically.
+const (
+	HiddenByMaintainer  = "maintainer"     // a maintainer hid it, with a reason (C6)
+	HiddenByReports     = "reports"        // hidden automatically when the open reports reached the threshold (D11)
+	HiddenMemberRemoved = "member_removed" // a maintainer removed its author from the circle and chose to hide (D7)
+)
+
+// HiddenKinds lists the values recommendations.hidden_kind accepts.
+var HiddenKinds = []string{HiddenByMaintainer, HiddenByReports, HiddenMemberRemoved}
+
+// How a maintainer resolved the reports of a recommendation (reports.resolution). It is empty while a report is open;
+// only open reports count towards the automatic hiding threshold.
+const (
+	ResolutionRestored   = "restored"    // the recommendation is shown again
+	ResolutionKeptHidden = "kept_hidden" // the recommendation stays hidden
+	ResolutionDeleted    = "deleted"     // the recommendation was deleted as a violation (H6)
+)
+
+// Resolutions lists the values reports.resolution accepts.
+var Resolutions = []string{ResolutionRestored, ResolutionKeptHidden, ResolutionDeleted}
+
+// Kinds of notices to a member (notices.kind). Clients show them by translation key; ref names the object (a
+// recommendation's uuid). The field itself stays free text so that later kinds need no migration.
+const (
+	NoticeMaintainerEdited   = "maintainer_edited"    // a maintainer edited the member's recommendation
+	NoticeHiddenByMaintainer = "hidden_by_maintainer" // a maintainer hid it
+	NoticeHiddenByReports    = "hidden_by_reports"    // it was hidden automatically after reports
+	NoticeRestored           = "restored"             // it is shown again
+	NoticeViolationDeleted   = "violation_deleted"    // a maintainer deleted it as a violation
+)
