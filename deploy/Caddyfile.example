@@ -1,0 +1,39 @@
+# Example Caddyfile for an OSFM instance (Caddy 2), see docs/self-hosting.md. Replace food.example.org with your host
+# name: OSFM_PUBLIC_URL must be exactly the URL members open (https://food.example.org).
+#
+# Not yet verified on a real server.
+
+{
+	# Optional: an address for the certificate authority's notices.
+	# email admin@example.org
+}
+
+# A server reachable on ports 80 and 443: Caddy obtains the certificate itself and redirects HTTP to HTTPS.
+food.example.org {
+	# OSFM does not compress its responses.
+	encode zstd gzip
+
+	# OSFM listens on the loopback interface only (OSFM_LISTEN=127.0.0.1:8090, or the container port published on
+	# 127.0.0.1). reverse_proxy sets X-Forwarded-For; OSFM reads it with OSFM_TRUSTED_PROXY_HEADERS=X-Forwarded-For.
+	#
+	# OSFM sends its own security headers (Content-Security-Policy, HSTS for this host and others) and the session
+	# cookie; they pass through unchanged. Do not add header directives that replace or remove them, and add no CORS
+	# headers. Never proxy the admin listener (OSFM_ADMIN_LISTEN).
+	reverse_proxy 127.0.0.1:8090 {
+		# Optional: HSTS for all subdomains, only if every subdomain is served over HTTPS (hard to undo). Replaces the
+		# header OSFM sends, so that there is only one.
+		# header_down Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+}
+
+# A home connection with inbound ports 80 and 443 blocked: the DNS-01 challenge and a high port, with
+# OSFM_PUBLIC_URL=https://food.example.org:8443. Needs a Caddy build with your DNS provider's module (here
+# github.com/caddy-dns/cloudflare) and its API token in the environment. Use this block instead of the one above.
+#
+# food.example.org:8443 {
+# 	tls {
+# 		dns cloudflare {env.CF_API_TOKEN}
+# 	}
+# 	encode zstd gzip
+# 	reverse_proxy 127.0.0.1:8090
+# }

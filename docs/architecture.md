@@ -452,7 +452,7 @@ erDiagram
 ### 3.8 导出、备份与联邦预留
 
 - **导出**（`F1`）：地点层与推荐层分别导出为 GeoJSON FeatureCollection；属性使用 `osfm:` 前缀，文件头部带 `osfm:schema` 版本号和许可声明（地点层 ODbL 1.0 + OSM 署名，推荐层 CC BY-SA 4.0）。署名只输出显示名或化名，不输出成员 ID。个人数据导出（`E6`）为 JSON。
-- **备份**（`G5`）：维护者在管理页一键生成，内容为 PocketBase 备份（数据库）+ 两层 GeoJSON + `secrets/` 下的密钥；恢复时三者一起放回数据目录。缺少主密钥会导致 TOTP 无法验证，部署文档会强调备份要包含它。
+- **备份**（`G5`）：维护者在管理页一键生成，内容为 PocketBase 备份（数据库）+ 两层 GeoJSON + `secrets/` 下的密钥；恢复时三者一起放回数据目录。缺少主密钥会导致 TOTP 无法验证，部署文档（[self-hosting.md](self-hosting.md)「Backups」）强调备份要包含它。在应用内的一键备份实现之前，部署文档给出停机打包与 `VACUUM INTO` 两种手动方式。
 - **联邦预留**（`F5`）：首次启动生成 Ed25519 实例密钥（`secrets/instance_ed25519`）；推荐的可见性字段包含 `federated`；删除留墓碑（§3.5）。订阅接口本身不实现。
 - **`/.well-known/osfm.json`**（`internal/federation`）只有三项：
 
@@ -606,7 +606,7 @@ erDiagram
 
 ### 5.3 运行
 
-- 反向代理与 HTTPS 由 Caddy 负责（`deploy/` 提供示例）；推荐部署在境外 VPS。安全响应头由 OSFM 自己发送（§4.7），代理不需要再加；代理不要改写或删除 `Content-Security-Policy`、`Set-Cookie` 等响应头，也不要另加 CORS 头。HSTS 在设置了 https 的 `OSFM_PUBLIC_URL` 时由 OSFM 发送（只覆盖本主机）；要 `includeSubDomains` 或 `preload` 时在代理上设置。国内家宽封 80/443 时使用 DNS 验证申请证书 + 高位端口（`G7`）。
+- 反向代理与 HTTPS 由 Caddy 负责（示例 `deploy/Caddyfile.example`、`deploy/compose.example.yml`、`deploy/osfm.service.example`；操作步骤见部署文档 [self-hosting.md](self-hosting.md)，初稿，尚未在真实服务器上验证）；推荐部署在境外 VPS。安全响应头由 OSFM 自己发送（§4.7），代理不需要再加；代理不要改写或删除 `Content-Security-Policy`、`Set-Cookie` 等响应头，也不要另加 CORS 头。HSTS 在设置了 https 的 `OSFM_PUBLIC_URL` 时由 OSFM 发送（只覆盖本主机）；要 `includeSubDomains` 或 `preload` 时在代理上设置。国内家宽封 80/443 时使用 DNS 验证申请证书 + 高位端口（`G7`）。
 - **首次启动**（`G3`）：用空的数据目录启动后，程序生成密钥，并在日志里打印设置码（`setup_code=XXXX-XXXX-XXXX-XXXX`；也可以运行 `osfm setup-code`）。在浏览器中打开实例，页面自动进入设置向导：输入设置码、填写实例名称、创建第一个维护者、填写城市，完成后已登录并进入地图。不需要编辑任何配置文件。部署者仍需自己做的只有把每个城市的底图文件放进 `tiles/`（`deploy/tiles.sh`，向导会给出每个城市的命令）；可以在设置之前或之后放，放好后刷新地图即可。每次在未设置状态下重启都会换一个设置码。
 - **客户端地址**：反向代理必须设置 `X-Forwarded-For`（Caddy 的 `reverse_proxy` 默认追加），OSFM 设 `OSFM_TRUSTED_PROXY_HEADERS=X-Forwarded-For`；否则所有人共用代理的地址，认证限速与锁定变成整个实例共享（§3.3）。设置之后 OSFM 的监听端口只能让代理访问（监听 `127.0.0.1`，或容器端口只发布到宿主机回环地址）：能直接连上的人可以在这个请求头里写任意地址，绕过按客户端的限速（按账号的限速不受影响）。
 - 升级：替换镜像后启动，迁移自动执行（`G6`）；迁移前自动生成一份备份。

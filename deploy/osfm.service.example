@@ -1,0 +1,50 @@
+# Example systemd unit for the osfm binary, see docs/self-hosting.md. Install the binary as /usr/local/bin/osfm,
+# create the user (useradd --system --home-dir /var/lib/osfm --shell /usr/sbin/nologin osfm), copy this file to
+# /etc/systemd/system/osfm.service, set OSFM_PUBLIC_URL, then: systemctl daemon-reload && systemctl enable --now osfm
+#
+# Run other osfm commands as the same user with the same data directory, e.g.
+#   sudo -u osfm env OSFM_DATA_DIR=/var/lib/osfm /usr/local/bin/osfm setup-code
+#
+# Not yet verified on a real server.
+
+[Unit]
+Description=OSFM (OpenStreetFoodMap)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=osfm
+Group=osfm
+ExecStart=/usr/local/bin/osfm serve
+Restart=on-failure
+RestartSec=5
+
+# The data directory, /var/lib/osfm (pb_data/, tiles/, secrets/), created by systemd and owned by the user above.
+StateDirectory=osfm
+StateDirectoryMode=0750
+UMask=0077
+Environment=OSFM_DATA_DIR=/var/lib/osfm
+# Reachable only through the reverse proxy on the same host.
+Environment=OSFM_LISTEN=127.0.0.1:8090
+# The URL members open, exactly (with the port if it is not 443).
+Environment=OSFM_PUBLIC_URL=https://food.example.org
+Environment=OSFM_TRUSTED_PROXY_HEADERS=X-Forwarded-For
+# The PocketBase admin UI, only when needed; reached through an SSH tunnel to 127.0.0.1:8091.
+#Environment=OSFM_ADMIN_UI=true
+
+# Sandboxing: the process can write only to its state directory and its private /tmp.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

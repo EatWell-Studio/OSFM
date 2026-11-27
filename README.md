@@ -15,7 +15,7 @@ A food map for a circle of friends, on top of OpenStreetMap. **The map is only t
 
 ## Documentation
 
-Public project documentation lives in [`docs/`](docs/README.md): the [architecture](docs/architecture.md) and the initial product research in [`docs/research/`](docs/research/README.md) (product form, technology stack, open-source landscape, map data and compliance).
+Public project documentation lives in [`docs/`](docs/README.md): the [self-hosting guide](docs/self-hosting.md) (draft), the [architecture](docs/architecture.md) and the initial product research in [`docs/research/`](docs/research/README.md) (product form, technology stack, open-source landscape, map data and compliance).
 
 ## Contributing
 
@@ -77,14 +77,14 @@ Each release publishes a multi-arch image (linux/amd64, linux/arm64) to the GitH
 docker run -d --name osfm -p 127.0.0.1:8090:8090 -v osfm-data:/data ghcr.io/eatwell-studio/osfm:latest
 ```
 
-The instance then answers on http://127.0.0.1:8090 and leads to the setup wizard (see [First start](#first-start); the setup code is in `docker logs osfm`); put a reverse proxy with HTTPS in front of it to reach it from elsewhere, and set `OSFM_PUBLIC_URL` (`-e OSFM_PUBLIC_URL=https://food.example.org`). OSFM sends its own security headers (content security policy, `Referrer-Policy`, `Permissions-Policy` and others; see [docs/architecture.md](docs/architecture.md) §4.7), and `Strict-Transport-Security` for this host only when `OSFM_PUBLIC_URL` is `https://`: the proxy should pass them through unchanged and add no CORS headers. Add `includeSubDomains` or `preload` to HSTS at the proxy only if the whole domain is served over HTTPS. All data lives in the `/data` volume (`pb_data/`, later also `tiles/` and `secrets/`). The container runs as user 65532; a named volume as above gets the right owner automatically, a host directory mounted instead must be writable by that user. To build the image yourself: `docker buildx build -f deploy/Dockerfile .` (add `--build-arg VERSION=v1.2.3` to set the version that `osfm --version` reports; it is `dev` otherwise). Every image and binary carries a signed build provenance attestation:
+The instance then answers on http://127.0.0.1:8090 and leads to the setup wizard (see [First start](#first-start); the setup code is in `docker logs osfm`); put a reverse proxy with HTTPS in front of it to reach it from elsewhere, and set `OSFM_PUBLIC_URL` (`-e OSFM_PUBLIC_URL=https://food.example.org`). OSFM sends its own security headers (content security policy, `Referrer-Policy`, `Permissions-Policy` and others; see [docs/architecture.md](docs/architecture.md) §4.7), and `Strict-Transport-Security` for this host only when `OSFM_PUBLIC_URL` is `https://`: the proxy should pass them through unchanged and add no CORS headers. Add `includeSubDomains` or `preload` to HSTS at the proxy only if the whole domain is served over HTTPS. All data lives in the `/data` volume (`pb_data/`, `tiles/` and `secrets/`). The container runs as user 65532; a named volume as above gets the right owner automatically, a host directory mounted instead must be writable by that user. To build the image yourself: `docker buildx build -f deploy/Dockerfile .` (add `--build-arg VERSION=v1.2.3` to set the version that `osfm --version` reports; it is `dev` otherwise). Every image and binary carries a signed build provenance attestation:
 
 ```bash
 gh attestation verify oci://ghcr.io/eatwell-studio/osfm:latest --repo EatWell-Studio/OSFM
 gh attestation verify osfm-linux-amd64 --repo EatWell-Studio/OSFM
 ```
 
-Self-hosting (HTTPS, backups, upgrades) will be documented separately.
+Running an instance for a circle (Docker Compose or systemd, Caddy for HTTPS, backups, upgrades, troubleshooting) is described in [docs/self-hosting.md](docs/self-hosting.md), a draft not yet tried on a real server; example configuration is in [`deploy/`](deploy/).
 
 ## License
 
