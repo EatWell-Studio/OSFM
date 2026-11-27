@@ -85,7 +85,7 @@ func bindInviteRoutes(se *core.ServeEvent) {
 	se.Router.GET(InvitesPath, handleListInvites).Bind(RequireMaintainer())
 	se.Router.POST(InvitesPath, handleCreateInvite).Bind(RequireMaintainer())
 	se.Router.POST(InviteRevokePath, handleRevokeInvite).Bind(RequireMaintainer())
-	Public(se.Router.POST(InviteCheckPath, handleCheckInvite))
+	Public(se.Router.POST(InviteCheckPath, handleCheckInvite)).Bind(RateLimit(LimitPublic))
 }
 
 // errEmptyBody is returned by [readJSONLimit] for a request without a body.
@@ -179,6 +179,9 @@ func handleCheckInvite(e *core.RequestEvent) error {
 	valid, err := CheckInvite(e.App, req.Code)
 	if err != nil {
 		return e.InternalServerError("", err)
+	}
+	if !valid {
+		attemptFailed(e)
 	}
 	e.Response.Header().Set("Cache-Control", "no-store")
 	return e.JSON(http.StatusOK, CheckInviteResponse{Valid: valid})

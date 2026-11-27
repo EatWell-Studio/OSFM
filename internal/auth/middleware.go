@@ -91,6 +91,9 @@ type Options struct {
 	// messages; nil means slog.Default().
 	SetupCodeFile string
 	Logger        *slog.Logger
+	// Limits are the rate limits and lockouts of the public authentication routes ([RateLimit]); nil means
+	// [DefaultLimits].
+	Limits *Limits
 }
 
 // Bind installs the session layer on app:
@@ -99,6 +102,7 @@ type Options struct {
 //     when serving;
 //   - the invite routes ([bindInviteRoutes]) and the password and TOTP routes ([bindPasswordTOTPRoutes]);
 //   - the passkey registration and sign-in routes ([bindPasskeyRoutes]) for the relying party in opts;
+//   - the rate limits of the public authentication routes ([RateLimit], with opts.Limits);
 //   - a hook that deletes a member's sessions and revokes their open invites as soon as they leave, are removed or
 //     are soft-deleted;
 //   - a daily job that deletes expired sessions;
@@ -127,6 +131,11 @@ func Bind(app core.App, opts Options) {
 		logger = slog.Default()
 	}
 	app.Store().Set(setupCodeKey, &setupCode{file: opts.SetupCodeFile, logger: logger})
+	limits := DefaultLimits()
+	if opts.Limits != nil {
+		limits = *opts.Limits
+	}
+	app.Store().Set(limiterKey, newLimiter(limits))
 	if p.err != nil {
 		app.Logger().Warn("passkeys are not available: the relying party configuration is not valid",
 			"rp_id", rpID, "error", p.err)

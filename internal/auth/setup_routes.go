@@ -100,7 +100,7 @@ func bindSetupRoutes(se *core.ServeEvent) {
 		SetupPasskeyOptionsPath:  handleSetupPasskeyOptions,
 		SetupPasskeyPath:         handleSetupPasskey,
 	} {
-		Public(se.Router.POST(path, handler)).BindFunc(whileUnconfigured)
+		Public(se.Router.POST(path, handler)).Bind(RateLimit(LimitPublic)).BindFunc(whileUnconfigured)
 	}
 	se.Router.POST(SetupCompletePath, handleSetupComplete).Bind(RequireMaintainer())
 }
@@ -158,6 +158,9 @@ func handleSetupCheck(e *core.RequestEvent) error {
 	err := checkSetupCode(e.App, req.Code)
 	if err != nil && !errors.Is(err, ErrInvalidSetupCode) {
 		return setupError(e, err)
+	}
+	if err != nil {
+		attemptFailed(e)
 	}
 	e.Response.Header().Set("Cache-Control", "no-store")
 	return e.JSON(http.StatusOK, SetupCheckResponse{Valid: err == nil})

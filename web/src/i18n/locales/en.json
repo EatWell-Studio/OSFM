@@ -282,5 +282,10 @@
       "codeInvalid": "Wrong or expired setup code. Use the one the server printed at its latest start.",
       "done": "This instance has been set up already."
     }
+  },
+  "rateLimit": {
+    "wait_one": "Too many attempts. Try again in {{count}} minute.",
+    "wait_other": "Too many attempts. Try again in {{count}} minutes.",
+    "later": "Too many attempts. Try again later."
   }
 }

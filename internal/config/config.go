@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,6 +28,9 @@ const (
 	EnvAdminUI   = "OSFM_ADMIN_UI"
 	// EnvAdminListen is the address of the separate admin listener, used only when OSFM_ADMIN_UI is on.
 	EnvAdminListen = "OSFM_ADMIN_LISTEN"
+	// EnvTrustedProxyHeaders names the request headers, comma-separated, from which the client's address is taken
+	// behind a reverse proxy (usually X-Forwarded-For).
+	EnvTrustedProxyHeaders = "OSFM_TRUSTED_PROXY_HEADERS"
 )
 
 // Defaults for unset environment variables.
@@ -61,6 +65,11 @@ type Config struct {
 	AdminUI bool
 	// AdminListen is the address of the admin listener (see AdminUI).
 	AdminListen string
+	// TrustedProxyHeaders are the request headers the client's address is taken from (the rightmost valid address in
+	// the last one present), for the rate limits; empty when unset, which leaves PocketBase's trustedProxy setting as
+	// it is. Set it only when every request comes through a reverse proxy that sets the header: anyone who can reach
+	// the listener directly could put any address in it.
+	TrustedProxyHeaders []string
 
 	// listenSet records whether OSFM_LISTEN was given, as opposed to the default.
 	listenSet bool
@@ -125,10 +134,35 @@ func Parse(lookup func(string) (string, bool)) (*Config, error) {
 		errs = append(errs, fmt.Errorf("%s=%q: %w", EnvAdminListen, cfg.AdminListen, err))
 	}
 
+	if raw := get(EnvTrustedProxyHeaders); raw != "" {
+		for _, h := range strings.Split(raw, ",") {
+			h = strings.TrimSpace(h)
+			if !validHeaderName(h) {
+				errs = append(errs, fmt.Errorf("%s=%q: %q is not a header name", EnvTrustedProxyHeaders, raw, h))
+				continue
+			}
+			cfg.TrustedProxyHeaders = append(cfg.TrustedProxyHeaders, http.CanonicalHeaderKey(h))
+		}
+	}
+
 	if err := errors.Join(errs...); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 	return cfg, nil
+}
+
+// validHeaderName reports whether s is an HTTP header name (an RFC 9110 token).
+func validHeaderName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		alnum := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
+		if !alnum && !strings.ContainsRune("!#$%&'*+-.^_`|~", r) {
+			return false
+		}
+	}
+	return true
 }
 
 // PublicHTTPS reports whether PublicURL is an https:// URL whose host is not the local machine: the instance is

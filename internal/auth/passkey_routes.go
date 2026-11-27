@@ -72,10 +72,11 @@ type PasskeySignInRequest struct {
 }
 
 func bindPasskeyRoutes(se *core.ServeEvent) {
-	Public(se.Router.POST(PasskeyRegisterOptionsPath, handlePasskeyRegisterOptions))
-	Public(se.Router.POST(PasskeyRegisterPath, handlePasskeyRegister))
-	Public(se.Router.POST(PasskeySignInOptionsPath, handlePasskeySignInOptions))
-	Public(se.Router.POST(PasskeySignInPath, handlePasskeySignIn))
+	Public(se.Router.POST(PasskeyRegisterOptionsPath, handlePasskeyRegisterOptions)).
+		Bind(RateLimit(LimitRegistration("")))
+	Public(se.Router.POST(PasskeyRegisterPath, handlePasskeyRegister)).Bind(RateLimit(LimitRegistration(MethodPasskey)))
+	Public(se.Router.POST(PasskeySignInOptionsPath, handlePasskeySignInOptions)).Bind(RateLimit(LimitPublic))
+	Public(se.Router.POST(PasskeySignInPath, handlePasskeySignIn)).Bind(RateLimit(LimitPasskeySignIn))
 }
 
 // readPasskeyJSON decodes a JSON body of at most maxPasskeyBody bytes into v.

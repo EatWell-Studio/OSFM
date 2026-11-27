@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -537,6 +538,51 @@ func TestLogSettingsAppliedAtBootstrap(t *testing.T) {
 	app = bootstrap()
 	defer func() { _ = app.ClearBootstrap() }()
 	check(app)
+}
+
+// TestTrustedProxyAppliedAtBootstrap: OSFM_TRUSTED_PROXY_HEADERS replaces the trusted proxy setting at every
+// bootstrap, with the rightmost address; without it, a value set in the admin UI stays.
+func TestTrustedProxyAppliedAtBootstrap(t *testing.T) {
+	dir := t.TempDir()
+	bootstrap := func(headers []string) core.App {
+		app := core.NewBaseApp(core.BaseAppConfig{DataDir: dir})
+		boundary.Bind(app, boundary.Options{TrustedProxyHeaders: headers})
+		if err := app.Bootstrap(); err != nil {
+			t.Fatal(err)
+		}
+		return app
+	}
+	check := func(app core.App, want []string) {
+		t.Helper()
+		if p := app.Settings().TrustedProxy; !slices.Equal(p.Headers, want) || p.UseLeftmostIP {
+			t.Errorf("trusted proxy settings %+v, want %q, rightmost", p, want)
+		}
+		if err := app.ClearBootstrap(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	check(bootstrap(nil), []string{})
+	app := bootstrap([]string{"X-Forwarded-For"})
+	s := app.Settings()
+	s.TrustedProxy.Headers, s.TrustedProxy.UseLeftmostIP = []string{"X-Real-Ip"}, true
+	if err := app.Save(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.ClearBootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	check(bootstrap([]string{"X-Forwarded-For"}), []string{"X-Forwarded-For"})
+	app = bootstrap(nil)
+	s = app.Settings()
+	s.TrustedProxy.Headers = []string{"X-Real-Ip"}
+	if err := app.Save(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.ClearBootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	check(bootstrap(nil), []string{"X-Real-Ip"})
 }
 
 // TestSuperuserCommand checks that `osfm superuser upsert` still creates a superuser who can sign in on the admin

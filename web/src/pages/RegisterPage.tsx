@@ -6,6 +6,8 @@ import { useLocation, useNavigate } from 'react-router'
 import { PageHeading } from '@/components/PageHeading'
 import { Button } from '@/components/ui/button'
 import { checkInvite, inviteCodeFromHash, isWellFormedInviteCode } from '@/invites/invites'
+import { ApiError } from '@/lib/api'
+import { rateLimitMessage } from '@/lib/rateLimit'
 import { PasskeyRegistration } from '@/register/PasskeyRegistration'
 import { PasswordTotpRegistration } from '@/register/PasswordTotpRegistration'
 import { type Me, sessionQueryKey } from '@/session/session'
@@ -36,6 +38,10 @@ function forgetCode() {
   } catch {
     // Nothing stored.
   }
+}
+
+function isRateLimited(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 429
 }
 
 /** The ways to register (D3); each is its own component, the page only offers the choice. */
@@ -100,7 +106,8 @@ export function RegisterPage() {
     queryFn: () => checkInvite(code ?? ''),
     enabled: wellFormed,
     staleTime: Infinity,
-    retry: 1,
+    // Retrying too many attempts only makes the wait longer.
+    retry: (failures, error) => failures < 1 && !isRateLimited(error),
   })
 
   const registered = (me?: Me) => {
@@ -148,7 +155,9 @@ export function RegisterPage() {
   } else if (check.isError) {
     content = (
       <div role="alert" className="flex flex-col items-start gap-3">
-        <p>{t('pages.register.checkError')}</p>
+        <p>
+          {isRateLimited(check.error) ? rateLimitMessage(t, check.error.retryAfter) : t('pages.register.checkError')}
+        </p>
         <Button
           onClick={() => {
             void check.refetch()

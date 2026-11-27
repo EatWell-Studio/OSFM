@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -316,4 +317,31 @@ func TestCompleteSetup(t *testing.T) {
 		auth.CodeSetupDone)
 	expectError(t, "complete again with bad input", pe.post(auth.SetupCompletePath, token, settings.Instance{}),
 		http.StatusNotFound, auth.CodeSetupDone)
+}
+
+// TestSetupRoutesRateLimited: wrong setup codes count as failures of the client, so guessing is locked out like the
+// sign-in; another client is not affected.
+func TestSetupRoutesRateLimited(t *testing.T) {
+	pe := newPWEnv(t)
+	code := auth.NewSetupCode(t, pe.app)
+	limits := auth.DefaultLimits()
+	for n := range limits.ClientFailures.Threshold {
+		var rec *httptest.ResponseRecorder
+		if n%2 == 0 {
+			rec = pe.postFrom(client(1), auth.SetupCheckPath, auth.SetupCheckRequest{Code: otherSetupCode})
+		} else {
+			rec = pe.postFrom(client(1), auth.SetupPasswordStartPath, auth.SetupPasswordStartRequest{
+				SetupCode: otherSetupCode, LoginName: "test_first", DisplayName: "Test First", Password: "made up password",
+			})
+		}
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("failure %d: 429 before the threshold", n+1)
+		}
+	}
+	expectLimited(t, "client locked", pe.postFrom(client(1), auth.SetupCheckPath, auth.SetupCheckRequest{Code: code}),
+		"60")
+	rec := pe.postFrom(client(2), auth.SetupCheckPath, auth.SetupCheckRequest{Code: code})
+	if rec.Code != http.StatusOK || !decode[auth.SetupCheckResponse](t, rec).Valid {
+		t.Errorf("another client: %d %s", rec.Code, rec.Body.String())
+	}
 }

@@ -11,6 +11,7 @@ import {
   readCeremonyStart,
   requestOptionsFromJSON,
 } from '@/lib/webauthn'
+import { rateLimitMessage } from '@/lib/rateLimit'
 
 const messageKeys = {
   passkey_failed: 'passkey.signIn.errors.failed',
@@ -84,7 +85,7 @@ export function PasskeySignIn({ onSignedIn }: { onSignedIn: () => void }) {
       </Button>
       {error !== null && (
         <p role="alert" className="text-destructive">
-          {t(messageKey(error))}
+          {error.code === 'rate_limited' ? rateLimitMessage(t, error.retryAfter) : t(messageKey(error))}
         </p>
       )}
     </div>

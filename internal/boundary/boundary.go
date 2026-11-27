@@ -59,6 +59,9 @@ type Options struct {
 	AdminUI bool
 	// AdminListen is the TCP address of the admin listener.
 	AdminListen string
+	// TrustedProxyHeaders, when not empty, replace PocketBase's trusted proxy headers at every bootstrap (see
+	// [ApplyTrustedProxy]).
+	TrustedProxyHeaders []string
 	// Logger receives the startup messages; nil means slog.Default().
 	Logger *slog.Logger
 }
@@ -72,7 +75,8 @@ type adminConnKey struct{}
 
 // Bind installs the boundary on app:
 //
-//   - at every bootstrap, the request log settings (see [ApplyLogSettings]);
+//   - at every bootstrap, the request log settings (see [ApplyLogSettings]) and, when configured, the trusted proxy
+//     headers (see [ApplyTrustedProxy]);
 //   - when serving, the boundary middleware on the router; with the admin UI enabled, the admin listener; and
 //     PocketBase's first-start installer link only when the admin UI is enabled, pointing at the admin listener.
 //
@@ -87,7 +91,10 @@ func Bind(app core.App, opts Options) {
 		if err := e.Next(); err != nil {
 			return err
 		}
-		return ApplyLogSettings(e.App)
+		if err := ApplyLogSettings(e.App); err != nil {
+			return err
+		}
+		return ApplyTrustedProxy(e.App, opts.TrustedProxyHeaders)
 	})
 
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{

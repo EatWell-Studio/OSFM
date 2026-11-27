@@ -38,6 +38,9 @@ func handleMe(e *core.RequestEvent) error {
 // handleLogout answers POST /api/osfm/logout: ends the current session and clears the cookie, 204. The member's
 // other sessions (other devices) are not affected.
 func handleLogout(e *core.RequestEvent) error {
+	if m := CurrentMember(e); m != nil {
+		auditApp(e.App, m, AuditSignOut, m.GetString(store.FieldUUID), nil)
+	}
 	if err := SignOut(e); err != nil {
 		return e.InternalServerError("", err)
 	}

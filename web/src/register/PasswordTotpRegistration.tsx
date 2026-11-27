@@ -5,8 +5,9 @@ import { type SyntheticEvent, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Field } from '@/components/Field'
 import { Button } from '@/components/ui/button'
-import { authErrorCode } from '@/lib/authApi'
 import type { Entitlement } from '@/lib/entitlement'
+import { authErrorCode, authRetryAfter, rateLimitedCode } from '@/lib/authApi'
+import { rateLimitMessage } from '@/lib/rateLimit'
 import type { Me } from '@/session/session'
 import {
   confirmPasswordRegistration,
@@ -32,8 +33,10 @@ type Errors = Partial<Record<FieldName, string>>
 type T = ReturnType<typeof useTranslation>['t']
 
 /** The field a start error belongs to, with its message. */
-function startError(t: T, code: string | null): Errors {
-  switch (code) {
+function startError(t: T, error: unknown): Errors {
+  switch (authErrorCode(error)) {
+    case rateLimitedCode:
+      return { form: rateLimitMessage(t, authRetryAfter(error)) }
     case 'invite_invalid':
       return { form: t('pages.register.invalidInvite') }
     case 'setup_code_invalid':
@@ -142,7 +145,7 @@ function AccountForm({
       startPasswordRegistration(entitlement, req),
     onSuccess: onStarted,
     onError: (error) => {
-      setErrors(startError(t, authErrorCode(error)))
+      setErrors(startError(t, error))
     },
   })
 
@@ -281,6 +284,9 @@ function TotpStep({
           break
         case 'setup_done':
           setError(t('setup.errors.done'))
+          break
+        case rateLimitedCode:
+          setError(rateLimitMessage(t, authRetryAfter(err)))
           break
         default:
           setError(t('pages.register.password.errors.network'))
