@@ -606,7 +606,7 @@ erDiagram
 
 ### 5.3 运行
 
-- 反向代理与 HTTPS 由 Caddy 负责（示例 `deploy/Caddyfile.example`、`deploy/compose.example.yml`、`deploy/osfm.service.example`；操作步骤见部署文档 [self-hosting.md](self-hosting.md)，初稿，尚未在真实服务器上验证）；推荐部署在境外 VPS。安全响应头由 OSFM 自己发送（§4.7），代理不需要再加；代理不要改写或删除 `Content-Security-Policy`、`Set-Cookie` 等响应头，也不要另加 CORS 头。HSTS 在设置了 https 的 `OSFM_PUBLIC_URL` 时由 OSFM 发送（只覆盖本主机）；要 `includeSubDomains` 或 `preload` 时在代理上设置。国内家宽封 80/443 时使用 DNS 验证申请证书 + 高位端口（`G7`）。
+- 反向代理与 HTTPS 由 Caddy 负责，已有 nginx（或宝塔等面板）的服务器用 nginx（示例 `deploy/Caddyfile.example`、`deploy/nginx.conf.example`、`deploy/compose.example.yml`、`deploy/osfm.service.example`；操作步骤见部署文档 [self-hosting.md](self-hosting.md)，初稿，尚未在真实服务器上验证）；推荐部署在境外 VPS。安全响应头由 OSFM 自己发送（§4.7），代理不需要再加；代理不要改写或删除 `Content-Security-Policy`、`Set-Cookie` 等响应头，也不要另加 CORS 头。HSTS 在设置了 https 的 `OSFM_PUBLIC_URL` 时由 OSFM 发送（只覆盖本主机）；要 `includeSubDomains` 或 `preload` 时在代理上设置。国内家宽封 80/443 时使用 DNS 验证申请证书 + 高位端口（`G7`）。域名在 Cloudflare 时实例的记录用“仅 DNS”：代理模式下 Cloudflare 解开 TLS、看到全部流量（与默认不向第三方发送数据相悖），其注入脚本的功能也会被 CSP 拦下；必须代理时的设置见部署文档。
 - **首次启动**（`G3`）：用空的数据目录启动后，程序生成密钥，并在日志里打印设置码（`setup_code=XXXX-XXXX-XXXX-XXXX`；也可以运行 `osfm setup-code`）。在浏览器中打开实例，页面自动进入设置向导：输入设置码、填写实例名称、创建第一个维护者、填写城市，完成后已登录并进入地图。不需要编辑任何配置文件。部署者仍需自己做的只有把每个城市的底图文件放进 `tiles/`（`deploy/tiles.sh`，向导会给出每个城市的命令）；可以在设置之前或之后放，放好后刷新地图即可。每次在未设置状态下重启都会换一个设置码。
 - **客户端地址**：反向代理必须设置 `X-Forwarded-For`（Caddy 的 `reverse_proxy` 默认追加），OSFM 设 `OSFM_TRUSTED_PROXY_HEADERS=X-Forwarded-For`；否则所有人共用代理的地址，认证限速与锁定变成整个实例共享（§3.3）。设置之后 OSFM 的监听端口只能让代理访问（监听 `127.0.0.1`，或容器端口只发布到宿主机回环地址）：能直接连上的人可以在这个请求头里写任意地址，绕过按客户端的限速（按账号的限速不受影响）。
 - 升级：替换镜像后启动，迁移自动执行（`G6`）；迁移前自动生成一份备份。

@@ -4,7 +4,7 @@ Public documentation of OSFM. Documents are written in Chinese for now, except t
 
 | Directory | Content |
 | --- | --- |
-| [self-hosting.md](self-hosting.md) | Running an instance (draft): requirements, Docker Compose or systemd, Caddy and HTTPS, first start and basemaps, home connections with blocked ports, admin UI, backups, upgrades, logs, troubleshooting |
+| [self-hosting.md](self-hosting.md) | Running an instance (draft): requirements, Docker Compose or systemd, Caddy and HTTPS, nginx and control panels, Cloudflare, first start and basemaps, home connections with blocked ports, admin UI, backups, upgrades, logs, troubleshooting |
 | [architecture.md](architecture.md) | Architecture: process and repository layout, backend (PocketBase usage, API, two-factor authentication, authorisation, tiles, search proxy, export), frontend stack, deployment, testing, decision records |
 | [research/](research/README.md) | Initial product research (2026-11): product form, technology stack, open-source landscape, map data and compliance |
 
