@@ -167,6 +167,7 @@ type passwordEnrolment struct {
 	PasswordHash string `json:"pw"`           // PHC string
 	TOTPSecret   []byte `json:"totp"`         // raw secret
 	Instance     string `json:"in,omitempty"` // the first maintainer's: the instance name (setup.go)
+	Member       string `json:"m,omitempty"`  // an existing member's uuid (enrol.go)
 }
 
 func (p *passwordEnrolment) expiry() int64 { return p.Expires }

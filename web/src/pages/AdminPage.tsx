@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PageHeading } from '@/components/PageHeading'
@@ -15,8 +15,14 @@ import {
   revokeInvite,
 } from '@/invites/invites'
 import { useSession } from '@/session/useSession'
+import { InstanceSettings } from '@/admin/InstanceSettings'
+import { ResetLinks } from '@/admin/ResetLinks'
+import { ShownOnceLink } from '@/components/ShownOnceLink'
 
-/** Maintainer administration: for now the invites (D1, D2). Members who are not maintainers see that it is not for them. */
+/**
+ * Maintainer administration: invites (D1, D2), reset links (D5) and the instance settings. Members who are not
+ * maintainers see that it is not for them.
+ */
 export function AdminPage() {
   const { t } = useTranslation()
   const session = useSession()
@@ -25,7 +31,11 @@ export function AdminPage() {
     <>
       <PageHeading>{t('pages.admin.title')}</PageHeading>
       {isMaintainer ? (
-        <Invites />
+        <div className="flex flex-col gap-8 pb-4">
+          <Invites />
+          <ResetLinks />
+          <InstanceSettings />
+        </div>
       ) : (
         <p role="alert" className="px-4 text-muted-foreground">
           {t('pages.admin.notAllowed')}
@@ -98,7 +108,13 @@ function Invites() {
           {t('pages.admin.invites.createError')}
         </p>
       )}
-      {created && <CreatedLink link={created.link} />}
+      {created && (
+        <ShownOnceLink
+          link={created.link}
+          label={t('pages.admin.invites.link')}
+          note={t('pages.admin.invites.shownOnce')}
+        />
+      )}
 
       {invites.isPending && (
         <p role="status" className="text-muted-foreground">
@@ -139,53 +155,6 @@ function Invites() {
         </ul>
       )}
     </section>
-  )
-}
-
-/** The link of the invite just created, with a copy button. It is shown this once: only the code's hash is stored. */
-function CreatedLink({ link }: { link: string }) {
-  const { t } = useTranslation()
-  const linkId = useId()
-  const [copied, setCopied] = useState<boolean | null>(null)
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border bg-muted/40 p-3">
-      <label htmlFor={linkId} className="text-sm font-medium">
-        {t('pages.admin.invites.link')}
-      </label>
-      <div className="flex gap-2">
-        <input
-          id={linkId}
-          readOnly
-          value={link}
-          onFocus={(e) => {
-            e.target.select()
-          }}
-          className="h-8 min-w-0 flex-1 rounded-lg border bg-background px-2 font-mono text-xs"
-        />
-        <Button
-          variant="outline"
-          onClick={() => {
-            navigator.clipboard.writeText(link).then(
-              () => {
-                setCopied(true)
-              },
-              () => {
-                setCopied(false)
-              },
-            )
-          }}
-        >
-          {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-          {copied ? t('pages.admin.invites.copied') : t('pages.admin.invites.copy')}
-        </Button>
-      </div>
-      {copied === false && (
-        <p role="alert" className="text-sm text-destructive">
-          {t('pages.admin.invites.copyError')}
-        </p>
-      )}
-      <p className="text-sm text-muted-foreground">{t('pages.admin.invites.shownOnce')}</p>
-    </div>
   )
 }
 

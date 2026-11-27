@@ -15,11 +15,18 @@ const passkeysMigration = "1795600500_passkeys.go" // #nosec G101 -- a file name
 func TestPasskeysMigrationUpgrade(t *testing.T) {
 	app := newApp(t)
 	runner := core.NewMigrationsRunner(app, core.AppMigrations)
+	// Down to just before the passkeys migration, the later ones included.
 	items := core.AppMigrations.Items()
-	if last := items[len(items)-1].File; last != passkeysMigration {
-		t.Fatalf("the last migration is %s; adjust this test", last)
+	later := -1
+	for i, item := range items {
+		if item.File == passkeysMigration {
+			later = len(items) - i
+		}
 	}
-	if _, err := runner.Down(1); err != nil {
+	if later < 1 {
+		t.Fatalf("no migration %s", passkeysMigration)
+	}
+	if _, err := runner.Down(later); err != nil {
 		t.Fatal(err)
 	}
 	c, err := app.FindCollectionByNameOrId(store.Credentials)

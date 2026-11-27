@@ -106,7 +106,9 @@ type Options struct {
 //   - a hook that deletes a member's sessions and revokes their open invites as soon as they leave, are removed or
 //     are soft-deleted;
 //   - a daily job that deletes expired sessions;
-//   - the setup wizard's routes ([bindSetupRoutes]), and the setup code when the instance starts unconfigured.
+//   - the setup wizard's routes ([bindSetupRoutes]), and the setup code when the instance starts unconfigured;
+//   - the credential management, recovery, reset link and instance settings routes (credentials_routes.go,
+//     recover_routes.go, reset_routes.go, instance_routes.go).
 func Bind(app core.App, opts Options) {
 	name := CookieName
 	if opts.HostPrefix {
@@ -179,6 +181,10 @@ func Bind(app core.App, opts Options) {
 		bindPasswordTOTPRoutes(se)
 		bindPasskeyRoutes(se)
 		bindSetupRoutes(se)
+		bindCredentialRoutes(se)
+		bindRecoverRoutes(se)
+		bindResetRoutes(se)
+		bindInstanceRoutes(se)
 		if err := startSetup(se.App, logger); err != nil {
 			return err
 		}

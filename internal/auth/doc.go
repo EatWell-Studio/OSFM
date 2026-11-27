@@ -23,6 +23,13 @@
 // member created without an invite, with the setup code the server prints when it starts; the new maintainer then
 // saves the instance's name and cities. See setup.go.
 //
+// Credential management (D5): on the "me" page a signed-in member lists their credentials, adds and removes passkeys,
+// sets up or changes password and TOTP and regenerates recovery codes under /api/osfm/me/; changes that could lose or
+// hand over the account need a fresh proof on the session ([RequireFresh], stepup.go), and the last way to sign in
+// cannot be removed. See credentials.go. A member without a password recovers with the login name and a recovery code,
+// which only opens the enrolment of a new credential (recover.go). Maintainers create one-time reset links
+// (/api/osfm/reset-links), with which a member replaces every credential (reset.go), and change the instance settings.
+//
 // Rate limits (N5): every public authentication route carries the [RateLimit] middleware, which keeps a request
 // budget and a failure count per client, and for the sign-in steps per login name or per member, with temporary
 // lockouts (429 with Retry-After); it also writes the audit entries of registration and sign-in. See limits.go.

@@ -34,6 +34,22 @@ const (
 	ExpiredInviteUUID = "0190a1b2-0000-7000-8000-00000000a003"
 )
 
+// Made-up credentials and reset links [Seed] writes, for the probes of the credential and reset routes.
+const (
+	// MemberPasskeyUUID is the uuid of the seeded member's only passkey.
+	MemberPasskeyUUID = "0190a1b2-0000-7000-8000-00000000c001"
+	// RecoveryCode is an unused recovery code of the seeded member.
+	RecoveryCode = "0000-0000-0000-0001" // #nosec G101 -- made up
+	// ResetToken is the token of the seeded member's active reset link.
+	ResetToken = "dGVzdC1yZXNldC10b2tlbi1ub3QtYS1yZWFsLW9uZSE" // #nosec G101 -- made up
+	// ActiveResetLinkUUID, UsedResetLinkUUID and ExpiredResetLinkUUID are the uuids of seeded reset links.
+	ActiveResetLinkUUID  = "0190a1b2-0000-7000-8000-00000000b001"
+	UsedResetLinkUUID    = "0190a1b2-0000-7000-8000-00000000b002"
+	ExpiredResetLinkUUID = "0190a1b2-0000-7000-8000-00000000b003"
+	// ResetMemberLogin is the login name of a seeded member that maintainers may create reset links for.
+	ResetMemberLogin = "test_reset"
+)
+
 // Seed writes made-up records into every OSFM collection of app, a bootstrapped app with the OSFM migrations
 // applied, including soft-deleted ones, and returns their internal IDs. It fails the test if a collection that is
 // not one of PocketBase's system collections is left without a record: a task that adds a collection adds its records
@@ -69,20 +85,29 @@ func Seed(t testing.TB, app core.App) *Seeded {
 	}
 
 	maintainer := save(store.Members, map[string]any{"login_name": "test_maintainer",
-		"display_name": "Test Maintainer", "role": "maintainer", "can_invite": true})
+		"display_name": "Test Maintainer", "role": "maintainer", "can_invite": true,
+		"passkey_user_handle": "dGVzdC1tYWludGFpbmVyLWhhbmRsZS1ub3QtcmVhbCE"}) // #nosec G101 -- made up
 	member := save(store.Members, map[string]any{"login_name": "test_member", "display_name": "Test Member", // #nosec G101 -- made up
 		"pseudonym": "Test Alias", "role": "member", "invited_by": maintainer.Id,
 		"passkey_user_handle": "dGVzdC11c2VyLWhhbmRsZS1ub3QtYS1yZWFsLW9uZSE"})
+	save(store.Members, map[string]any{"login_name": ResetMemberLogin, "display_name": "Test Reset", "role": "member",
+		"invited_by": maintainer.Id})
 	left := save(store.Members, map[string]any{"login_name": "test_left", "display_name": "Test Left",
 		"role": "member", "invited_by": maintainer.Id})
 	deleted(left)
 	s.Member, s.Maintainer = member, maintainer
 	m := member.Id
 
-	save(store.Credentials, map[string]any{"member": m, "kind": "passkey", "credential_id": "dGVzdC1jcmVk", // #nosec G101 -- made up
-		"public_key": "dGVzdC1rZXk", "sign_count": 3, "aaguid": "00000000-0000-0000-0000-000000000000",
-		"transports": []string{"internal"}, "user_verified": true, "attestation_format": "none"})
+	save(store.Credentials, map[string]any{store.FieldUUID: MemberPasskeyUUID, "member": m, "kind": "passkey",
+		"credential_id": "dGVzdC1jcmVk", // #nosec G101 -- made up
+		"public_key":    "dGVzdC1rZXk", "sign_count": 3, "aaguid": "00000000-0000-0000-0000-000000000000",
+		"transports": []string{"internal"}, "user_verified": true, "attestation_format": "none",
+		"device_name": "Test Phone", "last_used_at": "2026-01-01 00:00:00Z"})
+	save(store.Credentials, map[string]any{"member": maintainer.Id, "kind": "passkey", // #nosec G101 -- made up
+		"credential_id": "dGVzdC1jcmVkLW1haW50YWluZXI", "public_key": "dGVzdC1rZXk", "user_verified": true})
 	save(store.RecoveryCodes, map[string]any{"member": m, "code_hash": "test-hash-recovery"})
+	recoveryHash := sha256.Sum256([]byte(strings.ReplaceAll(RecoveryCode, "-", "")))
+	save(store.RecoveryCodes, map[string]any{"member": m, "code_hash": hex.EncodeToString(recoveryHash[:])})
 	// Invites in every state, with fixed uuids for the probes: used (by the member), active (its code is
 	// InviteCode), expired and revoked.
 	save(store.Invites, map[string]any{store.FieldUUID: UsedInviteUUID, "code_hash": strings.Repeat("1a", 32),
@@ -94,8 +119,13 @@ func Seed(t testing.TB, app core.App) *Seeded {
 		"created_by": maintainer.Id, "expires_at": "2020-01-01 00:00:00Z"})
 	save(store.Invites, map[string]any{"code_hash": strings.Repeat("1c", 32), "created_by": maintainer.Id,
 		"expires_at": "2099-01-01 00:00:00Z", "revoked_at": "2026-01-02 00:00:00Z"})
-	save(store.ResetLinks, map[string]any{"code_hash": "test-hash-reset", "member": m, "created_by": maintainer.Id,
-		"expires_at": "2030-01-01 00:00:00Z"})
+	resetHash := sha256.Sum256([]byte(ResetToken))
+	save(store.ResetLinks, map[string]any{store.FieldUUID: ActiveResetLinkUUID, "code_hash": hex.EncodeToString(resetHash[:]),
+		"member": m, "created_by": maintainer.Id, "expires_at": "2099-01-01 00:00:00Z"})
+	save(store.ResetLinks, map[string]any{store.FieldUUID: UsedResetLinkUUID, "code_hash": "test-hash-reset-used",
+		"member": m, "created_by": maintainer.Id, "expires_at": "2026-01-02 00:00:00Z", "used_at": "2026-01-01 12:00:00Z"})
+	save(store.ResetLinks, map[string]any{store.FieldUUID: ExpiredResetLinkUUID, "code_hash": "test-hash-reset-expired",
+		"member": m, "created_by": maintainer.Id, "expires_at": "2020-01-01 00:00:00Z"})
 	save(store.AuditLog, map[string]any{"actor": maintainer.Id, "action": "test.seed"})
 	// Sessions as stored: a hash of a token nobody holds, one live and one expired. The scan's member and maintainer
 	// identities sign in with sessions of their own.

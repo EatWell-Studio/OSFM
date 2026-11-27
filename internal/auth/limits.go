@@ -114,6 +114,9 @@ type limiter struct {
 	account  *ratelimit.Lockouts
 	totp     *ratelimit.Lockouts
 	recovery *ratelimit.Lockouts
+	// The recovery of a passkey-only member: per client and login name, and per login name.
+	recoverLogin   *ratelimit.Lockouts
+	recoverAccount *ratelimit.Lockouts
 
 	proxyWarning sync.Once
 }
@@ -131,6 +134,9 @@ func newLimiter(l Limits) *limiter {
 		account:  ratelimit.NewLockouts(l.AccountFailures, c, clock),
 		totp:     ratelimit.NewLockouts(l.TOTPFailures, c, clock),
 		recovery: ratelimit.NewLockouts(l.RecoveryFailures, c, clock),
+
+		recoverLogin:   ratelimit.NewLockouts(l.LoginFailures, c, clock),
+		recoverAccount: ratelimit.NewLockouts(l.AccountFailures, c, clock),
 	}
 }
 
@@ -143,9 +149,11 @@ func limiterOf(app core.App) *limiter {
 type accountKind int
 
 const (
-	accountNone   accountKind = iota
-	accountLogin              // the login name in the body ({"loginName"})
-	accountTicket             // the member of the sign-in ticket in the body ({"ticket"})
+	accountNone    accountKind = iota
+	accountLogin               // the login name in the body ({"loginName"})
+	accountTicket              // the member of the sign-in ticket in the body ({"ticket"})
+	accountSession             // the signed-in member; the factor from the form of the code in the body ({"code"})
+	accountRecover             // the login name in the body of the recovery of a passkey-only member ({"loginName"})
 )
 
 // Limit is what [RateLimit] applies to a route: the account it counts besides the client, and the audit entry a
@@ -169,6 +177,12 @@ var (
 	// LimitSignInTOTP and LimitSignInRecovery: the second step of the sign-in.
 	LimitSignInTOTP     = Limit{account: accountTicket, factor: factorTOTP, signIn: MethodPasswordTOTP}
 	LimitSignInRecovery = Limit{account: accountTicket, factor: factorRecovery, signIn: MethodRecoveryCode}
+	// LimitStepUp: the re-verification of a session with the password and a TOTP or recovery code (stepup.go),
+	// counted for the signed-in member in the same counters as the second sign-in step.
+	LimitStepUp = Limit{account: accountSession}
+	// LimitRecover: the recovery of a passkey-only member with the login name and a recovery code (recover.go),
+	// counted per client and login name and per login name, apart from the password step.
+	LimitRecover = Limit{account: accountRecover}
 	// LimitPasskeySignIn: the second request of a passkey sign-in.
 	LimitPasskeySignIn = Limit{signIn: MethodPasskey}
 	// LimitPublic: any other public authentication route (budget and failures per client), such as the invite check
@@ -194,6 +208,9 @@ var failureCodes = map[string]bool{
 	CodeTicketExpired:      true,
 	CodePasskeyFailed:      true,
 	CodeSetupCodeInvalid:   true,
+	CodeRecoveryFailed:     true,
+	CodeRecoveryExpired:    true,
+	CodeResetInvalid:       true,
 }
 
 // Request store keys: the code of the AuthError a handler answered with, and the mark of a failed attempt that
@@ -241,12 +258,16 @@ const (
 	scopeAccount  = "login"
 	scopeTOTP     = "member_totp"
 	scopeRecovery = "member_recovery"
+
+	scopeRecoverLogin   = "client_login_recover"
+	scopeRecoverAccount = "login_recover"
 )
 
 func (lim *limiter) serve(e *core.RequestEvent, limit Limit) error {
 	client := lim.clientKey(e)
 	keys := []counted{{counter: lim.client, key: client, scope: scopeClient}}
 	var login, member string
+	factor := limit.factor
 	switch limit.account {
 	case accountLogin:
 		if login = loginFromBody(e); login != "" {
@@ -254,14 +275,26 @@ func (lim *limiter) serve(e *core.RequestEvent, limit Limit) error {
 				counted{counter: lim.login, key: client + " " + login, scope: scopeLogin, reset: true},
 				counted{counter: lim.account, key: login, scope: scopeAccount, reset: true})
 		}
-	case accountTicket:
-		if member = ticketMember(e); member != "" {
-			c := counted{counter: lim.totp, key: member, scope: scopeTOTP, reset: true}
-			if limit.factor == factorRecovery {
-				c = counted{counter: lim.recovery, key: member, scope: scopeRecovery, reset: true}
-			}
-			keys = append(keys, c)
+	case accountRecover:
+		if login = loginFromBody(e); login != "" {
+			keys = append(keys,
+				counted{counter: lim.recoverLogin, key: client + " " + login, scope: scopeRecoverLogin, reset: true},
+				counted{counter: lim.recoverAccount, key: login, scope: scopeRecoverAccount, reset: true})
 		}
+	case accountTicket:
+		member = ticketMember(e)
+	case accountSession:
+		if m := CurrentMember(e); m != nil {
+			member = m.GetString(store.FieldUUID)
+			factor = factorOfCode(e)
+		}
+	}
+	if member != "" {
+		c := counted{counter: lim.totp, key: member, scope: scopeTOTP, reset: true}
+		if factor == factorRecovery {
+			c = counted{counter: lim.recovery, key: member, scope: scopeRecovery, reset: true}
+		}
+		keys = append(keys, c)
 	}
 
 	if ok, wait := lim.requests.Take(client); !ok {
@@ -302,7 +335,11 @@ func (lim *limiter) serve(e *core.RequestEvent, limit Limit) error {
 	case outcome == ratelimit.Success:
 		auditSuccess(e, limit)
 	case outcome == ratelimit.Failure && member != "" && e.Get(authErrorCodeKey) == CodeCodeInvalid:
-		auditApp(e.App, nil, AuditSignInFailed, member, map[string]any{"factor": limit.factor})
+		details := map[string]any{"factor": factor}
+		if limit.account == accountSession {
+			details["verify"] = true
+		}
+		auditApp(e.App, nil, AuditSignInFailed, member, details)
 	}
 	return err
 }
@@ -391,6 +428,18 @@ func loginFromBody(e *core.RequestEvent) string {
 		return login
 	}
 	return ""
+}
+
+// factorOfCode returns the factor a re-verification uses: factorTOTP for a code of TOTP form in the body, else
+// factorRecovery.
+func factorOfCode(e *core.RequestEvent) string {
+	var req VerifyRequest
+	if json.Unmarshal(peekBody(e), &req) == nil {
+		if _, ok := normalizeTOTPCode(req.Code); ok {
+			return factorTOTP
+		}
+	}
+	return factorRecovery
 }
 
 // ticketMember returns the uuid of the member named by a valid sign-in ticket in the body, or "".

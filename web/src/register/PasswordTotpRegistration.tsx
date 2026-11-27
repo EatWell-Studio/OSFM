@@ -1,6 +1,4 @@
 import { useMutation } from '@tanstack/react-query'
-import { Check, Copy } from 'lucide-react'
-import { QRCodeSVG } from 'qrcode.react'
 import { type SyntheticEvent, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Field } from '@/components/Field'
@@ -11,7 +9,6 @@ import { rateLimitMessage } from '@/lib/rateLimit'
 import type { Me } from '@/session/session'
 import {
   confirmPasswordRegistration,
-  groupSecret,
   isValidLoginName,
   maxPasswordLength,
   minPasswordLength,
@@ -23,6 +20,7 @@ import {
   startPasswordRegistration,
 } from '@/lib/passwordTotp'
 import { RecoveryCodes } from './RecoveryCodes'
+import { TotpSecret } from './TotpSecret'
 
 type Step =
   { kind: 'form' } | { kind: 'totp'; enrolment: PasswordEnrolment } | { kind: 'codes'; registered: Registered }
@@ -262,7 +260,6 @@ function TotpStep({
   const headingId = useId()
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
 
   const confirm = useMutation({
     mutationFn: (req: { enrolment: string; code: string }) => confirmPasswordRegistration(entitlement, req),
@@ -313,37 +310,7 @@ function TotpStep({
         {t('pages.register.password.totpTitle')}
       </h2>
       <p>{t('pages.register.password.totpExplanation')}</p>
-      <div className="self-center rounded-lg bg-white p-2">
-        <QRCodeSVG value={enrolment.otpauthUri} size={208} level="M" title={t('pages.register.password.qrTitle')} />
-      </div>
-      <Button asChild variant="outline" className="self-start">
-        <a href={enrolment.otpauthUri}>{t('pages.register.password.openApp')}</a>
-      </Button>
-      <div className="flex flex-col gap-1">
-        <p className="text-sm">{t('pages.register.password.secretLabel')}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <code className="rounded border bg-muted/40 px-2 py-1 font-mono text-sm break-all select-all">
-            {groupSecret(enrolment.secret)}
-          </code>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              navigator.clipboard.writeText(enrolment.secret).then(
-                () => {
-                  setCopied(true)
-                },
-                () => {
-                  setCopied(false)
-                },
-              )
-            }}
-          >
-            {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-            {copied ? t('pages.register.password.copied') : t('pages.register.password.copySecret')}
-          </Button>
-        </div>
-      </div>
+      <TotpSecret otpauthUri={enrolment.otpauthUri} secret={enrolment.secret} />
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         <Field
           label={t('pages.register.password.code')}

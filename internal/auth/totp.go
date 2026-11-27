@@ -97,10 +97,12 @@ func matchTOTP(secret []byte, code string, t time.Time, after int64) (step int64
 }
 
 // consumeTOTPStep records step as the last accepted time step of the credential, if it is newer than the one
-// recorded; it reports whether it was. Of two requests with the same code only one gets true.
+// recorded; it reports whether it was, and records the day as the credential's last use. Of two requests with the
+// same code only one gets true.
 func consumeTOTPStep(app core.App, credential *core.Record, step int64) (bool, error) {
 	t := dbTime(now())
-	res, err := app.DB().Update(store.Credentials, dbx.Params{"totp_last_step": step, store.FieldUpdated: t},
+	res, err := app.DB().Update(store.Credentials, dbx.Params{"totp_last_step": step, store.FieldUpdated: t,
+		"last_used_at": dbTime(day(now()))},
 		dbx.And(dbx.HashExp{"id": credential.Id}, dbx.NewExp("totp_last_step < {:step}", dbx.Params{"step": step}))).
 		Execute()
 	if err != nil {

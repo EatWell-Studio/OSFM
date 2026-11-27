@@ -7,6 +7,7 @@ import { PageHeading } from '@/components/PageHeading'
 import { Button } from '@/components/ui/button'
 import { PasskeySignIn } from '@/login/PasskeySignIn'
 import { PasswordSignIn } from '@/login/PasswordSignIn'
+import { RecoverySignIn } from '@/login/RecoverySignIn'
 import { sanitizeNext } from '@/lib/next'
 import { type Me, sessionQueryKey } from '@/session/session'
 import { useSession } from '@/session/useSession'
@@ -46,8 +47,16 @@ export function LoginPage() {
   const session = useSession()
   const queryClient = useQueryClient()
   const [method, setMethod] = useState('password')
+  // The recovery of a passkey-only member who lost their passkeys, instead of the sign-in methods.
+  const [recovering, setRecovering] = useState(false)
+  // After a recovery that left old passkeys, the member checks them on their page first.
+  const [checkPasskeys, setCheckPasskeys] = useState(false)
   if (session.status === 'signed-in') {
-    return <Navigate to={sanitizeNext(searchParams.get('next'))} replace />
+    return checkPasskeys ? (
+      <Navigate to="/me" replace state={{ recovered: true }} />
+    ) : (
+      <Navigate to={sanitizeNext(searchParams.get('next'))} replace />
+    )
   }
   const signedIn = (me?: Me) => {
     // The page re-renders as signed in and navigates on.
@@ -56,6 +65,31 @@ export function LoginPage() {
     } else {
       void queryClient.invalidateQueries({ queryKey: sessionQueryKey })
     }
+  }
+  if (recovering) {
+    return (
+      <>
+        <PageHeading>{t('credentials.recover.title')}</PageHeading>
+        <div className="flex flex-col gap-4 px-4 pb-4">
+          <RecoverySignIn
+            onDone={(enrolled) => {
+              // The page re-renders as signed in and navigates on.
+              setCheckPasskeys(enrolled.otherPasskeys > 0)
+              queryClient.setQueryData(sessionQueryKey, enrolled.me)
+            }}
+          />
+          <Button
+            variant="link"
+            className="self-start px-0"
+            onClick={() => {
+              setRecovering(false)
+            }}
+          >
+            {t('credentials.recover.back')}
+          </Button>
+        </div>
+      </>
+    )
   }
   return (
     <>
@@ -78,6 +112,15 @@ export function LoginPage() {
           </div>
         )}
         {methods.find((m) => m.id === method)?.form({ onSignedIn: signedIn })}
+        <Button
+          variant="link"
+          className="self-start px-0"
+          onClick={() => {
+            setRecovering(true)
+          }}
+        >
+          {t('credentials.recover.entry')}
+        </Button>
       </div>
     </>
   )

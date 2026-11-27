@@ -157,32 +157,39 @@ flowchart TD
     l2 --> l3{"第二步"}
     l3 -->|"TOTP"| l4["TOTP 验证码"]
     l3 -->|"恢复码"| l5["恢复码（用后作废）"]
+    l0 -->|"只有 passkey 且丢失"| l6["登录名 + 恢复码（用后作废）"]
+    l6 --> l7["注册新的 passkey<br/>或设置密码 + TOTP"]
     l1 --> ok(["签发会话"])
     l4 --> ok
     l5 --> ok
+    l7 --> ok
     l2 -.->|"第二步未完成"| no["不签发任何令牌"]
+    l6 -.->|"未注册新凭据"| no
 ```
 
-任何分支都要两个因素都通过才签发会话；密码正确但第二步未完成时不签发任何令牌。
+任何分支都要两个因素都通过才签发会话；密码正确但第二步未完成时不签发任何令牌。只有 passkey 的成员用恢复码时，恢复码换来的不是会话，而是只能注册新凭据的恢复票据（见下面的"只有 passkey 的成员的恢复"）。
 
 **重置（`D5`）**
 
 ```mermaid
 flowchart LR
-    s1["维护者生成一次性重置链接<br/>（24 小时有效）"] --> s2["成员重新设置凭据"]
-    s2 --> s3["旧凭据与恢复码全部作废<br/>所有会话失效"]
-    s3 --> s4["写审计记录"]
+    s1["维护者生成一次性重置链接<br/>（24 小时有效，需再次验证）"] --> s2["成员打开链接<br/>设置新的 passkey 或密码 + TOTP"]
+    s2 --> s3["旧凭据与恢复码全部删除<br/>生成新恢复码，所有会话失效"]
+    s3 --> s4["写审计记录，签发新会话"]
 ```
+
+细节见下面的"重置链接"。
 
 **会话**（AD6，T007，`internal/auth`）：两步验证通过后，服务器建一条会话，把一个随机令牌放在 cookie 里交给浏览器。
 
 - **cookie 里只有一个不透明的随机值**：`osfm_session`（实例以 https 在公网主机名上提供时为 `__Host-osfm_session`，见下），256 位随机数（`crypto/rand`）的 base64url 编码（43 个字符），不含成员 ID、PocketBase 记录 ID、有效期或任何可解码的内容。属性为 `HttpOnly; Secure; SameSite=Lax; Path=/`，不设 `Domain`（只发给本主机，瓦片请求也带上）；`Max-Age` 到会话过期为止。前端脚本读不到它。
-- **服务器只存令牌的哈希**：`sessions` 集合（§3.5）每条会话一行：成员、令牌的 SHA-256（十六进制，唯一索引）、过期时间、最近一次使用的日期（只记 UTC 日期，不记时刻，每天最多写一次）、创建时间；不记 IP、不记 User-Agent。令牌本身有 256 位随机性，不需要加盐或慢哈希；只拿到数据库文件的人得不到可用的 cookie。
+- **服务器只存令牌的哈希**：`sessions` 集合（§3.5）每条会话一行：成员、令牌的 SHA-256（十六进制，唯一索引）、过期时间、最近一次使用的日期（只记 UTC 日期，不记时刻，每天最多写一次）、最近一次在这个会话上证明身份的时间（`verified_at`：登录或再次验证，见下面的"凭据管理与再次验证"）、创建时间；不记 IP、不记 User-Agent。令牌本身有 256 位随机性，不需要加盐或慢哈希；只拿到数据库文件的人得不到可用的 cookie。
 - **有效期**：从登录起 30 天，使用不延长；到期后需要重新登录。过期的行在下次出现时删除，另有每日定时任务清理。
 - **校验**：每个需要登录的请求按 cookie 令牌的哈希查一次 `sessions`（唯一索引），再经 `store.Query` 查一次成员（自动排除已软删除的）。会话有效的条件是：行存在、未过期、成员存在且可以登录——`left_at` 为空（离开或被维护者移出，`D7` `D9`）且未被软删除。不满足时删除这行会话，并在响应里让浏览器删掉 cookie。不加缓存：两次走索引的 SQLite 查询远小于一次请求的其他开销，而缓存会让撤销不再立即生效。
 - **撤销就是删除行**，从下一个请求起生效：
   - 退出登录（`POST /api/osfm/logout`）只删当前这一条，成员的其他设备不受影响；
-  - 重置凭据（`D5`，T012）调用 `auth.RevokeSessions`，删除该成员的全部会话，并写一条审计记录（`sessions.revoke_all`：操作人、目标成员的 uuid、原因、条数）；
+  - 重置凭据（`D5`，T012）和只有 passkey 的成员恢复后注册新凭据时调用 `auth.RevokeSessions`，删除该成员的全部会话，并写一条审计记录（`sessions.revoke_all`：操作人、目标成员的 uuid、原因 `credentials_reset` 或 `recovery`、条数）；
+  - 成员在"我的"页删除凭据、修改密码、更换 TOTP 时，结束他的其他会话（保留当前这一条），审计记录 `sessions.revoke_others`；
   - 成员的 `left_at` 被设置或记录被软删除时，`members` 集合的记录钩子立即删除其全部会话并写同样的审计记录；即使有代码绕过钩子直接改库，上面的校验也会拒绝这个成员。
 - **为什么不把 PocketBase 的认证令牌放进 cookie**（T006 验证过可以自行签发）：PocketBase 令牌是 JWT，载荷里有成员的内部记录 ID，直接放进 cookie 违反 AD4（内部 ID 扫描会解码 JWT 并失败）；它的失效靠轮换成员的 `tokenKey`，只能让这个成员的所有设备同时失效，做不到"只退出这台设备"——退出登录只能清掉浏览器里的 cookie，令牌本身在 30 天内仍然有效。用主密钥加密后再放进 cookie 能藏住内部 ID，但仍然做不到单设备撤销，还要自己设计加密格式。服务器端会话简单、能逐条撤销，以后"我的设备"列表（按 `sessions.uuid` 逐个退出）也不需要改数据模型；代价是每个需要登录的请求多一次索引查询。
 - 因此 OSFM 不为成员签发任何 PocketBase 令牌；`members` 集合的 `authToken.duration` 等令牌设置不起作用，T006 的 `IssueToken`、`MemberByToken`、`RevokeTokens` 已删除，只保留 `NewMemberRecord`。主监听端口去掉 `Authorization` 请求头（§3.1），所以即便有人拿到 PocketBase 令牌，在这里也不起作用。
@@ -227,7 +234,7 @@ flowchart LR
 - **签名计数**：新计数不大于已存的计数、且两者不都是 0 时拒绝登录（WebAuthn §7.2 第 17 步：认证器可能被复制），并写审计记录 `credentials.passkey_counter_regression`（目标为成员的 uuid）；同步型 passkey 一直报告 0，照常通过。新的计数用条件更新写入（只有存储的计数仍是验证时读到的那个才写），两个同时用同一计数的登录只有一个成功。
 - 错误响应与"密码 + TOTP"的格式和 `code` 相同（`auth.AuthError`：`invalid_request`、`invite_invalid`、`login_name_invalid`、`display_name_invalid`、`login_name_taken`），另有 passkey 自己的 `passkey_failed`、`passkeys_unavailable`。所有响应 `Cache-Control: no-store`；四个接口都是公开路由（`auth.Public`），同样要求 `X-OSFM: 1`。
 - **响应头**：主监听端口的 `Permissions-Policy`（§4.7）不列 `publickey-credentials-create`、`publickey-credentials-get`，它们按浏览器默认只对本站开放；T010 在真实响应头与 `default-src 'self'` 下用 Chrome 实测注册与登录都不受影响。
-- **以后**：成员给自己添加更多 passkey（T012）走已登录的接口，创建选项要带上 `excludeCredentials`（该成员已有的凭据 ID 与传输方式）并复用成员的用户句柄；还没有句柄的成员（用"密码 + TOTP"注册的）第一次添加时生成。凭据列表按 `credentials.uuid` 命名。登录页的自动填充（`mediation: "conditional"`，登录名输入框加 `autocomplete="username webauthn"`）待做。限速与审计见下面的"限速与锁定""审计"。
+- **添加更多 passkey**（T012）：见下面的"凭据管理与再次验证"。登录页的自动填充（`mediation: "conditional"`，登录名输入框加 `autocomplete="username webauthn"`）待做。限速与审计见下面的"限速与锁定""审计"。
 
 **密码 + TOTP**（`D3` `D4`，T009，`internal/auth`）：注册与登录各两步，所有接口都是公开的 POST（`auth.Public`，仍要求 `X-OSFM: 1`），响应 `Cache-Control: no-store`，错误响应在 PocketBase 的错误格式上多一个机器可读的 `code`（`auth.AuthError`），前端按它显示文案。
 
@@ -251,6 +258,36 @@ flowchart LR
 - `recovery_codes` 只存规范形式的 SHA-256（十六进制，唯一索引）：80 位随机性下离线穷举不可行，与邀请码同理不需要慢哈希。
 - 使用是条件更新（只在 `used_at` 为空时写入），两个同时提交同一个码的请求只有一个成功。
 - 前端（`web/src/register/RecoveryCodes.tsx`）列出恢复码，可复制、可下载为文本文件（`blob:` 地址的下载，不是 `data:` 地址），必须勾选"已保存"才能继续。
+
+**凭据管理与再次验证**（`D3` `D5`，T012，`internal/auth` 的 `credentials.go`、`stepup.go`、`enrol.go`）：已登录的成员在"我的"页管理自己的凭据。所有接口都需要会话（不是公开路由），写请求同样要 `X-OSFM: 1`，响应 `Cache-Control: no-store`，错误格式是 `auth.AuthError`。
+
+- **列表**：`GET /api/osfm/me/credentials` 返回 `{"passkeys": [{"uuid", "deviceName", "createdAt", "lastUsedAt"}], "passwordTotp": {"createdAt", "lastUsedAt"} 或 null, "recoveryCodesLeft", "verifiedUntil"}`。passkey 按 `credentials.uuid` 列出（不含凭据 ID、公钥等）；`lastUsedAt` 是最近一次用它登录或再次验证的 UTC 日期（`credentials.last_used_at`，只记日期，与会话的最近使用日期同理；passkey 登录、TOTP 登录与再次验证时随同一条更新写入）。`verifiedUntil` 是当前会话的再次验证何时到期，没有时为 null。下面所有修改接口成功时都返回同样的列表（重新生成恢复码除外）。
+- **接口**：`POST /api/osfm/me/passkeys/options` 与 `POST /api/osfm/me/passkeys`（正文 `{"state", "credential", "deviceName"}`，201）添加 passkey：创建选项沿用成员的用户句柄（用"密码 + TOTP"注册、还没有句柄的成员生成一个新的，随 passkey 一起保存），`excludeCredentials` 列出成员已有的 passkey，认证器不会为同一账号再建一个。`POST /api/osfm/me/passkeys/{uuid}/rename`（`{"deviceName"}`，最多 64 个字符、不能有控制字符，可以为空）重命名，`POST /api/osfm/me/passkeys/{uuid}/remove` 删除；别人的 passkey 一律 404。`POST /api/osfm/me/password-totp/start`（`{"password"}`）与 `/confirm`（`{"enrolment", "code"}`，201）为还没有密码的成员设置密码 + TOTP，与注册相同的两步：密码规则、argon2id、新的 TOTP 密钥封进待完成的设置（绑定成员的 uuid 与登录名，专用的附加数据），第二步核对一个验证码后保存；已有密码时 409 `password_exists`。`POST /api/osfm/me/password`（`{"password"}`）修改密码（TOTP 密钥不变，旧密码的登录票据随即失效）；`POST /api/osfm/me/totp/start` 与 `/confirm` 更换 TOTP 密钥：新密钥核对一个验证码后替换旧的，旧密钥的验证码随即失效；没有密码时两者都是 409 `no_password`。`POST /api/osfm/me/password-totp/remove` 删除密码 + TOTP。`POST /api/osfm/me/recovery-codes` 生成 10 个新恢复码（201 `{"recoveryCodes"}`，只出现这一次），原有的全部作废。
+- **不能删掉最后一种登录方式**：两步验证始终是强制的（`D3`），成员至少要保留一个 passkey 或密码 + TOTP。删除 passkey 时，如果它是唯一的 passkey 而成员没有密码，返回 409 `last_credential`；没有 passkey 时不能删除密码 + TOTP。计数在删除的同一事务里进行，两个同时进行的删除不会一起越过这条规则（测试）。
+- **结束其他会话**：删除凭据、修改密码、更换 TOTP 时，成员往往是丢了设备或怀疑泄露，所以删除该成员的其他会话，保留当前会话。添加凭据和重新生成恢复码不影响其他会话。
+- **再次验证**（step-up）：会话只证明成员在登录时（可能是几周前）通过了两个因素，这台设备之后可能没锁屏就被别人拿到。会让成员失去账号或把账号交给别人的操作——添加或删除凭据、设置或修改密码、更换 TOTP、重新生成恢复码，以及维护者生成重置链接——还要求最近证明过一次身份。实现：`sessions.verified_at` 记录这个会话最近一次证明身份的时间，登录时写入（登录本身就证明了所有因素），再次验证时更新；10 分钟内（`auth.StepUpWindow`）算作"刚验证过"，否则这些接口返回 403 `reauth_required`（中间件 `auth.RequireFresh`），前端随即请成员再次验证并重发请求。再次验证与登录用同样的因素：`POST /api/osfm/me/verify/passkey/options` 与 `/verify/passkey` 用成员自己的某个 passkey（选项列出成员的 passkey，要求用户验证；签名计数检查与登录相同，别人的 passkey 不行）；或 `POST /api/osfm/me/verify`（`{"password", "code"}`）用密码加一个 TOTP 验证码或一个恢复码（按格式区分：6 位数字是验证码，其余按恢复码；TOTP 时间步、恢复码都照样用掉）。成功返回 `{"verifiedUntil"}` 并写审计 `sessions.verify`。验证只属于当前会话：在一台设备上再次验证不会让成员的其他会话也算"刚验证过"。密码或验证码错误计入该成员第二步的锁定计数（TOTP 或恢复码，与登录共用，见"限速与锁定"），有会话的人不会因此多得到猜测次数。窗口取 10 分钟：一次操作（包括 5 分钟的 passkey 仪式或 15 分钟内有效的待完成设置）中途过期时，前端再要一次验证即可。
+- **审计**：见下面的"审计"（`credentials.add`、`credentials.remove`、`credentials.password_change`、`credentials.totp_replace`、`recovery_codes.regenerate`、`sessions.verify`、`sessions.revoke_others`）；重命名不记录。
+
+**只有 passkey 的成员的恢复**（`D3` `D5`，T012，`recover.go`）：用"密码 + TOTP"登录的成员丢了验证器时，在密码之后用恢复码代替验证码（见上面的"登录"）。只有 passkey 的成员没有密码这一步，他们的恢复码用于"恢复后重设凭据"：
+
+1. `POST /api/osfm/recover`（公开），正文 `{"loginName", "code"}`：恢复码通过时用掉它，返回 `{"ticket", "expiresAt"}`——**恢复票据不是会话**：不设 cookie，除下面的注册接口外什么都打不开（其余接口都需要会话，返回 401；它也不能当登录票据或重置令牌用，测试）。票据内容是成员的 uuid 与所用恢复码的哈希，用主密钥按单独的用途封装，15 分钟过期。
+2. 用票据注册新凭据：`POST /api/osfm/recover/passkey/options` 与 `/recover/passkey`（沿用成员的用户句柄，排除已有的 passkey），或 `POST /api/osfm/recover/password/start` 与 `/recover/password/confirm`（与注册相同的两步）。在一个事务里：再确认票据里的恢复码仍在记录中、保存新凭据、生成 10 个新恢复码（旧的连同刚用的那个全部作废，所以一张票据只能注册一次）、`auth.RevokeSessions` 删除该成员的全部会话（原因 `recovery`）；随后签发新会话，返回 201 `{"me", "recoveryCodes", "otherPasskeys"}`。直到这一步成员才能进入地图。
+
+- **不泄露**：没有有效恢复码的人分不出登录名不存在、成员已离开、恢复码错误或已用、成员其实有密码：状态码（401）、正文（`recovery_failed`）和响应头完全相同（测试），而且不论有没有这个成员都执行同样的查询（没有成员时按空的成员 ID 查，什么也查不到）。只有持有该成员有效恢复码的人会被告知"这个成员有密码，请用密码 + 恢复码登录"（409 `recovery_use_password`），这时恢复码不会被用掉。
+- **旧 passkey 保留**：成员可能只丢了一台设备，其余 passkey 还在自己信任的设备上，只有成员自己知道。恢复之后"我的"页列出每个 passkey 和最近使用日期；恢复刚签发的会话算作"刚验证过"，可以立即删除丢失的那个，不必再次验证。前端在 `otherPasskeys` 大于 0 时把成员带到"我的"页并提示检查。
+- **限速**：`recover` 用单独的计数（`auth.LimitRecover`）：按"客户端 + 登录名"5 次、按登录名（所有客户端）30 次，阈值与密码一步相同但计数分开，密码一步的锁定不会挡住恢复；`recovery_failed` 与 `recovery_expired`（票据无效）计为失败。恢复码有 80 位随机性，猜中不可行；按登录名的计数主要挡住噪音。
+- **审计**：`recovery.start`（目标成员，剩下的恢复码个数）、`credentials.add`（`via: recovery`）、`sessions.revoke_all`（原因 `recovery`）、`sessions.signin`（方式 `recovery`）。
+- 票据只在页面内存里：恢复中途刷新页面需要再用一个恢复码。
+
+**重置链接**（`D5`，T012，`reset.go`）：成员丢了全部凭据和恢复码时，请维护者生成一次性的重置链接。
+
+- **令牌**：256 位随机数的 base64url 编码，与邀请码同一形式；`reset_links`（§3.5）只存它的 SHA-256，另有成员、生成它的维护者、过期时间（24 小时）、使用时间与撤销时间。链接为 `/reset#token=<令牌>`（在片段里，不进服务器与代理日志、不进 `Referer`），只在生成的响应里出现一次；重置页读出令牌后从地址栏去掉，只在当前标签页的 `sessionStorage` 里保留。
+- **有效**：未使用、未撤销、未过期，而且成员还能登录。无效的令牌——从未存在、格式不对、已用、已过期、已撤销、被新链接替换、成员已离开——在所有公开的重置接口上得到完全相同的回答（测试）。
+- **维护者接口**（`auth.RequireMaintainer`）：`GET /api/osfm/reset-links`（新的在前，每条有 `uuid`、状态 `active`/`used`/`expired`/`revoked`、成员与生成者的 `uuid` 与主名、时间，不含哈希）；`POST /api/osfm/reset-links`（`{"loginName"}`，201 `{"resetLink", "token"}`，需要再次验证：它能把成员的账号交给打开链接的人）；`POST /api/osfm/reset-links/{uuid}/revoke`（重复撤销不变，已用的 409 `reset_link_used`）。为同一成员生成新链接时，他未使用的旧链接被撤销。
+- **谁可以被重置**：维护者可以为任何能登录的成员生成链接，**包括其他维护者**（一个圈子只有一两个维护者，另一位维护者是唯一能帮忙的人；每次生成都有审计记录）；不能为自己生成（409 `reset_self`，自己的凭据在"我的"页管理）；已离开或被移出（`left_at`）、已删除的成员不行（404 `member_not_found`，他们本来就不能登录，重置也不会让他们回来），链接生成之后成员离开的，链接随即无效。
+- **公开接口**（`auth.Public` + `auth.RateLimit`）：`POST /api/osfm/reset/check`（`{"token"}` → `{"valid": true, "loginName", "displayName"}` 或 `{"valid": false}`，告诉成员要重置的是哪个账号）；`POST /api/osfm/reset/passkey/options` 与 `/reset/passkey`，或 `POST /api/osfm/reset/password/start` 与 `/reset/password/confirm`。待完成的设置与仪式状态绑定令牌的哈希与成员。无效令牌是 403 `reset_invalid`，与 `{"valid": false}` 一样计为失败的尝试。
+- **使用**（一个事务）：条件更新消耗链接（两个同时的重置只有一个成功，测试）→ 删除该成员全部凭据 → 保存新凭据 → 生成新恢复码（旧的全部删除）→ 审计 `reset_links.use` 与 `credentials.add`（`via: reset_link`）→ `auth.RevokeSessions(…, auth.RevokeCredentialsReset)`。**用户句柄更换**：设置新 passkey 时用新的随机句柄，设置密码 + TOTP 时清空（以后添加 passkey 再生成），旧 passkey 留在认证器里的句柄不再对应任何人。之后签发新会话，返回 201 `{"me", "recoveryCodes", "otherPasskeys"}`。重置后旧 passkey、旧密码与 TOTP（包括之前拿到的登录票据）、旧恢复码都不能登录，旧会话全部失效（测试）。
+- **审计**：`reset_links.create`、`reset_links.revoke`（维护者撤销，或被新链接替换）、`reset_links.use`、`sessions.revoke_all`（原因 `credentials_reset`）、`sessions.signin`（方式 `reset_link`）。
 
 **首次启动与设置码**（`G3`，T013，`internal/auth` 的 `setup.go`、`internal/settings`）：实例里还没有任何维护者时（角色为 `maintainer` 的成员一个都没有建过；已离开或已删除的维护者也算，所以设置只发生一次），实例处于"未设置"状态。前端此时把每个页面都引到设置向导 `/setup`（§4.2）。
 
@@ -276,16 +313,19 @@ flowchart LR
 | 登录名失败（所有客户端） | 登录名 | 密码一步 | 30 次失败后锁定，最长 15 分钟 |
 | 第二步失败 | 成员（票据里的 uuid） | TOTP 一步 | 5 次失败后锁定 |
 | 恢复码失败 | 成员 | 恢复码一步 | 10 次失败后锁定 |
+| 第二步失败（再次验证） | 已登录的成员 | `me/verify`：按所给的码计入上面的 TOTP 或恢复码计数（与登录共用） | 同上 |
+| 恢复失败（单个客户端） | 客户端 + 登录名 | 只有 passkey 的成员的恢复 `recover` | 5 次失败后锁定 |
+| 恢复失败（所有客户端） | 登录名 | 同上 | 30 次失败后锁定，最长 15 分钟 |
 
 - **锁定方式**：达到阈值的那次失败锁定 1 分钟；之后每一次失败都重新锁定，时长翻倍（1、2、4……分钟），最长 1 小时（所有客户端的登录名计数最长 15 分钟）。锁定结束后一次只放行一个尝试。失败在最后一次失败 24 小时后忘掉（比最长锁定长，等完一次锁定不会清零）。成功会清零账号一级的计数（登录名、成员），不清零客户端的计数（否则一个成员可以用自己的账号替同一地址上的猜测"洗白"）。知道密码的人每天对一个成员最多能试约 34 个 TOTP 码（6 位、±1 步，每个约 3/10⁶），且每次失败都写审计记录。
-- **"失败"是什么**：处理函数以这些错误码回答——`credentials_invalid`、`code_invalid`、`ticket_expired`、`enrolment_expired`、`invite_invalid`、`passkey_failed`、`setup_code_invalid`、`invalid_request`——或邀请检查、设置码检查回答 `{"valid": false}`。2xx 是成功；其余（登录名已被占用、500 等）不计。
+- **"失败"是什么**：处理函数以这些错误码回答——`credentials_invalid`、`code_invalid`、`ticket_expired`、`enrolment_expired`、`invite_invalid`、`passkey_failed`、`setup_code_invalid`、`recovery_failed`、`recovery_expired`、`reset_invalid`、`invalid_request`——或邀请检查、设置码检查、重置链接检查回答 `{"valid": false}`。2xx 是成功；其余（登录名已被占用、500 等）不计。
 - **并发**：一个尝试在处理之前就占用名额：只有未锁定、且"进行中的尝试数"小于"距下次锁定还剩的失败次数"时才放行，结果出来后再计入。同时发出的请求不能靠抢在计数之前越过阈值（测试：同一张票据并发 40 个错误验证码，到达验证的不超过 5 个）。
 - **超限的响应**：429，`auth.AuthError` 格式，`code` 为 `rate_limited`，`Retry-After` 为需要等待的秒数（向上取整），`Cache-Control: no-store`。前端据此显示"尝试次数太多，请 N 分钟后再试"。
 - **不泄露登录名是否存在**：登录名按输入规范化后计数（去空白、转小写），不论有没有这个成员；格式不合法的登录名不可能存在，只按客户端计。限速在处理函数之前判断，拒绝时不查数据库、不算 argon2id，存在与不存在的登录名得到逐字节相同的 429（状态码、正文、响应头，测试）。密码错误本身的响应已经相同（假哈希，见上），所以两者的计数也完全一样。
 - **锁住受害者的问题**：只按登录名计数时，任何人都能用错误密码把某个成员挡在门外。所以密码一步主要按"客户端 + 登录名"计数：单个攻击者只锁住自己；按登录名（所有客户端）的计数阈值高得多（30 次，至少要 6 个客户端），只用来限制分布式猜测，锁定最长 15 分钟。代价是分布式猜测每天每个账号约能试一百多个密码——而密码只换来登录票据，第二步另有按成员的锁定。第二步按成员计数：能在这里失败的人已经知道密码，此时锁住成员（并写审计）是应该的。**passkey 登录不受密码与验证码失败的影响**：它没有登录名，只按客户端计数，签名无法猜；**恢复码与 TOTP 分开计数**：恢复码 80 位无法猜，知道密码的攻击者锁住 TOTP 后，成员仍能用恢复码登录。剩下的风险：有至少 6 个地址的攻击者能让一个已知登录名的密码登录保持锁定（之后约每 15 分钟一次失败即可），只有密码的成员这期间登录不了（恢复码也要先过密码一步），只能等攻击停止或改用 passkey；同一 NAT 后的成员可能被同一地址上的攻击者连累（客户端计数），阈值按小圈子的正常使用留了余量。需要时可以再加"已登录过的设备不受登录名锁定"的设备 cookie，M1 不做。
 - **客户端**：PocketBase 的 `RealIP`，即可信代理请求头（`OSFM_TRUSTED_PROXY_HEADERS`，§5.2）中最右边的有效地址，没有设置时是 TCP 对端地址；IPv6 地址按 /64 网段计（一台主机通常能随意使用整个 /64）。在反向代理后面却没有设置可信代理头时，所有人共用代理的地址，客户端额度变成整个实例共享——请求带着 `X-Forwarded-For` 等代理头到达而没有设置时，日志里警告一次。
 - **内存**：计数只在内存里，重启清零。每种计数最多 10000 个键，满了丢掉最久没用的（正在进行中的尝试除外）；不再携带信息的条目（额度已满、没有失败）随时删除，所以表里基本只有最近失败过的键。丢掉的可能是锁定中的键：要把某个锁定挤出去，需要在受限的速率下制造上万个新键，客户端计数先会锁住这样做的地址。
-- **用到的路由**：`signin/password`、`signin/totp`、`signin/recovery`、`passkey/login/options`、`passkey/login`、`register/password/start`（每次一次 argon2id）、`register/password/confirm`、`passkey/register/options`、`passkey/register`、`invites/check`，以及首次启动向导的 `setup/check`、`setup/password/start`、`setup/password/confirm`、`setup/passkey/options`、`setup/passkey`。新的公开认证路由（如重置链接）同样挂上：`auth.Public(se.Router.POST(path, h)).Bind(auth.RateLimit(auth.LimitPublic))`，创建成员并登录的那一步用 `auth.LimitRegistration(auth.MethodPasswordTOTP)` 等（成功时写注册审计）。PocketBase 自己的全局规则（每个地址每 10 秒 300 次）仍在前面。
+- **用到的路由**：`signin/password`、`signin/totp`、`signin/recovery`、`passkey/login/options`、`passkey/login`、`register/password/start`（每次一次 argon2id）、`register/password/confirm`、`passkey/register/options`、`passkey/register`、`invites/check`，首次启动向导的 `setup/check`、`setup/password/start`、`setup/password/confirm`、`setup/passkey/options`、`setup/passkey`，恢复的 `recover`（`auth.LimitRecover`）与 `recover/*`，重置链接的 `reset/check`、`reset/password/*`、`reset/passkey*`（T012）；需要会话的 `me/verify`（`auth.LimitStepUp`）、`me/verify/passkey*` 以及计算 argon2id 的 `me/password-totp/start`、`me/password` 也挂上请求额度。新的公开认证路由同样挂上：`auth.Public(se.Router.POST(path, h)).Bind(auth.RateLimit(auth.LimitPublic))`，创建成员并登录的那一步用 `auth.LimitRegistration(auth.MethodPasswordTOTP)` 等（成功时写注册审计）。PocketBase 自己的全局规则（每个地址每 10 秒 300 次）仍在前面。
 
 **审计**（T011）：认证事件写入 `audit_log`（§3.5），目标都是成员（`target_type` 为 `members`、`target_uuid` 为成员的 uuid）：
 
@@ -296,12 +336,19 @@ flowchart LR
 | `sessions.signout` | 成员 | — |
 | `sessions.signin_failed` | — | 第二步失败（密码正确、验证码或恢复码错误）：`factor`（`totp`、`recovery`） |
 | `sessions.signin_locked` | — | 成员被锁定：`factor`（`totp`、`recovery`、`password`）、失败次数、锁定秒数 |
+| `sessions.verify` | 成员 | 再次验证（T012）：方式（`passkey`、`password_totp`、`recovery_code`）；失败计入 `sessions.signin_failed`（另记 `verify: true`） |
+| `sessions.revoke_others` | 成员 | 删除凭据、修改密码、更换 TOTP 时结束的其他会话：原因、条数 |
+| `credentials.add`、`credentials.remove` | 成员 | 凭据类型（`passkey`、`password_totp`）、凭据的 uuid；添加时另记来源 `via`（`settings`、`recovery`、`reset_link`） |
+| `credentials.password_change`、`credentials.totp_replace`、`recovery_codes.regenerate` | 成员 | — |
+| `recovery.start` | — | 只有 passkey 的成员用恢复码开始恢复：剩下的恢复码个数 |
+| `reset_links.create`、`reset_links.revoke`、`reset_links.use` | 维护者（使用时为成员） | 目标为重置链接（`target_type` 为 `reset_links`）：生成时记成员的 uuid，撤销时记原因（被替换时），使用时记方式 |
+| `settings.update` | 维护者 | 实例名称与城市的标识（首次启动向导与"管理"页） |
 
 - **不刷屏**：密码一步的失败不逐条记录（任何人都能对任意登录名制造，而且记下来就要先查登录名是否存在）。第二步的失败逐条记录：能走到这一步的人知道密码，这是成员和维护者应该看到的信号，而锁定使它每天每个成员最多几十条。锁定按成员记录（第二步的每次锁定；所有客户端的登录名锁定只记第一次，且只在登录名属于现有成员时——这一步只有多个客户端的失败才会触发，判断在响应确定之后）。按客户端的锁定只在应用日志里写一条警告，不含地址与登录名。
-- **不记录**：密码、验证码、恢复码、TOTP 密钥、票据、待完成的注册、邀请码、会话令牌、输入的登录名，以及客户端地址（§3.9）。测试检查所有审计记录都不含这些值。
+- **不记录**：密码、验证码、恢复码、TOTP 密钥、票据（登录票据与恢复票据）、待完成的注册、邀请码、重置令牌、会话令牌、输入的登录名，以及客户端地址（§3.9）。测试检查所有审计记录都不含这些值。
 - 写审计失败只写日志、不让请求失败（响应已经确定）。
 
-**防护**：所有改变状态的请求要求自定义请求头（`X-OSFM: 1`），配合 SameSite cookie 防 CSRF；登录、TOTP、恢复码按客户端与账号分别限速并临时锁定（见上，重置链接随 T012 挂上同样的限速）；登录失败的提示不区分"登录名不存在"和"密码错误"。
+**防护**：所有改变状态的请求要求自定义请求头（`X-OSFM: 1`），配合 SameSite cookie 防 CSRF；登录、TOTP、恢复码、恢复与重置链接按客户端与账号分别限速并临时锁定（见上）；敏感的凭据修改要求再次验证（见上）；登录失败的提示不区分"登录名不存在"和"密码错误"。
 
 ### 3.4 授权
 
@@ -317,6 +364,9 @@ flowchart LR
 | 邀请：M1 只有维护者能创建、查看与撤销邀请（`auth.RequireMaintainer`，否则 403）；M2 起成员有邀请权且已过冷静期（`D12`）也可以邀请 | M1 在 `internal/auth`（§3.3）；M2 在 `domain` |
 | 注册：必须消耗一个有效邀请，经 `auth.RegisterWithInvite` 在创建成员的同一事务里完成（`D1`）；唯一的例外是首次启动向导创建第一个维护者：需要服务器打印的设置码，并在创建成员的同一事务里确认还没有维护者 | `internal/auth`（§3.3） |
 | 首次启动向导：实例名称只随第一个维护者在同一事务里保存（需要设置码）；城市（以及对名称的修改）只能由维护者保存，且只在实例还没有城市时（之后 404） | `internal/auth`（§3.3） |
+| 实例设置：设置完成后，维护者在"管理"页修改实例名称与城市（`POST /api/osfm/instance`，`auth.RequireMaintainer`，规则同向导，写审计 `settings.update`）；改名只影响显示，已加进验证器 App 的条目的发行方不变 | `internal/auth` |
+| 凭据：成员只能管理自己的凭据；不能删掉最后一种登录方式；敏感修改要求 10 分钟内再次验证过（`auth.RequireFresh`） | `internal/auth`（§3.3） |
+| 重置链接：只有维护者能生成、查看、撤销；生成要求再次验证；不能为自己、不能为已离开的成员生成；可以为其他维护者生成 | `internal/auth`（§3.3） |
 | 维护者操作写审计记录 | `domain` |
 
 ### 3.5 数据模型落地
@@ -326,11 +376,11 @@ flowchart LR
 | 集合 | 内容 | 里程碑 |
 | --- | --- | --- |
 | `members` | 成员（PocketBase 认证集合）：登录名、主名、化名、角色、邀请权与冷静期、邀请人、加入与离开时间；passkey 的用户句柄（§3.3） | M1 |
-| `credentials` | passkey，或密码哈希（argon2id，PHC 字符串）+ 加密的 TOTP 密钥 + 最近一次接受的时间步（`D3`，§3.3）。每行有 `uuid`；passkey 一行：凭据 ID 与 COSE 公钥（base64url）、签名计数、认证器型号 AAGUID、传输方式、备份资格与备份状态、用户验证标志、证明类型与格式、设备名称（由成员填写，T012） | M1 |
-| `recovery_codes`、`invites`、`reset_links` | 恢复码、邀请码、重置链接，都只存哈希（`N5`）；邀请另有邀请人、过期、使用者与使用时间、撤销时间（§3.3） | M1 |
+| `credentials` | passkey，或密码哈希（argon2id，PHC 字符串）+ 加密的 TOTP 密钥 + 最近一次接受的时间步（`D3`，§3.3）。每行有 `uuid` 与最近一次使用的日期（`last_used_at`，只记 UTC 日期，T012）；passkey 一行：凭据 ID 与 COSE 公钥（base64url）、签名计数、认证器型号 AAGUID、传输方式、备份资格与备份状态、用户验证标志、证明类型与格式、设备名称（由成员填写，T012） | M1 |
+| `recovery_codes`、`invites`、`reset_links` | 恢复码、邀请码、重置链接，都只存哈希（`N5`）；邀请另有邀请人、过期、使用者与使用时间、撤销时间；重置链接另有 `uuid`、成员、生成它的维护者、过期、使用时间与撤销时间（§3.3） | M1 |
 | `audit_log` | 维护者操作、认证事件（注册、登录、退出、第二步失败、锁定，§3.3）、地点的创建与营业状态确认（只追加） | M1 |
-| `instance_settings` | 实例设置，只有一行：实例名称、城市列表（首次启动向导写入，§3.3）、举报阈值、邀请冷静期、搜索服务的联系方式 | M1 |
-| `sessions` | 登录会话：成员、cookie 令牌的 SHA-256、过期时间、最近一次使用的日期；不记 IP 与 User-Agent（§3.3） | M1 |
+| `instance_settings` | 实例设置，只有一行：实例名称、城市列表（首次启动向导写入，之后维护者在"管理"页修改，§3.3）、举报阈值、邀请冷静期、搜索服务的联系方式 | M1 |
+| `sessions` | 登录会话：成员、cookie 令牌的 SHA-256、过期时间、最近一次使用的日期、最近一次证明身份的时间（`verified_at`，再次验证，T012）；不记 IP 与 User-Agent（§3.3） | M1 |
 | `places`、`recommendations` | 地点层与推荐层（`F1`） | M2，字段现在就建好 |
 | `recommendation_revisions`、`reports`、`notices` | 修改记录（只追加）、举报、给成员的通知 | M2，字段现在就建好 |
 
@@ -358,7 +408,7 @@ erDiagram
 - **全部集合的访问规则都是 `nil`**（仅超级用户），客户端不能通过 `/api/collections/*` 读写任何集合（AD2）；测试以成员令牌和匿名身份逐一验证列表、查看、新建、修改、删除都被拒绝。
 - **`members` 由 PocketBase 默认的 `users` 集合改名而来**，而不是另建一个认证集合：只保留一个认证集合，沿用 PocketBase 为它生成的令牌配置，已有记录（如果有人在管理后台建过）也随之保留，迁移为它们补上 `uuid`、登录名和主名。`users` 自带的 `name`、`avatar` 字段删除。内置登录方式由后面的迁移 `1795600200_boundary` 关闭（§3.1）。
 - **不收集电子邮箱**：PocketBase 要求认证集合保留系统字段 `email`，但允许它不必填；它的唯一索引只覆盖非空值，所以全部留空没有问题。`password` 字段同样是系统字段，填随机值（§3.3）。
-- **对外 ID**：可被外部引用的实体（`members`、`invites`、`places`、`recommendations`，以及目前还没有对外的 `sessions` 与 `credentials`）有 `uuid` 字段：UUIDv7，唯一索引，字段格式只接受小写的 v7。新建记录时若为空，由 `internal/store` 的记录钩子生成（`store.NewUUID`）；已有记录的 `uuid` 不能修改（AD4）。接口收到的 ID 先用 `store.IsUUID` 检查格式。
+- **对外 ID**：可被外部引用的实体（`members`、`invites`、`reset_links`、`credentials`（只对成员本人列出）、`places`、`recommendations`，以及目前还没有对外的 `sessions`）有 `uuid` 字段：UUIDv7，唯一索引，字段格式只接受小写的 v7。新建记录时若为空，由 `internal/store` 的记录钩子生成（`store.NewUUID`）；已有记录的 `uuid` 不能修改（AD4）。接口收到的 ID 先用 `store.IsUUID` 检查格式。
 - **软删除**：`members`、`places`、`recommendations`（`store.SoftDeleted`）有 `deleted_at` 字段，为空表示有效。约定：
   - 删除只写 `deleted_at`（`store.SoftDelete`），记录作为墓碑留下，带着它的 `uuid`；导出与以后的联邦据此得知删除，而不是对象悄悄消失。这些集合的硬删除被 `internal/store` 的钩子拒绝，不论哪段代码发起。
   - 读取经 `store.Query(app, 集合)` 与 `store.FindByUUID`，默认过滤已删除的记录；需要墓碑的代码（导出、维护）显式调用 `.IncludeDeleted()`。查询条件一律以 AND 组合，无法用 `Where` 或 `OrWhere` 意外替换或绕过过滤条件；联表查询用 `store.NotDeleted(表名)`（列名带表名）。直接用 PocketBase 的查找函数会跳过过滤，只留给自己处理墓碑的代码。
@@ -374,6 +424,8 @@ erDiagram
 **迁移与升级前备份**（`G6`）：迁移随程序注册，每次启动（`--help`、`--version` 除外）自动执行。PocketBase 在启动时打开数据库后立即执行它自己的系统迁移，中间没有可挂接的时机，所以备份在这之前进行：若 `pb_data/data.db` 已存在且有尚未执行的迁移（PocketBase 的或 OSFM 的），先用独立连接以 `VACUUM INTO` 复制数据库，与 `pb_data` 的其余文件一起打包为 `pb_data/backups/premigrate_<UTC 时间>.zip`。格式与 PocketBase 自己的备份相同，出现在它的备份列表中，可以照常恢复。随后 PocketBase 完成启动与系统迁移，紧接着执行 OSFM 的迁移；`serve` 开始监听前已没有待执行的迁移。新建的数据库不备份；如果数据库与最近一次迁移前备份完全相同（例如迁移失败后容器反复重启），不再重复备份。备份失败时程序不启动。
 
 迁移 `1795600500_passkeys`（T010）给 `members` 加 `passkey_user_handle`，给 `credentials` 加 `uuid` 与上表的 passkey 字段，并为已有的凭据补上 `uuid`。
+
+迁移 `1795600600_credential_management`（T012）给 `credentials` 加 `last_used_at`，给 `sessions` 加 `verified_at`，给 `reset_links` 加 `uuid`（为已有的行补上，再建唯一索引）与 `revoked_at`。
 
 迁移可以重复执行：每个迁移把期望的状态应用到已有集合上（字段按名称、索引按名称替换），再执行一次不改变任何东西；每个迁移都有回退（down）。
 
@@ -456,12 +508,14 @@ erDiagram
 | 新建 / 编辑 | 待定 | 准星打点（`B1`）→ 店名与类别 → 推荐（态度、推荐语、时段、来源、署名方式、可见性）；附近同名提示（`B6`） |
 | 我的 | `/me` | 资料、化名、外部链接、凭据管理与恢复码、个人数据导出、退出圈子 |
 | 管理（维护者） | `/admin` | 邀请与邀请树、成员、举报与隐藏、审计记录、城市与底图设置、备份 |
-| 注册 / 登录 / 重置 | `/register`、`/login`、待定 | §3.3 的流程 |
+| 注册 / 登录 / 重置 | `/register`、`/login`、`/reset` | §3.3 的流程 |
 | 首次启动向导 | `/setup` | 设置码 → 实例名称 → 第一个维护者（与注册页相同的两种方式与组件）→ 城市（§3.3） |
 
 首次启动向导（T013，`web/src/setup/`）：`GET /api/osfm/setup` 说明当前访问者要做的设置步骤。实例还没有维护者时，登录、注册页和所有需要登录的页面都先跳到 `/setup`；维护者已建好、但实例还没有城市时，这个维护者打开任何页面都回到 `/setup` 的城市一步；设置完成后 `/setup` 跳回地图。第一步输入设置码（服务器检查通过才继续），第二步填实例名称（只留在页面里），第三步选择方式创建维护者，用的是注册页的 `PasswordTotpRegistration`、`PasskeyRegistration` 组件（它们接收"凭什么注册"：邀请码，或设置码加实例名称，`web/src/lib/entitlement.ts`；创建维护者之前可以回去改名称）；保存恢复码之后进入城市。城市一步上方是已保存的实例名称，可以修改（不改就不发送）；它列出瓦片目录里已有的底图文件（默认都选中，显示名称由文件名生成、可以改），另可手动添加城市：显示名称、标识与范围；手动添加的城市没有底图文件时，页面给出在服务器上裁剪底图的命令（`deploy/tiles.sh <标识> <范围>`）和"重新检查底图"按钮；没有底图也可以完成设置，地图上这个城市显示"还没有底图"，直到部署者把文件放进瓦片目录。
 
-地图、列表、我的三个页面共用底部导航；未登录时只能访问登录与注册页（`E1`），其余路径（包括不存在的路径）先跳到登录页。管理页要求登录；不是维护者的成员只看到"只有维护者可以使用"的提示（服务器端的维护者接口另有 403）。维护者在"我的"页有进入管理页的链接。管理页目前只有邀请：选择有效期创建邀请链接（只显示这一次，带复制按钮）、邀请列表与状态、撤销。注册页检查邀请链接（§3.3），有效时让成员选择注册方式；登录页同样只提供方式的选择（先列"密码 + 验证器 App"，再列 passkey），每种方式是单独的组件（`web/src/register/`、`web/src/login/`）。passkey 的注册是登录名、显示名 → 创建 passkey → 保存恢复码 → 进入地图，登录是一个按钮、不用输登录名；浏览器不支持 passkey 时，页面说明改用"密码 + TOTP"。密码 + TOTP 的注册依次是登录名、显示名与密码 → 绑定验证器 App（二维码是内联 SVG，`qrcode.react` 在本机生成，不请求任何外部服务；另有在本设备的验证器 App 中添加的链接和可复制的密钥，在同一部手机上注册时扫不了自己的屏幕）→ 输入一个验证码 → 保存恢复码 → 进入地图；登录是登录名与密码 → 验证码，或改用恢复码，成功后回到登录前想去的页面。
+地图、列表、我的三个页面共用底部导航；未登录时只能访问登录与注册页（`E1`），其余路径（包括不存在的路径）先跳到登录页。管理页要求登录；不是维护者的成员只看到"只有维护者可以使用"的提示（服务器端的维护者接口另有 403）。维护者在"我的"页有进入管理页的链接。管理页（T012 起）有三部分：邀请（选择有效期创建邀请链接，只显示这一次，带复制按钮；邀请列表与状态、撤销）；重置链接（输入成员的登录名生成，链接只显示这一次，带复制按钮；列表与状态、撤销）；实例设置（实例名称与城市，用首次启动向导的城市组件 `web/src/setup/CitiesStep.tsx`：已保存的城市预先列出，可以改名、取消或新增）。
+
+"我的"页（T012，`web/src/credentials/`）的"登录方式"一节先列"密码 + 验证器 App"（已设置：修改密码、更换验证器、删除；未设置：设置），再列 passkey（名称、添加日期、最近使用日期；重命名、删除、添加），只剩一种登录方式时删除按钮不可用并说明原因；"恢复码"一节显示剩余个数，可以重新生成（新码只显示一次，与注册时同一组件）。需要再次验证的操作收到 `reauth_required` 时，页面在原处展开验证面板（有 passkey 时可以用 passkey，有密码时用密码加验证码或恢复码，密码方式在前），验证通过后自动重做这个操作。登录页在方式选择下方有"我只用 passkey，设备丢了"的入口：登录名与恢复码 → 选择新凭据的方式（密码 + 验证器 App 在前）→ 保存新恢复码 → 有旧 passkey 时进入"我的"页（提示删除丢失的设备），否则进入地图。重置页 `/reset` 从片段读令牌、从地址栏去掉，检查后显示要重置的账号，选择新凭据的方式，保存恢复码后进入地图；无效的链接只显示一句"链接无效或已过期"。注册页检查邀请链接（§3.3），有效时让成员选择注册方式；登录页同样只提供方式的选择（先列"密码 + 验证器 App"，再列 passkey），每种方式是单独的组件（`web/src/register/`、`web/src/login/`）。passkey 的注册是登录名、显示名 → 创建 passkey → 保存恢复码 → 进入地图，登录是一个按钮、不用输登录名；浏览器不支持 passkey 时，页面说明改用"密码 + TOTP"。密码 + TOTP 的注册依次是登录名、显示名与密码 → 绑定验证器 App（二维码是内联 SVG，`qrcode.react` 在本机生成，不请求任何外部服务；另有在本设备的验证器 App 中添加的链接和可复制的密钥，在同一部手机上注册时扫不了自己的屏幕）→ 输入一个验证码 → 保存恢复码 → 进入地图；登录是登录名与密码 → 验证码，或改用恢复码，成功后回到登录前想去的页面。
 
 ### 4.3 地图组件
 
@@ -571,7 +625,7 @@ erDiagram
 | 层 | 内容 |
 | --- | --- |
 | Go 单元测试 | `domain` 的业务规则（可见性、编辑与修改记录、举报阈值、冷静期、去重计数）、坐标转换、认证流程的状态机 |
-| Go 集成测试 | 使用 PocketBase 的测试应用，覆盖每个接口的权限：以"未登录 / 成员 / 作者 / 维护者"四种身份调用，断言响应中不含作者 ID 与化名映射（`E2`）。辅助包 `internal/testapp`（T019，只供测试使用）：`testapp.Start` 在新的数据目录上按 `osfm serve` 的方式启动程序（传入 `cmd/osfm` 的 `bind`，引导与迁移、OnServe 注册路由，不监听端口），预置编造的维护者、成员、作者（带一条推荐）、实例名称与一个城市，或以 `Unconfigured` 从未设置状态开始（`SetupCode` 读设置码）；`As(identity)` 返回某种身份的客户端（成员身份每次一个新会话），`Get`/`Post` 像浏览器一样带 cookie 与 `X-OSFM: 1`，响应设置或清除的会话 cookie 会被记住，每个客户端用自己的 IPv6 文档地址（各在不同的 /64，不共用认证限速）；`Invite`、`RegisterPasswordTOTP`、`RegisterPasskey` 经真实接口创建邀请与成员（密码 + TOTP 用生成的验证码，passkey 用 `passkeytest`），`SignIn` 再次登录（TOTP 只用尚未用过的时间步，必要时等待）；`CheckNoInternalIDs` 检查目前为止的全部响应不含任何记录或集合的内部 ID。`cmd/osfm` 的 `TestIdentities` 以四种身份调用现有接口（作者在 M2 有推荐接口之前与成员相同），`TestMembersRegisterAndSignIn` 用两种方式注册、退出、再登录，并确认在服务器上结束的会话被拒绝。密码 + TOTP（T009）：用生成的验证码完成注册与登录的端到端测试（只过密码一步时没有会话 cookie；同一验证码、较旧的验证码、用过的恢复码都被拒绝；并发提交同一验证码或恢复码只有一个成功；无效邀请一律被拒；登录名不存在、密码错误、没有密码凭据、已离开的成员得到完全相同的响应；票据在过期、改密码、离开后作废；响应中没有内部 ID）。passkey 用 `internal/auth/passkeytest` 的软件认证器（ES256、可发现凭据、证明 `none`，可以改来源、依赖方 ID、签名计数与标志）：带邀请注册、免登录名登录、计数回退、来源或依赖方错误、状态重放、无有效邀请、成员已离开。限速（T011）：超过阈值后 429，存在与不存在的登录名响应逐字节相同；单个客户端锁不住其他地址上的成员；同一张票据里反复试 TOTP 被锁定、换票据或换地址无效、恢复码仍可用；并发请求不能越过阈值；可信代理头与 IPv6 /64；计数表在大量不同键下不超过容量（`internal/ratelimit`）；审计事件齐全且不含密码、验证码、密钥、票据、邀请码、登录名与地址。首次启动向导（T013）：两种方式建出第一个维护者、设置码错误或缺失被拒、设置的待完成注册与仪式状态不能用于邀请注册、并发设置只有一个成功、设置完成后所有设置接口 404、名称与城市的校验与审计；实例名称在创建维护者时必填且按规则检查，与维护者在同一事务里保存（创建失败时不保存），是 TOTP 地址的发行方（含冒号与中文的名称的编码），确认请求改不了封进待完成注册的名称；`cmd/osfm` 另按 `osfm serve` 的方式从空数据目录走完整个向导（设置码取自服务器写的文件），检查响应中没有内部 ID |
+| Go 集成测试 | 使用 PocketBase 的测试应用，覆盖每个接口的权限：以"未登录 / 成员 / 作者 / 维护者"四种身份调用，断言响应中不含作者 ID 与化名映射（`E2`）。辅助包 `internal/testapp`（T019，只供测试使用）：`testapp.Start` 在新的数据目录上按 `osfm serve` 的方式启动程序（传入 `cmd/osfm` 的 `bind`，引导与迁移、OnServe 注册路由，不监听端口），预置编造的维护者、成员、作者（带一条推荐）、实例名称与一个城市，或以 `Unconfigured` 从未设置状态开始（`SetupCode` 读设置码）；`As(identity)` 返回某种身份的客户端（成员身份每次一个新会话），`Get`/`Post` 像浏览器一样带 cookie 与 `X-OSFM: 1`，响应设置或清除的会话 cookie 会被记住，每个客户端用自己的 IPv6 文档地址（各在不同的 /64，不共用认证限速）；`Invite`、`RegisterPasswordTOTP`、`RegisterPasskey` 经真实接口创建邀请与成员（密码 + TOTP 用生成的验证码，passkey 用 `passkeytest`），`SignIn` 再次登录（TOTP 只用尚未用过的时间步，必要时等待）；`CheckNoInternalIDs` 检查目前为止的全部响应不含任何记录或集合的内部 ID。`cmd/osfm` 的 `TestIdentities` 以四种身份调用现有接口（作者在 M2 有推荐接口之前与成员相同），`TestMembersRegisterAndSignIn` 用两种方式注册、退出、再登录，并确认在服务器上结束的会话被拒绝。密码 + TOTP（T009）：用生成的验证码完成注册与登录的端到端测试（只过密码一步时没有会话 cookie；同一验证码、较旧的验证码、用过的恢复码都被拒绝；并发提交同一验证码或恢复码只有一个成功；无效邀请一律被拒；登录名不存在、密码错误、没有密码凭据、已离开的成员得到完全相同的响应；票据在过期、改密码、离开后作废；响应中没有内部 ID）。passkey 用 `internal/auth/passkeytest` 的软件认证器（ES256、可发现凭据、证明 `none`，可以改来源、依赖方 ID、签名计数与标志）：带邀请注册、免登录名登录、计数回退、来源或依赖方错误、状态重放、无有效邀请、成员已离开。限速（T011）：超过阈值后 429，存在与不存在的登录名响应逐字节相同；单个客户端锁不住其他地址上的成员；同一张票据里反复试 TOTP 被锁定、换票据或换地址无效、恢复码仍可用；并发请求不能越过阈值；可信代理头与 IPv6 /64；计数表在大量不同键下不超过容量（`internal/ratelimit`）；审计事件齐全且不含密码、验证码、密钥、票据、邀请码、登录名与地址。凭据管理（T012）：再次验证窗口与过期后的 `reauth_required`，用密码加验证码或恢复码、用自己的 passkey 再次验证（别人的 passkey 不行），失败计入与登录共用的第二步锁定；不能删掉最后一种登录方式（包括并发删除）；添加 passkey 的选项带 `excludeCredentials` 与成员的用户句柄；设置、修改密码与更换 TOTP 后旧密码、旧票据、旧密钥失效、其他会话结束；重新生成恢复码后旧码失效。只有 passkey 的成员的恢复：恢复票据不是会话（不设 cookie，其他接口 401，不能当登录票据或重置令牌），注册新 passkey 或密码 + TOTP 后才签发会话，旧会话结束、旧恢复码作废、票据只能用一次、旧 passkey 保留；登录名不存在、成员已离开、恢复码错误、成员有密码的回答逐字节相同，有密码的成员的有效恢复码得到 409 且不被用掉；按客户端 + 登录名锁定。重置链接：只能用一次（包括并发）；重置后旧 passkey、旧密码与 TOTP（及旧登录票据）、旧恢复码都不能登录，旧会话失效，用户句柄更换；各种无效令牌在所有公开重置接口上回答相同；新链接替换旧链接；不能为自己或已离开的成员生成；生成要求再次验证；无效令牌计为失败。审计记录不含密码、验证码、恢复码、票据与令牌。首次启动向导（T013）：两种方式建出第一个维护者、设置码错误或缺失被拒、设置的待完成注册与仪式状态不能用于邀请注册、并发设置只有一个成功、设置完成后所有设置接口 404、名称与城市的校验与审计；实例名称在创建维护者时必填且按规则检查，与维护者在同一事务里保存（创建失败时不保存），是 TOTP 地址的发行方（含冒号与中文的名称的编码），确认请求改不了封进待完成注册的名称；`cmd/osfm` 另按 `osfm serve` 的方式从空数据目录走完整个向导（设置码取自服务器写的文件），检查响应中没有内部 ID |
 | 内部 ID 扫描 | `cmd/osfm` 的测试按 `osfm serve` 的方式启动程序（同一个注册函数），`internal/idscan` 往每个集合写入编造的记录（含已软删除的；有集合没写入时失败），枚举路由器上的全部路由：OSFM 的每条路由必须在测试的探测表里有请求，PocketBase 自己的路由按占位符代入各集合名后逐一请求；任何响应的头部或正文（含 gzip 解码后、JSON Web Token 解码后，以及其中每个 base64 或 base64url 值解码后，例如 WebAuthn 选项里的用户句柄与凭据 ID）出现记录或集合的内部 ID 即失败（AD4）。passkey 注册与登录的成功响应另由一个测试用软件认证器走完整个仪式后检查（包括仪式中新建的成员、凭据、恢复码与会话的 ID）。每个请求按匿名、成员、维护者三种身份各发一次（成员与维护者每个请求用一个新会话，退出登录的探测不影响后面的请求），会话 cookie 本身也在被检查的请求里；同时检查会话规则：匿名访问需要登录的路径必须得到 401，公开路由必须在测试的清单里，只限维护者的路由（另一份清单）成员访问必须得到 403，带 `X-OSFM` 的写请求去掉这个头后必须得到 403。每个请求用自己的客户端地址（IPv6 文档地址段，各在不同的 /64），认证限速因此不会用 429 挡住扫描 |
 | 前端单元测试 | Vitest + Testing Library |
 | 前端文案检查 | `pnpm run check:i18n`：语言文件以外的源码不含中日韩字符（§4.1） |
