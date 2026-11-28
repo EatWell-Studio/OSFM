@@ -67,6 +67,16 @@ const NoticeUUID = "0190a1b2-0000-7000-8000-00000000f001"
 // member nor the seeded maintainer: both may add theirs (the probes of new recommendations).
 const UnrecommendedPlaceUUID = "0190a1b2-0000-7000-8000-00000000e001"
 
+// Uuids of seeded recommendations, for the probes of reports and their review: MemberRecommendationUUID is the seeded
+// member's pseudonym recommendation (of PlaceUUID, with an open report by the maintainer), HiddenRecommendationUUID a
+// recommendation of the same place a maintainer hid, BakeryRecommendationUUID the only recommendation of
+// UnrecommendedPlaceUUID (shown, nobody reported it).
+const (
+	MemberRecommendationUUID = "0190a1b2-0000-7000-8000-00000000e201"
+	HiddenRecommendationUUID = "0190a1b2-0000-7000-8000-00000000e202"
+	BakeryRecommendationUUID = "0190a1b2-0000-7000-8000-00000000e203"
+)
+
 // Seed writes made-up records into every OSFM collection of app, a bootstrapped app with the OSFM migrations
 // applied, including soft-deleted ones, and returns their internal IDs. It fails the test if a collection that is
 // not one of PocketBase's system collections is left without a record: a task that adds a collection adds its records
@@ -160,13 +170,14 @@ func Seed(t testing.TB, app core.App) *Seeded {
 	gone := save(store.Places, map[string]any{"name": "Test Closed Cafe", "lat": 31.24, "lon": 121.48,
 		"precision": "approx", "category": "cafe", "status": "closed"})
 	deleted(gone)
-	rec := save(store.Recommendations, map[string]any{"place": place.Id, "author": m, "display_as": "pseudonym",
+	rec := save(store.Recommendations, map[string]any{store.FieldUUID: MemberRecommendationUUID, "place": place.Id,
+		"author": m, "display_as": "pseudonym",
 		"attitude": "good", "visibility": "circle", "text": "Test text"})
 	private := save(store.Recommendations, map[string]any{"place": place.Id, "author": maintainer.Id,
 		"display_as": "main", "attitude": "ok", "visibility": "private", "text": "Test private text"})
 	deleted(private)
-	save(store.Recommendations, map[string]any{"place": place.Id, "author": reset.Id, "display_as": "main",
-		"attitude": "avoid", "visibility": "circle", "text": "Test hidden text", "hidden": true,
+	save(store.Recommendations, map[string]any{store.FieldUUID: HiddenRecommendationUUID, "place": place.Id,
+		"author": reset.Id, "display_as": "main", "attitude": "avoid", "visibility": "circle", "text": "Test hidden text", "hidden": true,
 		"hidden_kind": store.HiddenByMaintainer, "hidden_at": "2026-01-04 00:00:00Z", "hidden_by": maintainer.Id,
 		"hidden_reason": "Test hidden reason"})
 	save(store.RecommendationRevisions, map[string]any{"recommendation": rec.Id, "editor_role": "author",
@@ -184,8 +195,8 @@ func Seed(t testing.TB, app core.App) *Seeded {
 
 	unrecommended := save(store.Places, map[string]any{store.FieldUUID: UnrecommendedPlaceUUID,
 		"name": "Test Corner Bakery", "lat": 31.235, "lon": 121.475, "precision": "exact", "category": "bakery"})
-	save(store.Recommendations, map[string]any{"place": unrecommended.Id, "author": reset.Id, "display_as": "main",
-		"attitude": "must_try", "visibility": "circle", "text": "Test bakery text"})
+	save(store.Recommendations, map[string]any{store.FieldUUID: BakeryRecommendationUUID, "place": unrecommended.Id,
+		"author": reset.Id, "display_as": "main", "attitude": "must_try", "visibility": "circle", "text": "Test bakery text"})
 
 	// The single settings row exists from the migration; give it a made-up name and city.
 	settings, err := app.FindRecordById(store.InstanceSettings, store.SettingsID)

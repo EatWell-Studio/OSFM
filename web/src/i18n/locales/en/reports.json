@@ -1,3 +1,92 @@
 {
-  "title": "Reports"
+  "title": "Reports and hiding",
+  "reason": {
+    "advertising": "Advertising or a conflict of interest",
+    "abuse": "Personal attacks or discrimination",
+    "political_illegal": "Political or illegal content",
+    "unverified_claim": "An unverified accusation (such as about hygiene)",
+    "false_or_duplicate": "Clearly untrue, or a duplicate",
+    "other": "Something else (say what)"
+  },
+  "report": {
+    "action": "Report",
+    "title": "Report this recommendation",
+    "intro": "Nobody can see who reported, neither the author nor the maintainers. When several members report it, the recommendation is hidden until a maintainer reviews it.",
+    "reasonLegend": "Reason",
+    "note": "Note (optional)",
+    "noteRequired": "Note (required)",
+    "submit": "Send report",
+    "cancel": "Cancel",
+    "done": "Your report was received. Thank you.",
+    "errors": {
+      "already": "You have reported this recommendation already.",
+      "own": "You cannot report your own recommendation.",
+      "notFound": "This recommendation is no longer there.",
+      "generic": "The report was not sent. Try again later."
+    }
+  },
+  "author": {
+    "maintainer": "Only you and the maintainers see it, and it is not counted. You can still edit it; ask a maintainer if you have questions.",
+    "reports": "Only you and the maintainers see it, and it is not counted. Nobody is told who reported it or how many did. After the review you get a notice: shown again, kept hidden, or deleted as a violation."
+  },
+  "moderate": {
+    "hide": "Hide",
+    "hideTitle": "Hide this recommendation",
+    "hideIntro": "Once hidden, only its author and the maintainers see it; the author gets a notice and sees the reason.",
+    "reason": "Reason (required, the author sees it)",
+    "confirmHide": "Hide it",
+    "unhide": "Unhide",
+    "unhideTitle": "Unhide this recommendation",
+    "unhideIntro": "Members see it again; its open reports are resolved.",
+    "unhideMemberRemoved": "Its author was removed from the circle with their recommendations hidden. Unhiding shows this recommendation to members again.",
+    "confirmUnhide": "Unhide it",
+    "cancel": "Cancel",
+    "hidden": "Hidden.",
+    "unhidden": "Unhidden: members see it again.",
+    "stillHidden": "Its author was removed from the circle with their recommendations hidden, so it stays hidden (now as removed with its author). Unhide it once more to show it anyway.",
+    "review": "Review it",
+    "errors": {
+      "alreadyHidden": "This recommendation is hidden already.",
+      "notHidden": "This recommendation is not hidden.",
+      "notFound": "This recommendation is no longer there.",
+      "generic": "That did not work. Try again later."
+    }
+  },
+  "queue": {
+    "intro": "Recommendations with open reports, and every hidden recommendation. Nobody sees who reported, maintainers included.",
+    "empty": "Nothing to review.",
+    "loadError": "The review list could not be loaded. Check the connection and try again.",
+    "label": "Recommendations to review",
+    "openReports_one": "{{count}} open report",
+    "openReports_other": "{{count}} open reports",
+    "noOpenReports": "No open reports",
+    "reasonCount": "{{reason}}: {{count}}",
+    "notes": "Notes of the reports",
+    "openCard": "Open the place's card",
+    "reviewReason": "Why (required to delete; kept in the audit log only)",
+    "restore": "Show again",
+    "dismiss": "Dismiss the reports",
+    "keepHidden": "Keep hidden",
+    "delete": "Delete as a violation",
+    "deleteConfirm": "Delete it",
+    "deleteWarning": "Deleting erases the recommendation's content and its revisions and cannot be undone. The author gets a notice; the reason is kept in the audit log only.",
+    "unhideRemoved": "Unhide (author removed)",
+    "reveal": "Show the author",
+    "revealHint": "Every look is recorded in the audit log.",
+    "revealed": "Author: {{name}}",
+    "revealedLeft": "Author: {{name}} (left the circle)",
+    "done": {
+      "restored": "Shown again.",
+      "dismissed": "Reports dismissed.",
+      "restoredStillHidden": "Reports resolved; its author was removed from the circle, so it stays hidden.",
+      "kept_hidden": "Kept hidden.",
+      "deleted": "Deleted as a violation."
+    },
+    "errors": {
+      "notUnderReview": "This recommendation needs no review any more.",
+      "notHidden": "This recommendation is not hidden.",
+      "notFound": "This recommendation is no longer there.",
+      "generic": "That did not work. Try again later."
+    }
+  }
 }
