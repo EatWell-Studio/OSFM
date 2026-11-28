@@ -1,7 +1,17 @@
 {
   "title": "Map",
   "list": {
-    "title": "List"
+    "title": "List",
+    "loading": "Loading the places…",
+    "noCity": "There is no city to show yet.",
+    "places": "Places",
+    "empty": "There are no places in the current map view yet.",
+    "fromMapCenter": "The places in the current map view, by distance from the center of the map.",
+    "fromCityCenter": "The places of {{city}}, by distance from the center of the city.",
+    "fromMe": "The places in the current map view, by distance from your location. Your location stays on this page and is not sent to the server.",
+    "useMyPosition": "From my location",
+    "metres": "{{value}} m",
+    "kilometres": "{{value}} km"
   },
   "loading": "Loading the map…",
   "loadError": "Could not load the list of cities. Check your connection and try again.",
@@ -23,5 +33,27 @@
     "zoomOut": "Zoom out",
     "toggleAttribution": "Show or hide attribution"
   },
-  "noTiles": "There is no basemap for {{city}} yet. It shows here once the server's operator has placed the city's basemap file (deploy/tiles.sh)."
+  "noTiles": "There is no basemap for {{city}} yet. It shows here once the server's operator has placed the city's basemap file (deploy/tiles.sh).",
+  "filters": {
+    "button": "Filter",
+    "buttonCount_one": "Filter ({{count}} chosen)",
+    "buttonCount_other": "Filter ({{count}} chosen)",
+    "title": "Filter",
+    "description": "The map and the list show only the places that meet every condition; several choices within one condition mean any of them.",
+    "slots": "Time of day",
+    "categories": "Category",
+    "cuisines": "Cuisine",
+    "by": "Recommended by",
+    "signaturesLoading": "Loading…",
+    "signaturesError": "Could not load the list of names.",
+    "noSignatures": "There are no recommendations in this city yet.",
+    "attitudes": "Attitude",
+    "mustTry": "Someone says must try",
+    "noAvoid": "Leave out places someone says to avoid",
+    "clear": "Clear all"
+  },
+  "places": {
+    "loadError": "Could not load the places.",
+    "noMatch": "No place meets the filters."
+  }
 }
