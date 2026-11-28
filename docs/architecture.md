@@ -522,7 +522,8 @@ erDiagram
 
 ### 3.8 导出、备份与联邦预留
 
-- **导出**（`F1`）：地点层与推荐层分别导出为 GeoJSON FeatureCollection；属性使用 `osfm:` 前缀，文件头部带 `osfm:schema` 版本号和许可声明（地点层 ODbL 1.0 + OSM 署名，推荐层 CC BY-SA 4.0）。署名只输出显示名或化名，不输出成员 ID。个人数据导出（`E6`）为 JSON。
+- **导出**（`F1`）：地点层与推荐层分别导出为 GeoJSON FeatureCollection；属性使用 `osfm:` 前缀，文件头部带 `osfm:schema` 版本号和许可声明（地点层 ODbL 1.0 + OSM 署名，推荐层 CC BY-SA 4.0）。署名只输出显示名或化名，不输出成员 ID。个人数据导出（`E6`）为 JSON。格式见 [data-format.md](data-format.md)。
+- **按层导出**（T041）：`internal/export` 的 `WritePlaces(w, app, Options)`、`WriteRecommendations(w, app, Options)` 把一层写成 RFC 7946 的 FeatureCollection（`Options` 可限定城市范围 `BBox` 并在文件里记 `City`）；它们不含 HTTP，供接口与备份（T042）共用。按 `uuid` 每次读 500 条、逐条写出，不把整层记录同时放进内存。内容是"圈子层"：`store.InCircleLayer`（= `domain.InCircleLayer`：共享可见性、未隐藏、未删除、地点未删除，即任何成员都看得到的推荐；集成测试对照两者）选出的推荐、每个作者每个地点只取最新一条（同地图计数的第二道防线），以及 `store.CirclePlaces`（至少有一条这样推荐的地点，M2-Q3）。因此文件与请求者无关，维护者也拿不到被隐藏的推荐；作者自己的私密推荐只在个人导出里。署名经 `store.AuthorOf` + `domain.ResolveSignature`（与接口的投影相同），退出成员的主名推荐写"已退出成员"并带 `osfm:author_left: true`；参照地点不在地点层时写 `null`。供 uMap 显示的 `name`、`description` 里把 `<`、`>`、`{`、`}` 换成全角（uMap 把描述渲染成 HTML，`{{链接}}` 会加载外部图片），`osfm:` 属性保持原样。接口 `GET /api/osfm/exports/places`、`/exports/recommendations`（`internal/api/layer_export.go`，所有成员，M2-Q17；可选 `?city=`，未知城市 400 `unknown_city`）先写进内存再整份返回（出错时是 500 而不是被截断的文件），`application/geo+json`、`Content-Disposition: attachment`、`no-store`，两层共用每个成员一份额度（10 次起、每 30 秒补 1）。前端在"我的"页（`web/src/me/LayerExport.tsx`）用 `fetch` 取回后交给浏览器下载。
 - **备份**（`G5`）：维护者在管理页一键生成，内容为 PocketBase 备份（数据库）+ 两层 GeoJSON + `secrets/` 下的密钥；恢复时三者一起放回数据目录。缺少主密钥会导致 TOTP 无法验证，部署文档（[self-hosting.md](self-hosting.md)「Backups」）强调备份要包含它。在应用内的一键备份实现之前，部署文档给出停机打包与 `VACUUM INTO` 两种手动方式。
 - **联邦预留**（`F5`）：首次启动生成 Ed25519 实例密钥（`secrets/instance_ed25519`）；推荐的可见性字段包含 `federated`；删除留墓碑（§3.5）。订阅接口本身不实现。
 - **`/.well-known/osfm.json`**（`internal/federation`）只有三项：

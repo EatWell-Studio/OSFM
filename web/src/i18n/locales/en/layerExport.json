@@ -1,3 +1,22 @@
 {
-  "title": "Export the map data (GeoJSON)"
+  "title": "Export the map data (GeoJSON)",
+  "intro": "Download the circle's map data as GeoJSON files, which map tools such as uMap can import. Both files hold only the recommendations every member sees, without private or hidden ones; every member downloads the same content.",
+  "scope": "Area",
+  "allCities": "All cities",
+  "places": {
+    "description": "Places layer: name, aliases, position and precision, position note, landmark, category and cuisine of the places with at least one recommendation for the circle. No member information.",
+    "license": "Licence: Open Database License (ODbL) 1.0. Positions are placed on OpenStreetMap: © OpenStreetMap contributors.",
+    "download": "Download the places layer"
+  },
+  "recommendations": {
+    "description": "Recommendations layer: each recommendation's signature (main name or pseudonym), attitude, text, dishes, time slots, sources and visit date, at its place's position. Not who wrote or edited it.",
+    "license": "Licence: Creative Commons Attribution-ShareAlike 4.0 (CC BY-SA 4.0), attributed to each recommendation's signature.",
+    "download": "Download the recommendations layer"
+  },
+  "downloading": "Preparing the file…",
+  "saved": "Downloaded {{fileName}}.",
+  "error": "The export failed. Check the network and try again.",
+  "rateLimited_one": "Too many exports. Try again in {{count}} minute.",
+  "rateLimited_other": "Too many exports. Try again in {{count}} minutes.",
+  "rateLimitedLater": "Too many exports. Try again later."
 }

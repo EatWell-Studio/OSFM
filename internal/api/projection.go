@@ -100,17 +100,8 @@ func RecommendationViews(app core.App, v domain.Viewer, recs []*core.Record) ([]
 	return views, nil
 }
 
-// authorOf returns what the signature needs to know about the member record m.
-func authorOf(m *core.Record) domain.Author {
-	var links []domain.ExternalLink
-	_ = m.UnmarshalJSONField("external_links", &links) // anything else stored shows no links
-	return domain.Author{
-		DisplayName: m.GetString("display_name"),
-		Pseudonym:   m.GetString("pseudonym"),
-		Left:        !m.GetDateTime("left_at").IsZero() || store.IsDeleted(m),
-		Links:       links,
-	}
-}
+// authorOf returns what the signature needs to know about the member record m (store.AuthorOf).
+func authorOf(m *core.Record) domain.Author { return store.AuthorOf(m) }
 
 // recommendationView projects r, which v may see, signed as domain.ResolveSignature decides for author.
 func recommendationView(v domain.Viewer, r *core.Record, author domain.Author) RecommendationView {

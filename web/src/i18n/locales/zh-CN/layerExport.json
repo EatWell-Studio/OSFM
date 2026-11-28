@@ -1,3 +1,22 @@
 {
-  "title": "导出地图数据（GeoJSON）"
+  "title": "导出地图数据（GeoJSON）",
+  "intro": "把圈内的地图数据下载为 GeoJSON 文件，可以导入 uMap 等地图工具。两个文件都只含每位成员都能看到的推荐，不含私密与被隐藏的推荐；所有成员下载到的内容相同。",
+  "scope": "范围",
+  "allCities": "全部城市",
+  "places": {
+    "description": "地点层：店名、别名、位置与精度、位置描述、参照物、类别、菜系，只含至少有一条圈内推荐的地点，不含任何成员信息。",
+    "license": "许可：开放数据库许可（ODbL）1.0。位置标在 OpenStreetMap 上：© OpenStreetMap 贡献者。",
+    "download": "下载地点层"
+  },
+  "recommendations": {
+    "description": "推荐层：每条推荐的署名（主名或化名）、态度、推荐语、菜、时段、来源与到店日期，位置为所在地点的位置；不含谁写的、谁改的。",
+    "license": "许可：知识共享 署名-相同方式共享 4.0（CC BY-SA 4.0），署名为每条推荐的署名。",
+    "download": "下载推荐层"
+  },
+  "downloading": "正在准备文件…",
+  "saved": "已下载 {{fileName}}。",
+  "error": "导出失败，请检查网络后重试。",
+  "rateLimited_one": "导出太频繁，请 {{count}} 分钟后再试。",
+  "rateLimited_other": "导出太频繁，请 {{count}} 分钟后再试。",
+  "rateLimitedLater": "导出太频繁，请稍后再试。"
 }
