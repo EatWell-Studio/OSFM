@@ -174,6 +174,8 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 - **化名**：有未删除的化名推荐时不能清空（409 `pseudonym_in_use`），可以修改；署名在读取时由 `domain.ResolveSignature` 解析，所以改名后全部化名推荐立即显示新化名。设置、修改与清空化名写审计 `members.pseudonym_change`（`details` 为修改前后的化名；只有维护者能查审计记录，`E2` 允许维护者知道对应关系）。旧化名改掉之后可以被别人使用。
 - **外部链接**（`D8`）：最多 5 条，每条是带主机名的绝对 `https` 地址（≤ 2000 个字符，不能有空白、用户名或密码），标签可选（≤ 64 个字符，无控制字符）；保存规范化后的地址，不验证内容；400 `external_links_invalid`。只在主名推荐的署名上出现（投影见上），前端的 `web/src/components/SignatureLinks.tsx` 在署名旁边折叠显示，链接在新标签页打开、不带 `Referer`，点击之前不发出任何请求；化名推荐的响应里没有链接，也就没有这个入口（`E3`）。
 
+**个人数据导出**（`internal/api/personal_export.go`，T040，`E6`）：`GET /api/osfm/me/export` 返回请求者本人的全部数据，作为 JSON 文件下载（`Content-Disposition: attachment`、`no-store`；格式 `osfm-personal/1`，字段见 [data-format.md](data-format.md)）；按成员单独的额度（`MemberBudget`，一次 3 个、之后每分钟 1 个）。内容由 `api.BuildPersonalExport` 逐项组装，每项只读列出的字段，不复用记录本身，以免以后新增的字段（尤其是凭据里的秘密）被带出去：账号（含登录名、化名、外部链接、邀请人的主名）、自己创建的邀请（不含使用者）、凭据概要（类型、设备名、日期）、自己的推荐（经 `store.VisibleRecommendations` 以作者身份读取，所以包括私密、被隐藏、化名的推荐，不包括已删除的与地点已删除的；附地点的 `uuid`、店名、坐标与修改记录，修改人只有角色）、自己提交的举报（被举报推荐只有 `uuid`）、站内提示。修改记录的快照格式是 `store.RevisionSnapshot`（写入用 `store.SnapshotOf`，读取用 `store.ReadSnapshot`）。集成测试在导出里查找其他成员的 `uuid`、登录名、主名、化名与各类秘密（密码哈希、TOTP 密钥、passkey 凭据 ID 与公钥、用户句柄、恢复码、会话令牌及其哈希），并做内部 ID 扫描。前端 `web/src/me/PersonalExport.tsx` 用 `fetch` 取得文件后以 blob 地址保存（CSP 不允许 `data:`）。
+
 ### 3.3 认证与会话
 
 使用的库：WebAuthn 用 `github.com/go-webauthn/webauthn`；TOTP 用 `github.com/pquerna/otp`（RFC 6238，30 秒、6 位）；密码哈希用 argon2id（`golang.org/x/crypto/argon2`）。

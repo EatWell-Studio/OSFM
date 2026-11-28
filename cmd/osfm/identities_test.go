@@ -53,6 +53,8 @@ func TestIdentities(t *testing.T) {
 		{"opening inviting early", func(c *testapp.Client) *testapp.Response {
 			return c.Post(strings.Replace(api.InviteEarlyPath, "{uuid}", a.Member.GetString(store.FieldUUID), 1), nil)
 		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
+		{"my personal data export", func(c *testapp.Client) *testapp.Response { return c.Get(api.PersonalExportPath) },
+			map[testapp.Identity]int{anon: 401, member: 200, author: 200, maintainer: 200}},
 		{"the member list", func(c *testapp.Client) *testapp.Response { return c.Get(auth.MembersPath) },
 			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
 		{"creating a reset link for the member", func(c *testapp.Client) *testapp.Response {

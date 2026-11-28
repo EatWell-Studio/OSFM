@@ -1,3 +1,13 @@
 {
-  "title": "Export my data"
+  "title": "Export my data",
+  "explanation": "Download everything this circle keeps about you as one JSON file:",
+  "contents": {
+    "account": "Your account: login name, main name, pseudonym, external links, role, when you joined and who invited you; the invites you created; your ways to sign in (kind, device name and dates only).",
+    "recommendations": "All your recommendations, private, hidden and pseudonym ones included, with their places and edit history.",
+    "activity": "The reports you submitted and your notices."
+  },
+  "privacy": "The file contains no passwords, keys or recovery codes, and nothing about other members except the main name of whoever invited you. It does contain your private recommendations and which ones you signed with your pseudonym: keep it safe.",
+  "download": "Download (JSON)",
+  "downloading": "Preparing…",
+  "downloadError": "The export could not be downloaded. Please try again."
 }
