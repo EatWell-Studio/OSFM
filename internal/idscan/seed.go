@@ -55,6 +55,9 @@ const (
 	// MaintainerUUID is the uuid of the seeded maintainer, LeftMemberUUID of a seeded member who left the circle.
 	MaintainerUUID = "0190a1b2-0000-7000-8000-00000000d002"
 	LeftMemberUUID = "0190a1b2-0000-7000-8000-00000000d003"
+	// RemovableMemberUUID is the uuid of a seeded member in the circle, invited by the maintainer, whom the probes of
+	// the removal route remove (no other probe names them).
+	RemovableMemberUUID = "0190a1b2-0000-7000-8000-00000000d004"
 )
 
 // UnrecommendedPlaceUUID is the uuid of a seeded live place with a single circle recommendation, by neither the seeded
@@ -105,6 +108,8 @@ func Seed(t testing.TB, app core.App) *Seeded {
 		"display_name": "Test Reset", "role": "member", "invited_by": maintainer.Id})
 	save(store.Members, map[string]any{store.FieldUUID: LeftMemberUUID, "login_name": "test_gone_away",
 		"display_name": "Test Gone Away", "role": "member", "invited_by": maintainer.Id, "left_at": "2026-01-03 00:00:00Z"})
+	save(store.Members, map[string]any{store.FieldUUID: RemovableMemberUUID, "login_name": "test_removable",
+		"display_name": "Test Removable", "role": "member", "invited_by": maintainer.Id})
 	left := save(store.Members, map[string]any{"login_name": "test_left", "display_name": "Test Left",
 		"role": "member", "invited_by": maintainer.Id})
 	deleted(left)

@@ -53,6 +53,25 @@ func TestIdentities(t *testing.T) {
 		{"opening inviting early", func(c *testapp.Client) *testapp.Response {
 			return c.Post(strings.Replace(api.InviteEarlyPath, "{uuid}", a.Member.GetString(store.FieldUUID), 1), nil)
 		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
+		// The invite tree, removal, branches and roles (T035): maintainers only; the requests change nothing.
+		{"the invite tree", func(c *testapp.Client) *testapp.Response { return c.Get(api.MemberTreePath) },
+			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
+		{"removing oneself", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.MemberRemovePath, "{uuid}", a.Maintainer.GetString(store.FieldUUID), 1),
+				api.RemoveMemberRequest{Recommendations: api.RecommendationsKeep, Reason: "Test reason"})
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 409}},
+		{"previewing a branch", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.BranchPreviewPath, "{uuid}", a.Member.GetString(store.FieldUUID), 1),
+				api.BranchPreviewRequest{Action: api.BranchRemove})
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
+		{"acting on a branch that is not what was previewed", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.BranchPath, "{uuid}", a.Member.GetString(store.FieldUUID), 1),
+				api.BranchRequest{Action: api.BranchStopInvites, Affected: []string{}})
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 409}},
+		{"keeping a member's role", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.MemberRolePath, "{uuid}", a.Member.GetString(store.FieldUUID), 1),
+				api.RoleRequest{Role: api.RoleMember})
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
 		{"the member list", func(c *testapp.Client) *testapp.Response { return c.Get(auth.MembersPath) },
 			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
 		{"creating a reset link for the member", func(c *testapp.Client) *testapp.Response {

@@ -164,6 +164,220 @@ export interface MemberInviteRights {
 }
 
 //////////
+// source: governance_members.go
+
+/**
+ * Paths of the invite tree, removal and role routes.
+ */
+export const MemberTreePath = "/api/osfm/members/tree";
+/**
+ * Paths of the invite tree, removal and role routes.
+ */
+export const MemberRemovePath = "/api/osfm/members/{uuid}/remove";
+/**
+ * Paths of the invite tree, removal and role routes.
+ */
+export const BranchPreviewPath = "/api/osfm/members/{uuid}/branch/preview";
+/**
+ * Paths of the invite tree, removal and role routes.
+ */
+export const BranchPath = "/api/osfm/members/{uuid}/branch";
+/**
+ * Paths of the invite tree, removal and role routes.
+ */
+export const MemberRolePath = "/api/osfm/members/{uuid}/role";
+/**
+ * RecommendationsHide hides all of them (store.HiddenMemberRemoved): members no longer see them, maintainers do,
+ * with the kind and the reason.
+ */
+export const RecommendationsHide = "hide";
+/**
+ * RecommendationsKeep leaves them shown: main-name ones as by a member who left, pseudonym ones with the pseudonym
+ * (M2-Q10).
+ */
+export const RecommendationsKeep = "keep";
+/**
+ * What a branch action does ([BranchRequest].Action).
+ */
+export const BranchStopInvites = "stop_invites"; // switch off the invite permission of every member of the branch
+/**
+ * What a branch action does ([BranchRequest].Action).
+ */
+export const BranchRemove = "remove"; // remove every member of the branch
+/**
+ * Roles of a member ([TreeMember].Role, [RoleRequest].Role): the values of members.role.
+ */
+export const RoleMember = "member";
+/**
+ * Roles of a member ([TreeMember].Role, [RoleRequest].Role): the values of members.role.
+ */
+export const RoleMaintainer = "maintainer";
+/**
+ * MaxRemovalReasonLength is the length limit of the reason of a removal, in characters.
+ */
+export const MaxRemovalReasonLength = 500;
+/**
+ * Error codes of the routes of this file (409).
+ */
+export const CodeCannotRemoveSelf = "cannot_remove_self"; // a maintainer cannot remove themselves
+/**
+ * Error codes of the routes of this file (409).
+ */
+export const CodeCannotRemoveMaintainer = "cannot_remove_maintainer"; // take the maintainer role away first
+/**
+ * Error codes of the routes of this file (409).
+ */
+export const CodeCannotDemoteSelf = "cannot_demote_self"; // M2-Q12: nobody locks themselves out by mistake
+/**
+ * Error codes of the routes of this file (409).
+ */
+export const CodeLastMaintainer = "last_maintainer"; // the circle would have no maintainer left
+/**
+ * Error codes of the routes of this file (409).
+ */
+export const CodeBranchChanged = "branch_changed"; // the branch is not what the preview showed: preview again
+/**
+ * AuditMemberRemove: a maintainer removed a member (details: recommendations, reason, hidden — the number of
+ * recommendations hidden — and branch, the uuid of the branch's root when removed with a branch).
+ */
+export const AuditMemberRemove = "members.remove";
+/**
+ * AuditMemberRole: a maintainer changed a member's role (details: from, to).
+ */
+export const AuditMemberRole = "members.role";
+/**
+ * AuditBranch: a maintainer acted on a branch (target: its root; details: action, members — the number acted on —
+ * and, for a removal, recommendations).
+ */
+export const AuditBranch = "members.branch";
+/**
+ * TreeMember is a member in the invite tree with the members they invited. Members who left or were removed stay in
+ * the tree (with LeftAt), so that the branches below them can still be seen; deleted members are left out and the
+ * members they invited hang from the nearest member above who is not deleted.
+ */
+export interface TreeMember {
+  uuid: string;
+  displayName: string;
+  role: string;
+  joinedAt: string /* RFC 3339 */;
+  /**
+   * LeftAt is when the member left or was removed; null while they are in the circle.
+   */
+  leftAt: string | null;
+  /**
+   * CanInvite is the member's invite permission (maintainers may always invite whatever it says).
+   */
+  canInvite: boolean;
+  /**
+   * InviteCooldown is true while the member's invite cooling-off period runs; always false for maintainers and for
+   * members who left.
+   */
+  inviteCooldown: boolean;
+  /**
+   * Invited are the members this member invited, in the order they joined.
+   */
+  invited: TreeMember[];
+}
+/**
+ * MemberTree is GET [MemberTreePath]: the members nobody (still listed) invited, the first maintainer among them, each
+ * with the members they invited.
+ */
+export interface MemberTree {
+  roots: TreeMember[];
+}
+/**
+ * RemoveMemberRequest is the body of POST [MemberRemovePath].
+ */
+export interface RemoveMemberRequest {
+  /**
+   * Recommendations is RecommendationsHide or RecommendationsKeep; required.
+   */
+  recommendations: string;
+  /**
+   * Reason says why, for the audit log and, with RecommendationsHide, for the maintainers who see the hidden
+   * recommendations; required, at most MaxRemovalReasonLength characters.
+   */
+  reason: string;
+}
+/**
+ * RemovedMember is the response of POST [MemberRemovePath].
+ */
+export interface RemovedMember {
+  uuid: string;
+  /**
+   * HiddenRecommendations is the number of the member's recommendations hidden now (0 with RecommendationsKeep;
+   * recommendations hidden before are left as they were).
+   */
+  hiddenRecommendations: number /* int */;
+}
+/**
+ * BranchPreviewRequest is the body of POST [BranchPreviewPath].
+ */
+export interface BranchPreviewRequest {
+  /**
+   * Action is BranchStopInvites or BranchRemove; required.
+   */
+  action: string;
+}
+/**
+ * BranchMember is a member of a branch as the preview lists them.
+ */
+export interface BranchMember {
+  uuid: string;
+  displayName: string;
+  role: string;
+  /**
+   * Depth is the number of invitations between the branch's root and the member: 0 for the root.
+   */
+  depth: number /* int */;
+}
+/**
+ * BranchPreview is the response of POST [BranchPreviewPath] and of POST [BranchPath]: the members of the branch who
+ * are in the circle, in tree order. Affected are the ones the action applies to; Skipped are the maintainers, listed
+ * but never acted on (D10).
+ */
+export interface BranchPreview {
+  action: string;
+  affected: BranchMember[];
+  skipped: BranchMember[];
+}
+/**
+ * BranchRequest is the body of POST [BranchPath].
+ */
+export interface BranchRequest {
+  /**
+   * Action is BranchStopInvites or BranchRemove; required.
+   */
+  action: string;
+  /**
+   * Affected are the uuids of [BranchPreview].Affected as the preview listed them (in any order); required, an empty
+   * list when the preview listed nobody. A different set is answered with 409 CodeBranchChanged.
+   */
+  affected: string[];
+  /**
+   * Recommendations and Reason are as in [RemoveMemberRequest], for BranchRemove only (and then required).
+   */
+  recommendations?: string;
+  reason?: string;
+}
+/**
+ * RoleRequest is the body of POST [MemberRolePath].
+ */
+export interface RoleRequest {
+  /**
+   * Role is RoleMaintainer or RoleMember; required.
+   */
+  role: string;
+}
+/**
+ * MemberRole is the response of POST [MemberRolePath]: the member's role after the change.
+ */
+export interface MemberRole {
+  uuid: string;
+  role: string;
+}
+
+//////////
 // source: map.go
 
 /**
