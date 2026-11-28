@@ -11,6 +11,10 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
+// PlaceUUID is the uuid of the seeded live place with the member's pseudonym recommendation, which the seeded member
+// and maintainer may see (the place card's probes).
+const PlaceUUID = "0190a1b2-0000-7000-8000-00000000e101"
+
 // Seeded is the made-up data [Seed] writes.
 type Seeded struct {
 	// IDs holds the internal identifiers no response may contain: the PocketBase record ID of every seeded record
@@ -143,8 +147,8 @@ func Seed(t testing.TB, app core.App) *Seeded {
 	save(store.Sessions, map[string]any{"member": maintainer.Id, "token_hash": strings.Repeat("0b", 32),
 		"expires_at": "2020-01-01 00:00:00Z"})
 
-	place := save(store.Places, map[string]any{"name": "Test Noodle Bar", "lat": 31.23, "lon": 121.47,
-		"precision": "exact", "category": "restaurant", "status": "open"})
+	place := save(store.Places, map[string]any{store.FieldUUID: PlaceUUID, "name": "Test Noodle Bar", "lat": 31.23,
+		"lon": 121.47, "precision": "exact", "category": "restaurant", "status": "open"})
 	gone := save(store.Places, map[string]any{"name": "Test Closed Cafe", "lat": 31.24, "lon": 121.48,
 		"precision": "approx", "category": "cafe", "status": "closed"})
 	deleted(gone)
