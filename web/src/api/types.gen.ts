@@ -662,6 +662,213 @@ export interface MarkNoticesRead {
 }
 
 //////////
+// source: personal_export.go
+
+/**
+ * PersonalExportPath is GET → the caller's [PersonalExport], as a file download.
+ */
+export const PersonalExportPath = "/api/osfm/me/export";
+/**
+ * PersonalExportSchema is the value of osfm:schema in a personal export: the format and its version. The version
+ * changes only with incompatible changes; new fields may be added within a version.
+ */
+export const PersonalExportSchema = "osfm-personal/1";
+/**
+ * PersonalExportFilePrefix starts the name of the downloaded file, which ends with the UTC date and ".json".
+ */
+export const PersonalExportFilePrefix = "osfm-personal-export-";
+/**
+ * PersonalExport is the personal data export.
+ */
+export interface PersonalExport {
+  /**
+   * Schema is [PersonalExportSchema].
+   */
+  'osfm:schema': string;
+  exportedAt: string /* RFC 3339 */;
+  account: PersonalAccount;
+  /**
+   * Invites are the invites the member created, newest first.
+   */
+  invites: PersonalInvite[];
+  /**
+   * Credentials are the member's ways to sign in, oldest first.
+   */
+  credentials: PersonalCredential[];
+  /**
+   * Recommendations are the member's recommendations, newest first.
+   */
+  recommendations: PersonalRecommendation[];
+  /**
+   * Reports are the reports the member submitted, newest first.
+   */
+  reports: PersonalReport[];
+  /**
+   * Notices are the member's notices, newest first.
+   */
+  notices: PersonalNotice[];
+}
+/**
+ * PersonalAccount is the member's account.
+ */
+export interface PersonalAccount {
+  uuid: string;
+  loginName: string;
+  /**
+   * DisplayName is the main name.
+   */
+  displayName: string;
+  /**
+   * Pseudonym is empty when the member has none.
+   */
+  pseudonym: string;
+  externalLinks: ExternalLink[];
+  /**
+   * Role is "member" or "maintainer".
+   */
+  role: string;
+  joinedAt: string /* RFC 3339 */;
+  /**
+   * InvitedBy is the main name of the member who invited them; empty for the first maintainer.
+   */
+  invitedBy: string;
+}
+/**
+ * PersonalInvite is an invite the member created. Who used it is not part of the member's data.
+ */
+export interface PersonalInvite {
+  uuid: string;
+  /**
+   * State is active, used, expired or revoked.
+   */
+  state: string;
+  createdAt: string /* RFC 3339 */;
+  expiresAt: string /* RFC 3339 */;
+  usedAt?: string /* RFC 3339 */;
+  revokedAt?: string /* RFC 3339 */;
+}
+/**
+ * PersonalCredential is one of the member's ways to sign in, without any secret.
+ */
+export interface PersonalCredential {
+  /**
+   * Kind is "passkey" or "password_totp".
+   */
+  kind: string;
+  /**
+   * DeviceName is the name the member gave a passkey; empty for password and TOTP.
+   */
+  deviceName: string;
+  createdAt: string /* RFC 3339 */;
+  /**
+   * LastUsedAt is the day (UTC midnight) it last signed in or re-verified; null before the first time.
+   */
+  lastUsedAt?: string /* RFC 3339 */;
+}
+/**
+ * PersonalRecommendation is one of the member's recommendations.
+ */
+export interface PersonalRecommendation {
+  uuid: string;
+  /**
+   * DisplayAs is how it is signed: "main" (the main name) or "pseudonym".
+   */
+  displayAs: string;
+  /**
+   * Visibility is "private" or "circle".
+   */
+  visibility: string;
+  attitude: string;
+  text: string;
+  dishes: string[];
+  timeSlots: string[];
+  season: string;
+  sources: Source[];
+  /**
+   * VisitedOn is the date of the last visit, YYYY-MM-DD; empty when not given.
+   */
+  visitedOn: string;
+  createdAt: string /* RFC 3339 */;
+  updatedAt: string /* RFC 3339 */;
+  editedByMaintainerAt?: string /* RFC 3339 */;
+  /**
+   * Hidden says why it is hidden; null when it is not.
+   */
+  hidden?: HiddenInfo;
+  place: PersonalPlace;
+  /**
+   * PlaceDeleted is true when a maintainer deleted the place: the recommendation is still the member's, but nobody
+   * sees it any more. Place is the place as it was stored.
+   */
+  placeDeleted: boolean;
+  /**
+   * Revisions are the content before each edit, newest first.
+   */
+  revisions: PersonalRevision[];
+}
+/**
+ * PersonalPlace is the place of a recommendation in the personal export.
+ */
+export interface PersonalPlace {
+  uuid: string;
+  name: string;
+  lat: number /* float64 */;
+  lon: number /* float64 */;
+}
+/**
+ * PersonalRevision is the content of a recommendation before one edit.
+ */
+export interface PersonalRevision {
+  uuid: string;
+  createdAt: string /* RFC 3339 */;
+  /**
+   * EditorRole is "author" or "maintainer": who edited is never named.
+   */
+  editorRole: string;
+  content: PersonalRevisionContent;
+}
+/**
+ * PersonalRevisionContent is the content a revision kept.
+ */
+export interface PersonalRevisionContent {
+  attitude: string;
+  text: string;
+  dishes: string[];
+  timeSlots: string[];
+  season: string;
+  sources: Source[];
+  visitedOn: string;
+}
+/**
+ * PersonalReport is a report the member submitted.
+ */
+export interface PersonalReport {
+  /**
+   * Recommendation is the uuid of the reported recommendation.
+   */
+  recommendation: string;
+  /**
+   * Reason is the reason code; Note what the member wrote with it (may be empty).
+   */
+  reason: string;
+  note: string;
+  createdAt: string /* RFC 3339 */;
+}
+/**
+ * PersonalNotice is a notice to the member.
+ */
+export interface PersonalNotice {
+  uuid: string;
+  kind: string;
+  /**
+   * Ref is the uuid of the object it is about (a recommendation).
+   */
+  ref: string;
+  createdAt: string /* RFC 3339 */;
+  readAt?: string /* RFC 3339 */;
+}
+
+//////////
 // source: places.go
 
 /**
