@@ -1,8 +1,117 @@
 {
   "newPlace": {
-    "title": "New place"
+    "title": "New place",
+    "button": "New place",
+    "positionSet": "Position chosen on the map",
+    "positionFromSearch": "Position from the search result",
+    "adjust": "Adjust position",
+    "save": "Save"
+  },
+  "pin": {
+    "loading": "Loading the map…",
+    "loadError": "The map could not be loaded. Check the connection and try again.",
+    "retry": "Try again",
+    "noCity": "There is no city to add places in yet: it needs a city of the instance settings and its basemap.",
+    "map": "Map",
+    "toggleAttribution": "Show or hide the attribution",
+    "city": "City",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "hint": "Drag the map until the crosshair is on the place",
+    "fromSearch": "Moved to the search result; drag the map to adjust",
+    "outside": "The crosshair is outside the circle's cities: drag the map back into the city",
+    "next": "Here — next",
+    "locate": {
+      "button": "Show my location",
+      "unsupported": "This browser cannot tell your location.",
+      "denied": "Location is not allowed; drag the map instead.",
+      "failed": "Your location is not available right now; drag the map instead.",
+      "outside": "Your location is not in one of the circle's cities."
+    }
+  },
+  "place": {
+    "name": "Name",
+    "nearbyTitle": "Is it this one?",
+    "nearbyHint": "There is a place with a similar name nearby. Pick it to write your recommendation there instead of adding the place twice.",
+    "nearbyChoose": "This one",
+    "details": "Place details (optional): precision, category, cuisine, position note, landmark",
+    "precision": "Precision",
+    "precisionHint": "Approximate places and areas are drawn as circles on the map, not as pins.",
+    "category": "Category",
+    "noCategory": "None",
+    "cuisine": "Cuisine",
+    "positionNote": "Position note",
+    "positionNoteHint": "For example: first floor of the mall, next to the station exit",
+    "landmark": "Landmark",
+    "landmarkKind": {
+      "none": "None",
+      "place": "A place nearby",
+      "text": "Text"
+    },
+    "landmarkPlace": "Landmark place",
+    "landmarkChoose": "Choose a place",
+    "noLandmarkPlaces": "There are no other places nearby yet; write a text instead.",
+    "landmarkText": "Landmark",
+    "landmarkTextHint": "For example: across from the station's south entrance"
+  },
+  "recommendation": {
+    "title": "My recommendation",
+    "attitude": "Verdict",
+    "text": "Recommendation",
+    "textHint": "One sentence is enough.",
+    "more": "More (optional): time slots, dishes, season, sources, visit date",
+    "timeSlots": "Time slots",
+    "dishes": "Dishes",
+    "dish": "Dish",
+    "addDish": "Add",
+    "removeDish": "Remove {{dish}}",
+    "season": "Season",
+    "seasonHint": "For example: winter",
+    "sources": "Sources",
+    "source": "Source {{n}}",
+    "sourceKind": "Kind",
+    "sourceUrl": "Link",
+    "sourceExcerpt": "Excerpt",
+    "addSource": "Add a source",
+    "removeSource": "Remove source {{n}}",
+    "visitedOn": "Last visit",
+    "signature": "Signed as",
+    "signedMain": "Main name: {{name}}",
+    "signedPseudonym": "Pseudonym: {{name}}",
+    "noPseudonym": "You have no pseudonym.",
+    "setPseudonym": "Set one in “Me”",
+    "signatureFixed": "The signature cannot be changed once created.",
+    "visibility": "Visibility"
   },
   "recommend": {
-    "title": "Add a recommendation"
+    "title": "Add a recommendation",
+    "loadError": "The place could not be loaded. Check the connection and try again.",
+    "save": "Save recommendation",
+    "already": "You have recommended this place already: one recommendation per member and place; after another visit, edit the one you wrote.",
+    "editMine": "Edit my recommendation",
+    "backToPlace": "Back to the place"
+  },
+  "add": {
+    "button": "Add my recommendation"
+  },
+  "saving": "Saving…",
+  "errors": {
+    "required": "Required.",
+    "attitude": "Choose a verdict.",
+    "tooLong": "At most {{max}} characters.",
+    "tooMany": "At most {{max}}.",
+    "oneLine": "One line only.",
+    "invalidUrl": "Enter a complete web link (starting with http or https).",
+    "invalidDate": "Not a valid date.",
+    "futureDate": "The visit cannot be later than today.",
+    "noPseudonym": "You have no pseudonym to sign with.",
+    "outsideCities": "This position is outside the circle's cities: go back and adjust it.",
+    "invalid": "The server does not accept this; please check it.",
+    "form": "The server did not accept this; please check and try again.",
+    "summary": "Please fix the marked fields first.",
+    "network": "Saving failed. Check the connection and try again.",
+    "offline": "You are offline. New places and recommendations need the connection; save once you are back online.",
+    "notFound": "This place cannot be found",
+    "server": "Saving failed. Please try again later."
   }
 }

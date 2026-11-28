@@ -1,8 +1,117 @@
 {
   "newPlace": {
-    "title": "新建地点"
+    "title": "新建地点",
+    "button": "新建地点",
+    "positionSet": "位置已在地图上选好",
+    "positionFromSearch": "位置来自搜索结果",
+    "adjust": "调整位置",
+    "save": "保存"
+  },
+  "pin": {
+    "loading": "正在加载地图…",
+    "loadError": "无法加载地图，请检查网络后重试。",
+    "retry": "重试",
+    "noCity": "还没有可以新建地点的城市：需要管理页里设置的城市和它的底图。",
+    "map": "地图",
+    "toggleAttribution": "显示或隐藏署名",
+    "city": "城市",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "hint": "拖动地图，让准星对准这家店",
+    "fromSearch": "已移到搜索结果；拖动地图可以微调",
+    "outside": "准星不在圈子的城市范围内，请把地图拖回城市里",
+    "next": "就是这里，下一步",
+    "locate": {
+      "button": "定位到我",
+      "unsupported": "这个浏览器不能定位。",
+      "denied": "没有定位权限，可以直接拖动地图。",
+      "failed": "暂时无法定位，可以直接拖动地图。",
+      "outside": "你的位置不在圈子的城市里。"
+    }
+  },
+  "place": {
+    "name": "店名",
+    "nearbyTitle": "是不是这家？",
+    "nearbyHint": "附近已经有名字相近的地点。选中它就在那里写你的推荐，不会新建重复的地点。",
+    "nearbyChoose": "是这家",
+    "details": "地点详情（可选）：精度、类别、菜系、位置描述、参照物",
+    "precision": "精度",
+    "precisionHint": "大致、片区的地点在地图上画成圆，不画成图钉。",
+    "category": "类别",
+    "noCategory": "不选",
+    "cuisine": "菜系",
+    "positionNote": "位置描述",
+    "positionNoteHint": "例如：商场二楼、地铁站出口旁",
+    "landmark": "参照物",
+    "landmarkKind": {
+      "none": "无",
+      "place": "附近的地点",
+      "text": "文字"
+    },
+    "landmarkPlace": "参照地点",
+    "landmarkChoose": "选择一个地点",
+    "noLandmarkPlaces": "附近还没有其他地点，可以改写文字。",
+    "landmarkText": "参照物描述",
+    "landmarkTextHint": "例如：火车站南门对面"
+  },
+  "recommendation": {
+    "title": "我的推荐",
+    "attitude": "态度",
+    "text": "推荐语",
+    "textHint": "一句话也行。",
+    "more": "更多（可选）：时段、推荐的菜、季节、来源、到店日期",
+    "timeSlots": "时段",
+    "dishes": "推荐的菜",
+    "dish": "菜名",
+    "addDish": "添加",
+    "removeDish": "删除 {{dish}}",
+    "season": "季节",
+    "seasonHint": "例如：冬天",
+    "sources": "来源",
+    "source": "来源 {{n}}",
+    "sourceKind": "类型",
+    "sourceUrl": "链接",
+    "sourceExcerpt": "原话摘录",
+    "addSource": "添加来源",
+    "removeSource": "删除来源 {{n}}",
+    "visitedOn": "最近到店日期",
+    "signature": "署名",
+    "signedMain": "主名：{{name}}",
+    "signedPseudonym": "化名：{{name}}",
+    "noPseudonym": "你还没有化名。",
+    "setPseudonym": "去“我的”设置",
+    "signatureFixed": "署名在创建后不能修改。",
+    "visibility": "可见性"
   },
   "recommend": {
-    "title": "添加推荐"
+    "title": "添加推荐",
+    "loadError": "无法加载这个地点，请检查网络后重试。",
+    "save": "保存推荐",
+    "already": "你已经推荐过这家了：每人在每个地点只写一条，再去一次就编辑原来那条。",
+    "editMine": "编辑我的推荐",
+    "backToPlace": "回到地点"
+  },
+  "add": {
+    "button": "添加我的推荐"
+  },
+  "saving": "正在保存…",
+  "errors": {
+    "required": "这一项必填。",
+    "attitude": "请选一个态度。",
+    "tooLong": "最多 {{max}} 个字。",
+    "tooMany": "最多 {{max}} 项。",
+    "oneLine": "只能写一行。",
+    "invalidUrl": "请填写完整的网页链接（以 http 或 https 开头）。",
+    "invalidDate": "日期不正确。",
+    "futureDate": "到店日期不能晚于今天。",
+    "noPseudonym": "你还没有化名，不能用化名署名。",
+    "outsideCities": "这个位置不在圈子的城市范围内，请回到上一步调整位置。",
+    "invalid": "服务器不接受这一项，请检查。",
+    "form": "服务器不接受这次提交，请检查后再试。",
+    "summary": "请先修改标出的项目。",
+    "network": "保存失败，请检查网络后重试。",
+    "offline": "现在没有网络。新建地点和推荐需要联网，联网后再保存。",
+    "notFound": "找不到这个地点",
+    "server": "保存失败，请稍后再试。"
   }
 }
