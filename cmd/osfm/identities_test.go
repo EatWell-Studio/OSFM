@@ -75,6 +75,11 @@ func TestIdentities(t *testing.T) {
 
 		{"my personal data export", func(c *testapp.Client) *testapp.Response { return c.Get(api.PersonalExportPath) },
 			map[testapp.Identity]int{anon: 401, member: 200, author: 200, maintainer: 200}},
+		// Backups (T042): maintainers only; creating needs a fresh proof, which a new session has.
+		{"the backup list", func(c *testapp.Client) *testapp.Response { return c.Get(api.BackupsPath) },
+			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
+		{"creating a backup", func(c *testapp.Client) *testapp.Response { return c.Post(api.BackupsPath, nil) },
+			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 201}},
 		{"the member list", func(c *testapp.Client) *testapp.Response { return c.Get(auth.MembersPath) },
 			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
 		{"creating a reset link for the member", func(c *testapp.Client) *testapp.Response {

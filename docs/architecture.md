@@ -62,7 +62,7 @@ flowchart LR
     root --- deploy["deploy/<br/>Dockerfile、Caddy 配置示例、瓦片裁剪脚本"]
     root --- tools["bin/<br/>仓库维护脚本"]
     root --- docs["docs/<br/>公开文档"]
-    internal --- p_config["config/<br/>环境变量配置、数据目录准备、实例密钥的生成与加载"]
+    internal --- p_config["config/<br/>环境变量配置、数据目录准备与锁、实例密钥的生成与加载"]
     internal --- p_boundary["boundary/<br/>PocketBase 边界：主监听端口只提供 /api/osfm/* 等，管理后台单独监听，日志设置"]
     internal --- p_webapp["webapp/<br/>主监听端口的前端文件服务（缓存、404）与安全响应头"]
     internal --- p_api["api/<br/>M2 功能的 HTTP 处理函数与请求/响应结构（对外的投影），每个功能一个文件"]
@@ -74,7 +74,8 @@ flowchart LR
     internal --- p_tiles["tiles/<br/>PMTiles 读取与瓦片服务"]
     internal --- p_geocode["geocode/<br/>搜索代理、缓存、限速"]
     internal --- p_geo["geo/<br/>坐标系转换（WGS-84 / GCJ-02 / BD-09）"]
-    internal --- p_export["export/<br/>GeoJSON / JSON 导出、备份"]
+    internal --- p_export["export/<br/>按层 GeoJSON 导出"]
+    internal --- p_backup["backup/<br/>备份 zip 的写出、检查与恢复"]
     internal --- p_fed["federation/<br/>/.well-known/osfm.json（联邦只预留）"]
     internal --- p_version["version/<br/>软件版本（发布时由标签写入）"]
     internal --- p_test["testapp/、pbtest/、idscan/<br/>只供测试：整实例启动与四种身份、迁移模板、内部 ID 扫描"]
@@ -104,7 +105,7 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 | --- | --- |
 | SQLite 连接、事务、数据集合定义与 Go 迁移 | 自动生成的数据接口（`/api/collections/*`）：所有集合的访问规则都设为仅超级用户，客户端不可读写 |
 | 认证集合 `members`（只作成员表；成员的会话是 OSFM 自己的 `sessions` 集合，不用 PocketBase 的认证令牌，见 §3.3） | 内置登录方式：密码、邮箱验证码、OAuth2、MFA 全部关闭，对应接口不提供（见下） |
-| 备份（`app.CreateBackup`）、定时任务（清理过期会话、营业状态提示） | 实时订阅（不需要） |
+| 备份的格式（`pb_data` 的 zip，迁移前备份与 OSFM 备份的数据库部分都用它；写出由 OSFM 自己做，见 §3.8）、定时任务（清理过期会话、营业状态提示） | 实时订阅（不需要）；`app.CreateBackup`（文件权限与内容不合要求，§3.8） |
 | 限速设置：全局中间件，覆盖 `/api/osfm/*`，默认开启（见下） | 管理后台 `/_/` 与 PocketBase 自己的接口：主监听端口上不提供，见 §5.4 |
 | 请求日志：保留 7 天、不记录 IP（§3.9） | 文件存储（照片是 `C10`，P2） |
 
@@ -536,7 +537,11 @@ erDiagram
 
 - **导出**（`F1`）：地点层与推荐层分别导出为 GeoJSON FeatureCollection；属性使用 `osfm:` 前缀，文件头部带 `osfm:schema` 版本号和许可声明（地点层 ODbL 1.0 + OSM 署名，推荐层 CC BY-SA 4.0）。署名只输出显示名或化名，不输出成员 ID。个人数据导出（`E6`）为 JSON。格式见 [data-format.md](data-format.md)。
 - **按层导出**（T041）：`internal/export` 的 `WritePlaces(w, app, Options)`、`WriteRecommendations(w, app, Options)` 把一层写成 RFC 7946 的 FeatureCollection（`Options` 可限定城市范围 `BBox` 并在文件里记 `City`）；它们不含 HTTP，供接口与备份（T042）共用。按 `uuid` 每次读 500 条、逐条写出，不把整层记录同时放进内存。内容是"圈子层"：`store.InCircleLayer`（= `domain.InCircleLayer`：共享可见性、未隐藏、未删除、地点未删除，即任何成员都看得到的推荐；集成测试对照两者）选出的推荐、每个作者每个地点只取最新一条（同地图计数的第二道防线），以及 `store.CirclePlaces`（至少有一条这样推荐的地点，M2-Q3）。因此文件与请求者无关，维护者也拿不到被隐藏的推荐；作者自己的私密推荐只在个人导出里。署名经 `store.AuthorOf` + `domain.ResolveSignature`（与接口的投影相同），退出成员的主名推荐写"已退出成员"并带 `osfm:author_left: true`；参照地点不在地点层时写 `null`。供 uMap 显示的 `name`、`description` 里把 `<`、`>`、`{`、`}` 换成全角（uMap 把描述渲染成 HTML，`{{链接}}` 会加载外部图片），`osfm:` 属性保持原样。接口 `GET /api/osfm/exports/places`、`/exports/recommendations`（`internal/api/layer_export.go`，所有成员，M2-Q17；可选 `?city=`，未知城市 400 `unknown_city`）先写进内存再整份返回（出错时是 500 而不是被截断的文件），`application/geo+json`、`Content-Disposition: attachment`、`no-store`，两层共用每个成员一份额度（10 次起、每 30 秒补 1）。前端在"我的"页（`web/src/me/LayerExport.tsx`）用 `fetch` 取回后交给浏览器下载。
-- **备份**（`G5`）：维护者在管理页一键生成，内容为 PocketBase 备份（数据库）+ 两层 GeoJSON + `secrets/` 下的密钥；恢复时三者一起放回数据目录。缺少主密钥会导致 TOTP 无法验证，部署文档（[self-hosting.md](self-hosting.md)「Backups」）强调备份要包含它。在应用内的一键备份实现之前，部署文档给出停机打包与 `VACUUM INTO` 两种手动方式。
+- **备份**（`G5`，T042，`internal/backup`）：一个 zip，根目录是 PocketBase 备份格式的 `pb_data`（`data.db`、`auxiliary.db` 各用 `VACUUM INTO` 从单独的连接复制一份，加上 `pb_data` 的其他文件，不含 `backups/` 与临时目录），`osfm/` 下是两个密钥（`osfm/secrets/master.key`、`osfm/secrets/instance_ed25519`）、两层 GeoJSON（`osfm/places.geojson`、`osfm/recommendations.geojson`，即上面的圈内导出）与清单 `osfm/manifest.json`（`osfm:schema` 为 `osfm-backup/1`、生成时间、软件版本、数据库里最新的 OSFM 迁移、其余每个文件的大小与 SHA-256）。两层从数据库副本导出（把副本当作一个单独的 PocketBase 应用打开；副本缺迁移时先在副本上迁移），与 zip 里的数据库完全一致。没有复用 PocketBase 的 `CreateBackup`：它的文件按 umask 创建（通常 0644）、只能打包 `pb_data`，也加不进密钥与清单；PocketBase 自己的恢复仍能把这份 zip 的数据库放回（但会把 `osfm/` 一起复制进 `pb_data`），支持的恢复方式是 `osfm restore`。全程流式写出，复制数据库的连接只用 2 MiB 页缓存：1 GB 的数据库备份时进程峰值约 40 MB、恢复约 32 MB（开发机上测得）；数据目录要有一份数据库副本的空闲空间。
+  - **接口**（`internal/api/backups.go`，都只限维护者）：`GET /api/osfm/backups` 列出 `pb_data/backups` 里的 `osfm_<UTC 时间>.zip` 与迁移前备份 `premigrate_<UTC 时间>.zip`（新的在前）；`POST /api/osfm/backups` 立即生成（同一时间只生成一份，否则 409 `backup_running`；每个维护者 5 次起、每 5 分钟补 1）；`GET /api/osfm/backups/{name}` 流式下载（`application/zip`、`attachment`、`no-store`）；`POST /api/osfm/backups/{name}/delete` 删除。备份里有主密钥（拿到它的人能解开全部 TOTP 密钥，M2-Q16），所以生成、下载、删除都要再次验证（`auth.RequireFresh`），分别写审计 `backups.create`、`backups.download`（在发出第一个字节之前）、`backups.delete`，细节只有文件名（与大小）。文件 0600，先写临时文件再改名。日志与审计里没有密钥内容。管理页 `/admin/backup`（`web/src/admin/BackupAdmin.tsx`）说明内容与保管要求，下载用 `fetch` 取回后交给浏览器。
+  - **命令行**（`cmd/osfm/backup.go`）：`osfm backup [--out 文件|目录|-]` 实例运行与否都可用（同样的 `VACUUM INTO`），默认写进 `pb_data/backups`，`-` 写到标准输出；`osfm restore <文件> [--force]`。这两个命令不经 PocketBase 的 bootstrap（否则会先打开数据库、执行迁移、生成缺少的密钥）。
+  - **"实例已停止"的判断**：数据目录下的 `osfm.lock` 文件上的操作系统建议锁（flock）。所有会 bootstrap 的命令（`serve`、`superuser`、`setup-code`）与 `osfm backup` 持共享锁直到进程结束，`osfm restore` 要独占锁，拿不到就拒绝（"实例正在运行"）；恢复进行时实例也启动不了。进程崩溃时锁随之消失，不会留下过期的锁；不跨机器（两台主机共享网络文件系统上的数据目录时无效）。只为 Linux 与 macOS 实现（发布的平台）。
+  - **恢复**：先完整检查再动数据目录：清单格式、zip 里恰好是清单列出的文件且大小与 SHA-256 一致、条目名不越出目录、密钥有效、数据库通过 `PRAGMA quick_check`、库里每个已执行的迁移本程序都认识（否则是更新版本的备份，拒绝）且最新的 OSFM 迁移与清单一致。文件先解到 `pb_data`、`secrets` 旁边的临时目录，再整个换入（文件 0600，`secrets/` 0700）。`pb_data` 里除 `backups/` 外有内容或 `secrets/` 里有文件时，没有 `--force` 拒绝；有 `--force` 时旧目录改名为 `<目录>.before-restore-<UTC 时间>` 留给部署者删除，旧的 `pb_data/backups` 移进恢复后的 `pb_data`。`tiles/` 不动。旧版本的备份照常恢复，下次启动时与升级一样先做迁移前备份、再自动迁移（G6）。
 - **联邦预留**（`F5`）：首次启动生成 Ed25519 实例密钥（`secrets/instance_ed25519`）；推荐的可见性字段包含 `federated`；删除留墓碑（§3.5）。订阅接口本身不实现。
 - **`/.well-known/osfm.json`**（`internal/federation`）只有三项：
 
@@ -716,7 +721,7 @@ erDiagram
   - 容器里的 127.0.0.1 是容器自己的回环地址，从宿主机访问不到。用镜像部署时设 `OSFM_ADMIN_LISTEN=0.0.0.0:8091`，并只把端口发布到宿主机的回环地址（`-p 127.0.0.1:8091:8091`），再从宿主机做 SSH 端口转发。监听地址不是回环地址时，启动日志会给出警告。
   - 首次启动、还没有超级用户时，PocketBase 会建一个占位超级用户并打印进入管理后台安装页的链接（还会尝试在本机打开浏览器）。管理后台关闭时 OSFM 不做这件事；开启时链接指向单独的监听地址，只写进日志，不打开浏览器。PocketBase 的启动横幅（会把管理后台显示在主端口上）关闭，改为日志里写明两个地址。
   - 超级用户随时可以用 `osfm superuser upsert EMAIL PASS` 创建或修改，这个命令直接操作数据库，与管理后台是否开启无关。
-- 命令行：`osfm` 可执行文件提供迁移、备份、恢复、重置维护者凭据等子命令。已有：`osfm superuser`、`osfm setup-code`（未设置的实例打印当前设置码；已有维护者时报错退出，T013）。
+- 命令行：`osfm` 可执行文件提供迁移、备份、恢复、重置维护者凭据等子命令。已有：`osfm superuser`、`osfm setup-code`（未设置的实例打印当前设置码；已有维护者时报错退出，T013）、`osfm backup`、`osfm restore`（§3.8，T042）。
 
 ## 6. 测试与 CI
 

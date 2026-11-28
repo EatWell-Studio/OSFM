@@ -1,3 +1,31 @@
 {
-  "title": "Backups"
+  "title": "Backups",
+  "intro": "A backup is a zip file with a complete copy of the database (every member, credential, place and recommendation, private and hidden ones included), the places and recommendations layers as GeoJSON, and the instance's two keys. Backups are kept in the server's data directory (pb_data/backups); download one and keep it elsewhere too, or it is lost with the server.",
+  "secret": "A backup contains the master key: whoever has the file can read all of the data, members' authenticator secrets included. Keep it as safe as the keys themselves, and do not send it through group chats or public file sharing. Creating, downloading and deleting a backup need a fresh confirmation that it is you, and each is recorded in the audit log.",
+  "restore": "Restoring is not done here: stop the instance, then run osfm restore <backup file> on the server; see the \"Backups\" section of the self-hosting guide. \"Before migrations\" backups are made automatically on upgrades and hold only the database, without the keys.",
+  "create": "Back up now",
+  "creating": "Backing up…",
+  "created": "Created the backup {{name}}.",
+  "list": "Backups on the server",
+  "empty": "No backups yet.",
+  "kind": {
+    "osfm": "Full backup",
+    "premigrate": "Before migrations (no keys)"
+  },
+  "download": "Download",
+  "downloading": "Downloading…",
+  "downloaded": "Downloaded {{name}}. Keep it safe.",
+  "delete": "Delete",
+  "confirmDelete": "Delete {{name}}? It cannot be recovered.",
+  "deleteConfirm": "Delete it",
+  "deleted": "Deleted {{name}}.",
+  "cancel": "Cancel",
+  "errors": {
+    "running": "Another backup is being created. Try again in a moment.",
+    "unavailable": "This server cannot create backups.",
+    "rateLimited": "Too many backups. Try again in a few minutes.",
+    "notFound": "That backup is gone.",
+    "load": "Could not load the backups. Check the connection and try again.",
+    "generic": "That did not work. Try again later."
+  }
 }

@@ -3,6 +3,81 @@
 // tygo.yaml. Do not edit: change the Go types and generate again.
 
 //////////
+// source: backups.go
+
+/**
+ * Paths of the backup routes.
+ */
+export const BackupsPath = "/api/osfm/backups";
+/**
+ * Paths of the backup routes.
+ */
+export const BackupPath = "/api/osfm/backups/{name}";
+/**
+ * Paths of the backup routes.
+ */
+export const BackupDeletePath = "/api/osfm/backups/{name}/delete";
+/**
+ * BackupKindOSFM is a full backup: database, layers and keys; `osfm restore` restores it.
+ */
+export const BackupKindOSFM = "osfm";
+/**
+ * BackupKindPremigrate is the copy of pb_data OSFM takes before applying migrations; it has no keys.
+ */
+export const BackupKindPremigrate = "premigrate";
+/**
+ * CodeBackupRunning: another backup is being written (409); try again when it is done.
+ */
+export const CodeBackupRunning = "backup_running";
+/**
+ * CodeBackupsUnavailable: the server has no data directory configuration for backups (503).
+ */
+export const CodeBackupsUnavailable = "backups_unavailable";
+/**
+ * Audit actions of the backup routes (actor: the maintainer; details: the file name, and the size for a new one).
+ */
+export const AuditBackupCreate = "backups.create";
+/**
+ * Audit actions of the backup routes (actor: the maintainer; details: the file name, and the size for a new one).
+ */
+export const AuditBackupDownload = "backups.download";
+/**
+ * Audit actions of the backup routes (actor: the maintainer; details: the file name, and the size for a new one).
+ */
+export const AuditBackupDelete = "backups.delete";
+/**
+ * BackupContentType is the media type of a downloaded backup.
+ */
+export const BackupContentType = "application/zip";
+/**
+ * BackupInfo is a backup file.
+ */
+export interface BackupInfo {
+  /**
+   * Name is the file name, which also names the backup in the routes.
+   */
+  name: string;
+  /**
+   * Kind is [BackupKindOSFM] or [BackupKindPremigrate].
+   */
+  kind: string;
+  /**
+   * Size is the file size in bytes.
+   */
+  size: number /* int64 */;
+  /**
+   * CreatedAt is when it was taken (from its name).
+   */
+  createdAt: string /* RFC 3339 */;
+}
+/**
+ * BackupList is the answer of GET [BackupsPath].
+ */
+export interface BackupList {
+  backups: BackupInfo[];
+}
+
+//////////
 // source: errors.go
 
 /**

@@ -58,6 +58,34 @@ func EnsureKeys(secretsDir string) (*Keys, error) {
 	return keys, nil
 }
 
+// ReadKeys loads and checks the keys in secretsDir without generating any: both key files must exist, be readable by
+// their owner only and hold a valid key. Backups use it to check the keys they copy, and restores to check the keys they
+// put back.
+func ReadKeys(secretsDir string) (*Keys, error) {
+	keys := &Keys{}
+	var err error
+	if keys.Master, err = readKey(filepath.Join(secretsDir, MasterKeyFile), parseMasterKey); err != nil {
+		return nil, err
+	}
+	if keys.Instance, err = readKey(filepath.Join(secretsDir, InstanceKeyFile), parseInstanceKey); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+func readKey[K any](path string, parse func([]byte) (K, error)) (K, error) {
+	var zero K
+	data, err := readKeyFile(path)
+	if err != nil {
+		return zero, err
+	}
+	key, err := parse(data)
+	if err != nil {
+		return zero, fmt.Errorf("key file %s: %w", path, err)
+	}
+	return key, nil
+}
+
 // ensureKeyFile reads and parses the key at path, or, if the file does not exist, generates the key, writes it and
 // parses what was written.
 func ensureKeyFile[K any](path string, generate func() ([]byte, error), parse func([]byte) (K, error)) (K, bool, error) {
