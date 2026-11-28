@@ -635,19 +635,35 @@ erDiagram
 - 查询键按城市与视野划分；新建、编辑后使相关查询失效，不做乐观更新（避免与修改记录、可见性规则不一致）。
 - 未登录或会话失效时统一跳到登录页，并记住要返回的地址（`C7` 的分享链接依赖这一点）：
   - 会话状态由 `useSession()` 给出，背后是 TanStack Query 对 `GET /api/osfm/me` 的查询；200 返回当前成员（`uuid`、`displayName`、`role`），401 表示未登录；其他状态与非 JSON 的响应是错误（显示重试），不当作未登录——服务器对 `/api/` 下的一切路径都返回 JSON。任何请求（包括瓦片城市列表）得到 401 时重新检查会话。
-  - 退出登录在"我的"页面：`POST /api/osfm/logout`，成功（或会话本已失效的 401）后清空查询缓存，回到 `/login`（不带 `next`）。
+  - 退出登录在"我的"页面：`POST /api/osfm/logout`，成功（或会话本已失效的 401）后删除 Service Worker 的私有缓存（§4.5）、清空查询缓存，回到 `/login`（不带 `next`）。会话查询变成未登录时同样丢掉上一位成员的查询与私有缓存。
   - 受保护的路由在未登录时跳到 `/login?next=<原路径与查询串>`；登录后（以及已登录时打开登录页）回到 `next`。`next` 只接受本站路径：必须以单个 `/` 开头，不含反斜杠与控制字符，解析后仍在同一来源，且不是登录或注册页本身；否则回到 `/`。
 
 ### 4.5 PWA 与离线
 
-- 应用外壳（HTML、JS、CSS、图标、字形）预缓存，版本更新时提示刷新。目前（T016）Service Worker 只预缓存应用外壳；新版本在应用的所有页面关闭后生效，刷新提示随离线功能加入。
-- Service Worker 由构建生成的 `registerSW.js` 注册（不用内联脚本，§4.7）；对页面导航用缓存的 `index.html` 应答，但 `/api/`、`/tiles/`、`/_/` 与 `/.well-known/` 不在此列，始终走网络。
+- **Service Worker**（T043，`web/src/sw/sw.ts`，由 vite-plugin-pwa 的 injectManifest 构建成 `/sw.js`，构建时注入预缓存清单）。缓存规则写成纯函数放在 `web/src/sw/rules.ts`，Service Worker 与页面共用，并有单元测试。应用自己注册它（`web/src/pwa/UpdatePrompt.tsx`，经 `virtual:pwa-register`，不用内联脚本，§4.7）。首次安装后立即接管已打开的页面（`clients.claim()`），第一次访问之后的请求就经过它。
+
+  | 请求 | 策略 | 缓存 | 退出登录时 |
+  | --- | --- | --- | --- |
+  | 应用外壳（HTML、JS、CSS、图标）、MapLibre 的 Worker（`.mjs`）、字形（`/map/fonts/…/0-255.pbf`）、图标精灵图（`/map/sprites/*`） | 预缓存，缓存优先 | Workbox 的预缓存，随版本整体替换（清单里带内容哈希或修订号） | 保留：对所有人都一样，不含成员数据 |
+  | 页面导航（`/`、`/list`、`/p/…` 等前端路由） | 预缓存的 `index.html` | 同上 | 保留 |
+  | 地图数据 `GET /api/osfm/places?…`、`GET /api/osfm/signatures?…`，城市索引 `GET /tiles/`、`GET /tiles/<城市>.json` | 网络优先：有缓存时带 `If-None-Match` 向服务器确认（304 就用缓存那份）；3 秒内没有回应或网络失败时用缓存，之后到达的回应仍然更新缓存；HTTP 错误（尤其是 401）原样交给页面，不拿缓存顶替 | `osfm-private-data-v1`，最多 60 个回应（每个范围与筛选条件的组合一个）；超出时按 `Date` 删掉最旧的，留 40 个 | 删除 |
+  | 瓦片 `GET /tiles/<城市>/<z>/<x>/<y>.mvt` | 缓存优先；缓存里的瓦片按其 `Date` 超过 30 天才重新请求 | 每个城市一个 `osfm-private-tiles-v1-<城市>`，最多 1000 块（约为一个城市裁剪包的全部或大部分，最多约 25 MB）；超出时按 `Date` 删掉最旧的，留 900 块 | 删除 |
+  | 其余一切：`/api/osfm/` 的其他路径（地点卡片、`/me`、提示、导出、备份、实例设置等，全是 `no-store`）、写请求、`/_/`、`/.well-known/` | 不经过 Service Worker 的缓存（不调用 `respondWith`），浏览器照常请求 | 无 | — |
+
+  只有状态 200、同源、`Cache-Control` 不含 `no-store` 的回应才会写入缓存（`isStorable`），所以即使以后有路径被误加进上面的规则，`no-store` 的回应也不会被缓存。Service Worker 自己发出的请求用 `cache: 'no-store'` 绕过浏览器的 HTTP 缓存：私有回应只在下面会被清除的私有缓存里有一份。
+- **私有缓存的清除**（`web/src/pwa/privateCaches.ts`）：名称以 `osfm-private-` 开头的缓存装的是只有登录成员才能看到的内容（地图数据、城市索引、瓦片——看过哪些瓦片也透露成员去过哪里）。共用设备上下一个人不能看到上一个人的数据，所以：
+  - **退出登录**：`POST /api/osfm/logout` 成功（或 401）后先删除私有缓存，再清空查询缓存、回到登录页。
+  - **会话失效**：任何请求得到 401 都会让应用重新检查会话（§4.4）；会话查询的结果变成"未登录"时（会话过期、被服务器结束、成员被移出、凭据被重置），查询客户端丢掉上一位成员的全部查询，并删除私有缓存（`web/src/lib/queryClient.ts`）。
+  - **换了一个成员**：设备上记着私有缓存属于哪位成员（`localStorage` 的 `osfm.cacheOwner`，只有 uuid，退出时删除）。`RequireSession` 在渲染任何需要登录的页面之前比较：缓存属于别人或不知道属于谁时，先删除私有缓存、记下新成员，然后才让页面取数据。所以网络优先的回退永远不会把上一个人的数据交给下一个人。浏览器不提供 `localStorage` 时，每次打开应用都会先清空私有缓存。
+  - 删除时页面先发消息给 Service Worker（`OSFM_CLEAR_PRIVATE`）：它把一个计数加一后删除私有缓存，删除前已经发出、删除后才回来的回应不再写入；页面再删除一遍剩下的（也覆盖没有 Service Worker 的情况）。新版本的 Service Worker 激活时删除布局版本不同的旧私有缓存。
+  - 第一次访问时 Service Worker 接管之前的请求进的是浏览器的 HTTP 缓存，页面删不掉：其中的地图数据带 `Vary: Cookie` 与 `no-cache`，换了会话就不会被使用；瓦片（`private, max-age=86400`）最多留一天。预缓存不含成员数据，不清除。
+- **新版本提示**：新版本的 Service Worker 安装好后进入等待，页面顶部显示"有新版本可用。刷新"（文字在 `common` 命名空间）；点"刷新"让它 `skipWaiting` 并重新加载页面。不点的话，所有页面关闭后再打开时生效。长时间开着的应用每小时、以及回到前台时检查一次更新（`registration.update()`）。
+- **性能（`N2`）**：端到端测试 `web/e2e/pwa.e2e.ts` 在一个有 1000 个编造地点的独立实例上（同 §4.3 的帧耗时测试），Pixel 7 视口，Service Worker 激活、缓存装好之后，用 Chrome DevTools 的"Fast 4G"档（CDP `Network.emulateNetworkConditions`：下行 9 Mbit/s、上行 1.5 Mbit/s，各乘 0.9，每个请求加 165 ms 延迟；页面与 Service Worker 分别设置，因为 Service Worker 是单独的目标，页面的限速管不到它发出的请求）重新打开应用，记录从导航开始到地图上画出第一个地点标记（聚合圆、圆或图钉）的时间，要求 ≤ 3 秒。T043 在 Apple M4、Playwright 的无头 Chromium 159 上每次运行重新打开三次：单独运行时 1483、1472、1472 ms 与 1607、1607、1572 ms，与全部端到端测试一起运行（机器较忙）时 2137、1908、1982 ms。时间花在依次进行的几个网络请求上：`/api/osfm/me` 约 210 ms 结束，`/api/osfm/instance` 与未读提示约 565 ms，城市索引 `/tiles/` 约 865 ms，地图加载（样式、预缓存的字形与精灵图、缓存的瓦片）之后才请求地点，约 1450–1550 ms 结束（每个请求约 175 ms，即延迟加传输）。同一个文件的其他测试：服务器不回应时（Service Worker 的请求延迟 20 秒）城市索引与地点各等 3 秒后用缓存，7.0–7.7 秒出现标记；退出登录、服务器结束会话、换一个成员之后，缓存里没有任何 `/api/osfm/` 或 `/tiles/` 条目；地点卡片、`/me` 等 `no-store` 的回应从不进入缓存；全程没有 CSP 违规与外部请求。数字由测试每次重新测出（附件 `pwa-reopen-times.json`）；真机在 T021。
+- 第一次访问（还没有 Service Worker）没有测：那时 JS 与 Worker 都要下载，而 OSFM 本身不压缩静态文件（交给反向代理，§5），在 Fast 4G 下未压缩约 2.5 MB 的代码就要两秒以上。
 - 安装清单 `manifest.webmanifest`：名称 OSFM、`lang` 为 `zh-CN`、`display: standalone`、192/512 图标与可裁切（maskable）图标；`index.html` 另有 `theme-color`、`apple-touch-icon` 与 `apple-mobile-web-app-*` 标签，供 iOS 添加到主屏幕。
-- 瓦片请求（`/tiles/…`）使用"缓存优先"，按城市设置条目上限；数据请求使用"网络优先、失败时用缓存"。
-- 目前（T015）地图代码块与图标精灵图（PNG）随应用外壳预缓存；MapLibre 的 Worker（`.mjs`）、字形与瓦片尚未缓存，始终走网络，随离线功能（`A9`）一起处理。
-- 离线时只读（`A9` 为 P1）；新建与编辑需要联网，离线时给出提示。
+- 离线时只读（`A9` 为 P1，尚未做）：现在离线打开应用会停在会话检查（`/api/osfm/me` 是 `no-store`，必须联网），地图数据与瓦片的缓存只在网络慢或中断时起作用。新建与编辑需要联网，离线时给出提示。
 - iOS 需要"添加到主屏幕"才能持久保存数据，首次使用时给出引导。
-- **服务器端的缓存与类型**（T018，`internal/webapp`）：Vite 按内容命名的 `/assets/*` 文件 `Cache-Control: public, max-age=31536000, immutable`；其余文件——`index.html`（以及所有前端路由）、`sw.js`、`registerSW.js`、`manifest.webmanifest`、图标、`/map/` 下的字形与图标精灵图——`no-cache`，配合按内容计算的 `ETag` 每次向服务器确认（未变时 304），新版本前端在下次加载时就能被发现。Content-Type 按扩展名显式设置，不依赖系统的 MIME 表（distroless 镜像里没有）：清单为 `application/manifest+json`，JS 与 Worker 为 `text/javascript`，字形为 `application/x-protobuf`。T018 在无头 Chrome 中验证了更新流程：换一版前端重启后，`registration.update()` 找到新的 Service Worker 并进入等待；关闭所有页面再打开，新版本生效。
+- **服务器端的缓存与类型**（T018，`internal/webapp`）：Vite 按内容命名的 `/assets/*` 文件 `Cache-Control: public, max-age=31536000, immutable`；其余文件——`index.html`（以及所有前端路由）、`sw.js`、`manifest.webmanifest`、图标、`/map/` 下的字形与图标精灵图——`no-cache`，配合按内容计算的 `ETag` 每次向服务器确认（未变时 304），新版本前端在下次加载时就能被发现。Content-Type 按扩展名显式设置，不依赖系统的 MIME 表（distroless 镜像里没有）：清单为 `application/manifest+json`，JS 与 Worker 为 `text/javascript`，字形为 `application/x-protobuf`。T018 在无头 Chrome 中验证了更新流程：换一版前端重启后，`registration.update()` 找到新的 Service Worker 并进入等待；关闭所有页面再打开，新版本生效。
 - **不存在的文件返回 404**：路径命中前端的某个目录（`/assets/`、`/map/` 及其子目录，目录本身也算）或最后一段带点（`favicon.ico`、缺失的字形区段）而文件不存在时返回 404，不再回退成 `index.html`；其余路径（`/`、`/list`、`/me`、`/admin`、`/login`、`/register` 以及未知的前端路径）返回 `index.html`。因此**前端路由的最后一段不能带点，也不能落在这些目录下**（例如 `/map` 是静态目录）。MapLibre 对 404 的字形区段只给一条警告并改用本机字体绘制这些字符（T018 实测：测试瓦片里一个带 `ğ` 的地名请求了 256–511 区段，得到 404 后正常显示）。
 
 ### 4.6 导航跳转与坐标转换

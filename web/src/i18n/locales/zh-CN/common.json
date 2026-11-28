@@ -1,7 +1,11 @@
 {
   "app": {
     "instanceNamePlaceholder": "OSFM",
-    "loading": "加载中…"
+    "loading": "加载中…",
+    "update": {
+      "available": "有新版本可用。",
+      "reload": "刷新"
+    }
   },
   "nav": {
     "label": "主导航",
