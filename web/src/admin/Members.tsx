@@ -9,7 +9,18 @@ import { credentialErrorMessage } from '@/credentials/messages'
 import { useStepUp } from '@/credentials/useStepUp'
 import { useSession } from '@/session/useSession'
 import { invitesQueryKey } from '@/invites/invites'
-import { fetchMembers, type MemberInfo, membersQueryKey, openInviteEarly, setInvitePermission } from './membersApi'
+import { RoleMaintainer, RoleMember } from '@/api/types.gen'
+import { governanceErrorMessage } from './governanceErrors'
+import {
+  fetchMembers,
+  type MemberInfo,
+  membersQueryKey,
+  openInviteEarly,
+  removeMember,
+  setInvitePermission,
+  setMemberRole,
+} from './membersApi'
+import { RemovalForm, type RecommendationsChoice } from './RemovalForm'
 import { createResetLink, resetLinksQueryKey, resetLinkUrl } from './resetLinkApi'
 
 /**
@@ -18,7 +29,9 @@ import { createResetLink, resetLinksQueryKey, resetLinkUrl } from './resetLinkAp
  * for them; members who left are listed separately. No login names. A reset link (D5) is created from a member's row:
  * it needs a recent re-verification, since it hands over the account, and is shown once with a copy button. Each row
  * of a member who is not a maintainer also switches their invite permission and, during their cooling-off period,
- * opens inviting early (D6, D12).
+ * opens inviting early (D6, D12). Maintainers remove a member from their row, hiding or keeping their recommendations
+ * (D7), and make members maintainers or maintainers members again (D6, M2-Q12); never themselves. Both need a recent
+ * re-verification.
  */
 export function Members() {
   const { t } = useTranslation(['members', 'common'])
@@ -28,6 +41,8 @@ export function Members() {
   const myUuid = session.status === 'signed-in' ? session.me.uuid : null
   const [created, setCreated] = useState<{ name: string; link: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
   const members = useQuery({ queryKey: membersQueryKey, queryFn: fetchMembers })
   const credentials = useQuery({ queryKey: credentialsQueryKey, queryFn: fetchCredentials })
   const stepUp = useStepUp(credentials.data)
@@ -76,6 +91,40 @@ export function Members() {
     ...inviteRightsDone,
   })
 
+  const governanceDone = {
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: membersQueryKey })
+    },
+    onError: (err: unknown) => {
+      if (!stepUp.handleError(err)) {
+        setError(governanceErrorMessage(t, err))
+      }
+    },
+  }
+  const remove = useMutation({
+    mutationFn: ({ member, choice, reason }: { member: MemberInfo; choice: RecommendationsChoice; reason: string }) =>
+      removeMember(member.uuid, { recommendations: choice, reason }),
+    ...governanceDone,
+    onSuccess: (_, { member }) => {
+      setRemoving(null)
+      setDone(t('remove.done', { name: member.displayName }))
+    },
+  })
+  const role = useMutation({
+    mutationFn: ({ member }: { member: MemberInfo }) =>
+      setMemberRole(member.uuid, member.role === RoleMaintainer ? RoleMember : RoleMaintainer),
+    ...governanceDone,
+    onSuccess: ({ role: now }, { member }) => {
+      setDone(t(now === RoleMaintainer ? 'role.promoted' : 'role.demoted', { name: member.displayName }))
+    },
+  })
+  const startAction = (action: () => void) => {
+    setError(null)
+    setDone(null)
+    setCreated(null)
+    stepUp.guard(action)
+  }
+
   const createFor = (member: MemberInfo) => {
     setError(null)
     setCreated(null)
@@ -96,6 +145,11 @@ export function Members() {
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
+        </p>
+      )}
+      {done && (
+        <p role="status" className="text-sm">
+          {done}
         </p>
       )}
       {created && (
@@ -145,6 +199,29 @@ export function Members() {
                 setError(null)
                 early.mutate(member)
               }}
+              removing={removing === member.uuid}
+              governancePending={
+                (remove.isPending && remove.variables.member.uuid === member.uuid) ||
+                (role.isPending && role.variables.member.uuid === member.uuid)
+              }
+              onRemove={() => {
+                setError(null)
+                setDone(null)
+                setRemoving(member.uuid)
+              }}
+              onCancelRemoval={() => {
+                setRemoving(null)
+              }}
+              onConfirmRemoval={(choice, reason) => {
+                startAction(() => {
+                  remove.mutate({ member, choice, reason })
+                })
+              }}
+              onChangeRole={() => {
+                startAction(() => {
+                  role.mutate({ member })
+                })
+              }}
             />
           ))}
         </ul>
@@ -171,6 +248,12 @@ function MemberRow({
   invitePending = false,
   onSetInvitePermission,
   onOpenInviteEarly,
+  removing = false,
+  governancePending = false,
+  onRemove,
+  onCancelRemoval,
+  onConfirmRemoval,
+  onChangeRole,
 }: {
   member: MemberInfo
   self: boolean
@@ -179,6 +262,12 @@ function MemberRow({
   invitePending?: boolean
   onSetInvitePermission?: (canInvite: boolean) => void
   onOpenInviteEarly?: () => void
+  removing?: boolean
+  governancePending?: boolean
+  onRemove?: () => void
+  onCancelRemoval?: () => void
+  onConfirmRemoval?: (choice: RecommendationsChoice, reason: string) => void
+  onChangeRole?: () => void
 }) {
   const { t, i18n } = useTranslation(['members', 'common'])
   const day = (iso: string) => new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium' }).format(new Date(iso))
@@ -232,6 +321,30 @@ function MemberRow({
       )}
       {member.pendingResetLink && (
         <span>{t('pendingReset', { date: dateTime(member.pendingResetLink.expiresAt) })}</span>
+      )}
+      {!self && onChangeRole && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button variant="outline" size="sm" disabled={governancePending} onClick={onChangeRole}>
+            {member.role === RoleMaintainer ? t('role.demote') : t('role.promote')}
+          </Button>
+          {member.role !== RoleMaintainer && onRemove && !removing && (
+            <Button variant="outline" size="sm" disabled={governancePending} onClick={onRemove}>
+              {t('remove.action')}
+            </Button>
+          )}
+        </div>
+      )}
+      {removing && onConfirmRemoval && onCancelRemoval && (
+        <div className="flex flex-col gap-2 rounded-lg border border-destructive/40 p-3">
+          <p className="font-medium">{t('remove.title', { name: member.displayName })}</p>
+          <p className="text-muted-foreground">{t('remove.explanation')}</p>
+          <RemovalForm
+            confirmLabel={t('remove.confirm')}
+            pending={governancePending}
+            onConfirm={onConfirmRemoval}
+            onCancel={onCancelRemoval}
+          />
+        </div>
       )}
     </li>
   )

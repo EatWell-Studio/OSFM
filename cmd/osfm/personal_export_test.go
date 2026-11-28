@@ -14,8 +14,8 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/testapp"
 )
 
-// exportOf downloads the personal export with c; its contents and headers are tested in internal/api.
-func exportOf(t *testing.T, c *testapp.Client) (api.PersonalExport, string) {
+// personalExportOf downloads the personal export with c; its contents and headers are tested in internal/api.
+func personalExportOf(t *testing.T, c *testapp.Client) (api.PersonalExport, string) {
 	t.Helper()
 	r := c.Get(api.PersonalExportPath).Expect(http.StatusOK)
 	return testapp.Decode[api.PersonalExport](r), r.Body.String()
@@ -71,7 +71,7 @@ func TestPersonalExportSecrets(t *testing.T) {
 				}
 			}
 
-			ex, body := exportOf(t, m.client)
+			ex, body := personalExportOf(t, m.client)
 			if len(ex.Credentials) != 1 || ex.Credentials[0].Kind != m.kind || ex.Credentials[0].CreatedAt.IsZero() {
 				t.Errorf("credentials %+v", ex.Credentials)
 			}
@@ -93,7 +93,7 @@ func TestPersonalExportSecrets(t *testing.T) {
 		dbx.HashExp{"member": pk.Record.Id}).Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if ex, _ := exportOf(t, pk.Client); len(ex.Credentials) != 1 || ex.Credentials[0].DeviceName != "Test Laptop" {
+	if ex, _ := personalExportOf(t, pk.Client); len(ex.Credentials) != 1 || ex.Credentials[0].DeviceName != "Test Laptop" {
 		t.Errorf("credentials %+v", ex.Credentials)
 	}
 	a.CheckNoInternalIDs()

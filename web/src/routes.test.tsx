@@ -45,11 +45,13 @@ const pages: [string, string][] = [
   [`/p/${place}/recommend`, zhCN.create.recommend.title],
   [`/p/${place}/r/${rec}/edit`, zhCN.edit.recommendation.title],
   [`/p/${place}/r/${rec}/history`, zhCN.edit.history.title],
-  ['/list', zhCN.map.list.title],
 ]
 
+// The pages of M2 that are built already: they need a session as well.
+const built: [string, string][] = [['/list', zhCN.map.list.title]]
+
 describe('the paths of M2', () => {
-  it.each(pages)('%s sends a signed-out visitor to sign-in, with the way back', async (path) => {
+  it.each([...pages, ...built])('%s sends a signed-out visitor to sign-in, with the way back', async (path) => {
     stubApi(null)
     const router = renderAt(path)
     await waitFor(() => {
@@ -92,8 +94,10 @@ describe('the administration', () => {
     renderAt(`/admin/${section}`)
     expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.admin.notAllowed)
     expect(screen.queryByRole('navigation', { name: zhCN.admin.nav.label })).not.toBeInTheDocument()
-    // No maintainer route is asked for.
-    expect(fetchMock.mock.calls.map(([input]) => input)).toEqual(['/api/osfm/me', '/api/osfm/instance'])
+    // No maintainer route is asked for (the bottom navigation reads the member's notices).
+    expect(fetchMock.mock.calls.map(([input]) => input).sort()).toEqual(
+      ['/api/osfm/me', '/api/osfm/instance', '/api/osfm/me/notices'].sort(),
+    )
   })
 
   it.each(sections)('/admin/%s shows its section to a maintainer', async (section, heading) => {

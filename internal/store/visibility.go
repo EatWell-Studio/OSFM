@@ -31,6 +31,10 @@ import (
 //     name or alias, such as the grouped query of the map's counts and time slots. Counts leave out hidden
 //     recommendations as well, for every viewer ([domain.CountAttitudes]): add [Shown] for that.
 //
+//   - [InCircleLayer], [CircleRecommendations], [CirclePlaces]: the circle's layer, not one member's view — what every
+//     member sees, whoever they are (shared, not hidden). The per-layer exports and backups read it; it is the same
+//     for every caller, so it holds no one's private or hidden recommendations.
+//
 // Nobody who is not signed in (the zero [domain.Viewer]) sees anything.
 
 // RecAlias is the alias of the recommendations table in the conditions given to [HasVisibleRecommendation]: refer to
@@ -69,6 +73,41 @@ func Shown(table string) dbx.Expression {
 	return dbx.HashExp{table + ".hidden": false, table + ".hidden_kind": ""}
 }
 
+// InCircleLayer returns the condition that selects the recommendations of the circle's layer, with the columns of the
+// recommendations table qualified by table: [domain.InCircleLayer] as SQL. Not deleted, of a place that is not
+// deleted, shared (circle, federated) and not hidden: what every member may see, whoever they are, and the same for
+// all of them. The per-layer exports and backups (internal/export) read through it; a read for one member uses
+// [RecommendationVisibleTo], which adds the member's own private and hidden recommendations (and, for maintainers,
+// hidden ones) to these.
+func InCircleLayer(table string) dbx.Expression {
+	col := func(name string) string { return table + "." + name }
+	return dbx.And(
+		dbx.HashExp{col(FieldDeletedAt): ""},
+		dbx.Exists(dbx.NewExp("SELECT 1 FROM {{"+Places+"}} AS [[cp]] WHERE [[cp.id]] = [["+col("place")+
+			"]] AND [[cp."+FieldDeletedAt+"]] = ''")),
+		dbx.In(col("visibility"), anyStrings(domain.SharedVisibilities)...),
+		Shown(table),
+	)
+}
+
+// CircleRecommendations returns the query of the recommendations of the circle's layer ([InCircleLayer]).
+func CircleRecommendations(app core.App) *RecordQuery {
+	return Query(app, Recommendations).Where(InCircleLayer(Recommendations))
+}
+
+// CirclePlaces returns the query of the places of the circle's layer: the live places with at least one
+// recommendation of the circle's layer (M2-Q3). A place whose recommendations are all private, hidden or deleted is
+// not in it.
+func CirclePlaces(app core.App) *RecordQuery {
+	return Query(app, Places).Where(NotDeleted(Places)).Where(HasCircleRecommendation(nil))
+}
+
+// HasCircleRecommendation returns the condition, for a query of places, that the place has a recommendation of the
+// circle's layer that also meets cond (nil for none; refer to the recommendation's columns with [Rec]).
+func HasCircleRecommendation(cond dbx.Expression) dbx.Expression {
+	return &recommendationExists{cond: func() dbx.Expression { return dbx.And(InCircleLayer(RecAlias), cond) }}
+}
+
 // VisibleRecommendations returns the query of the recommendations v may see.
 func VisibleRecommendations(app core.App, v domain.Viewer) *RecordQuery {
 	return Query(app, Recommendations).Where(RecommendationVisibleTo(v, Recommendations))
@@ -84,21 +123,20 @@ func VisiblePlaces(app core.App, v domain.Viewer) *RecordQuery {
 // that also meets cond (nil for none). cond refers to the recommendation's columns with [Rec]. Negate it with dbx.Not
 // for "no visible recommendation meets cond".
 func HasVisibleRecommendation(v domain.Viewer, cond dbx.Expression) dbx.Expression {
-	return &visibleRecommendationExists{viewer: v, cond: cond}
+	return &recommendationExists{cond: func() dbx.Expression {
+		return dbx.And(RecommendationVisibleTo(v, RecAlias), cond)
+	}}
 }
 
-type visibleRecommendationExists struct {
-	viewer domain.Viewer
-	cond   dbx.Expression
+// recommendationExists is the condition, for a query of places, that the place has a recommendation (under RecAlias)
+// that meets cond.
+type recommendationExists struct {
+	cond func() dbx.Expression
 }
 
 // Build implements dbx.Expression.
-func (e *visibleRecommendationExists) Build(db *dbx.DB, params dbx.Params) string {
-	where := dbx.And(
-		dbx.NewExp("[["+Rec("place")+"]] = [["+Places+".id]]"),
-		RecommendationVisibleTo(e.viewer, RecAlias),
-		e.cond,
-	)
+func (e *recommendationExists) Build(db *dbx.DB, params dbx.Params) string {
+	where := dbx.And(dbx.NewExp("[["+Rec("place")+"]] = [["+Places+".id]]"), e.cond())
 	return "EXISTS (SELECT 1 FROM {{" + Recommendations + "}} AS [[" + RecAlias + "]] WHERE " +
 		where.Build(db, params) + ")"
 }
