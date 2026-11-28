@@ -1,3 +1,38 @@
 {
-  "title": "提示"
+  "title": "提示",
+  "empty": "暂无提示。",
+  "loadError": "提示加载失败，请检查网络后重试。",
+  "retry": "重试",
+  "markAllRead": "全部标为已读",
+  "markRead": "标为已读",
+  "markError": "标记失败，请稍后重试。",
+  "unread": "未读",
+  "unreadBadge_one": "，{{count}} 条未读提示",
+  "unreadBadge_other": "，{{count}} 条未读提示",
+  "kind": {
+    "maintainer_edited": {
+      "target": "维护者修改了你在「{{place}}」的推荐，点开查看修改记录。",
+      "gone": "维护者修改过你的一条推荐，这条推荐已不存在。"
+    },
+    "hidden_by_maintainer": {
+      "target": "你在「{{place}}」的推荐被维护者隐藏了，点开查看原因。",
+      "gone": "你的一条推荐被维护者隐藏过，这条推荐已不存在。"
+    },
+    "hidden_by_reports": {
+      "target": "你在「{{place}}」的推荐被举报后暂时隐藏，等待维护者复核。",
+      "gone": "你的一条推荐被举报后隐藏过，这条推荐已不存在。"
+    },
+    "restored": {
+      "target": "你在「{{place}}」的推荐已恢复显示。",
+      "gone": "你的一条推荐恢复过显示，这条推荐已不存在。"
+    },
+    "violation_deleted": {
+      "target": "你在「{{place}}」的推荐因违反圈子规则被维护者删除。",
+      "gone": "你的一条推荐因违反圈子规则被维护者删除。"
+    },
+    "other": {
+      "target": "你在「{{place}}」的推荐有一条新提示。",
+      "gone": "你有一条新提示。"
+    }
+  }
 }

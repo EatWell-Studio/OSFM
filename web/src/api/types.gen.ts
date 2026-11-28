@@ -331,6 +331,98 @@ export interface LandmarkPlace {
 
 
 //////////
+// source: notices.go
+
+/**
+ * NoticesPath is GET: the caller's notices, newest first, with the number of unread ones ([NoticeList]).
+ */
+export const NoticesPath = "/api/osfm/me/notices";
+/**
+ * NoticesReadPath is POST ([MarkNoticesRead]): marks notices read; answered with the [NoticeList] afterwards.
+ */
+export const NoticesReadPath = "/api/osfm/me/notices/read";
+/**
+ * Kinds of notices (domain.NoticeKinds; the client shows them by translation key). A notice of a kind the client does
+ * not know gets a generic text.
+ */
+export const NoticeKindMaintainerEdited = "maintainer_edited"; // a maintainer edited the recommendation (C5)
+/**
+ * Kinds of notices (domain.NoticeKinds; the client shows them by translation key). A notice of a kind the client does
+ * not know gets a generic text.
+ */
+export const NoticeKindHiddenByMaintainer = "hidden_by_maintainer"; // a maintainer hid it (C6)
+/**
+ * Kinds of notices (domain.NoticeKinds; the client shows them by translation key). A notice of a kind the client does
+ * not know gets a generic text.
+ */
+export const NoticeKindHiddenByReports = "hidden_by_reports"; // it was hidden automatically after reports (D11)
+/**
+ * Kinds of notices (domain.NoticeKinds; the client shows them by translation key). A notice of a kind the client does
+ * not know gets a generic text.
+ */
+export const NoticeKindRestored = "restored"; // it is shown again
+/**
+ * Kinds of notices (domain.NoticeKinds; the client shows them by translation key). A notice of a kind the client does
+ * not know gets a generic text.
+ */
+export const NoticeKindViolationDeleted = "violation_deleted"; // a maintainer deleted it as a violation (H6)
+/**
+ * MaxNoticesListed is the number of notices GET [NoticesPath] returns at most: the newest ones. Unread counts all.
+ */
+export const MaxNoticesListed = 100;
+/**
+ * MaxNoticesPerRead is the number of uuids one POST [NoticesReadPath] may name.
+ */
+export const MaxNoticesPerRead = 100;
+/**
+ * NoticeList is the caller's notices.
+ */
+export interface NoticeList {
+  /**
+   * Notices are the newest [MaxNoticesListed] notices, newest first.
+   */
+  notices: Notice[];
+  /**
+   * Unread is the number of all the caller's unread notices, listed or not.
+   */
+  unread: number /* int */;
+}
+/**
+ * Notice is one notice to the caller.
+ */
+export interface Notice {
+  uuid: string;
+  /**
+   * Kind is one of the NoticeKind* constants (or a kind a newer server writes).
+   */
+  kind: string;
+  createdAt: string /* RFC 3339 */;
+  read: boolean;
+  /**
+   * Target is the recommendation the notice is about while the caller can see it; null once it or its place is
+   * deleted.
+   */
+  target: NoticeTarget | null;
+}
+/**
+ * NoticeTarget is the recommendation a notice is about: where the client links to (the place's card, or the
+ * recommendation's revisions after a maintainer's edit).
+ */
+export interface NoticeTarget {
+  recommendation: string;
+  place: string;
+  placeName: string;
+}
+/**
+ * MarkNoticesRead is the body of POST [NoticesReadPath]: either uuids (1 to [MaxNoticesPerRead] of the caller's own
+ * notices) or all (every notice of the caller); not both. Notices read already stay as they are.
+ */
+export interface MarkNoticesRead {
+  uuids?: string[];
+  all?: boolean;
+}
+
+//////////
 // source: places.go
 
 /**
