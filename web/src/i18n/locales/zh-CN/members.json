@@ -34,5 +34,12 @@
   },
   "tree": {
     "title": "邀请树"
+  },
+  "invites": {
+    "permission": "可以邀请",
+    "cooldownUntil": "冷静期至 {{date}}",
+    "openEarly": "提前开放",
+    "maintainer": "维护者随时可以邀请",
+    "error": "无法修改邀请权限，请刷新后重试。"
   }
 }

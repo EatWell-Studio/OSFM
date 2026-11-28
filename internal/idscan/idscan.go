@@ -122,6 +122,10 @@ type Request struct {
 	// Status, when not zero, is the status the response must have: it shows that the request reached the handler it
 	// is meant for rather than, say, a catch-all route.
 	Status int
+	// MemberStatus, when not zero, is the status a member who is not a maintainer gets instead of Status, for routes
+	// where members and maintainers may do different things (a member's request for another member's object is 404).
+	// The scan of cmd/osfm applies it; Scan itself checks Status only.
+	MemberStatus int
 }
 
 func (r Request) String() string {

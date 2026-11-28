@@ -19,19 +19,25 @@ func init() {
 			"POST " + auth.LogoutPath: {
 				{Method: http.MethodPost, Path: auth.LogoutPath, Header: csrfHeader, Status: http.StatusNoContent},
 			},
-			// Maintainers only (maintainerRoutes): a member gets 403.
+			// Maintainers see every invite, members their own (T034): the seeded member has none.
 			"GET " + auth.InvitesPath: {
 				{Path: auth.InvitesPath, Status: http.StatusOK},
 			},
+			// The seeded member may not invite (permission off): 403 invite_not_allowed.
 			"POST " + auth.InvitesPath: {
-				{Method: http.MethodPost, Path: auth.InvitesPath, Body: `{"days":7}`, Header: csrfHeader, Status: http.StatusCreated},
-				{Method: http.MethodPost, Path: auth.InvitesPath, Header: csrfHeader, Status: http.StatusCreated},
+				{Method: http.MethodPost, Path: auth.InvitesPath, Body: `{"days":7}`, Header: csrfHeader, Status: http.StatusCreated,
+					MemberStatus: http.StatusForbidden},
+				{Method: http.MethodPost, Path: auth.InvitesPath, Header: csrfHeader, Status: http.StatusCreated,
+					MemberStatus: http.StatusForbidden},
 				{Method: http.MethodPost, Path: auth.InvitesPath, Body: `{"days":99}`, Header: csrfHeader, Status: http.StatusBadRequest},
 			},
+			// The seeded invites are the maintainer's: another member's invite is 404 for a member.
 			"POST " + auth.InviteRevokePath: {
-				// Revoking is idempotent, so every identity sees the same status.
-				{Method: http.MethodPost, Path: revokePath(idscan.ExpiredInviteUUID), Header: csrfHeader, Status: http.StatusOK},
-				{Method: http.MethodPost, Path: revokePath(idscan.UsedInviteUUID), Header: csrfHeader, Status: http.StatusConflict},
+				// Revoking is idempotent, so the maintainer sees the same status every time.
+				{Method: http.MethodPost, Path: revokePath(idscan.ExpiredInviteUUID), Header: csrfHeader, Status: http.StatusOK,
+					MemberStatus: http.StatusNotFound},
+				{Method: http.MethodPost, Path: revokePath(idscan.UsedInviteUUID), Header: csrfHeader, Status: http.StatusConflict,
+					MemberStatus: http.StatusNotFound},
 				{Method: http.MethodPost, Path: revokePath("0190a1b2-0000-7000-8000-00000000ffff"), Header: csrfHeader,
 					Status: http.StatusNotFound},
 				{Method: http.MethodPost, Path: revokePath("x"), Header: csrfHeader, Status: http.StatusNotFound},
@@ -326,9 +332,6 @@ func init() {
 			"POST " + auth.ResetPasskeyPath,
 		},
 		maintainerOnly: []string{
-			"GET " + auth.InvitesPath,
-			"POST " + auth.InvitesPath,
-			"POST " + auth.InviteRevokePath,
 			"POST " + auth.SetupCompletePath,
 			"GET " + auth.MembersPath,
 			"GET " + auth.ResetLinksPath,

@@ -44,7 +44,7 @@ import (
 // errors); give a Status to show that a probe reached the handler it is meant for.
 //
 // Every probe is sent as each of the identities below. Status is the status a signed-in caller (member, maintainer)
-// gets, except that members get 403 from the routes in maintainerRoutes; anonymous probes of a path that needs a
+// gets, except that members get 403 from the routes in maintainerRoutes and MemberStatus where a probe has one; anonymous probes of a path that needs a
 // session (/api/osfm/*, /tiles/*) must get 401 instead, unless the route is in publicRoutes. State-changing probes of
 // /api/osfm/* carry the X-OSFM header; the scan also sends them without it and expects 403.
 var osfmProbes = map[string][]idscan.Request{}
@@ -268,6 +268,8 @@ func TestNoInternalIDsInResponses(t *testing.T) {
 					r.Status = http.StatusUnauthorized
 				case name == "member" && p.maintainerOnly:
 					r.Status = http.StatusForbidden
+				case name == "member" && p.MemberStatus != 0:
+					r.Status = p.MemberStatus
 				}
 				send(r)
 				if name != "anonymous" && r.Header.Get(auth.CSRFHeader) != "" {

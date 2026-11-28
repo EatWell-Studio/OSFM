@@ -34,5 +34,12 @@
   },
   "tree": {
     "title": "Invitation tree"
+  },
+  "invites": {
+    "permission": "May invite",
+    "cooldownUntil": "Cooling-off period until {{date}}",
+    "openEarly": "Open early",
+    "maintainer": "Maintainers can always invite",
+    "error": "Could not change the invite permission. Reload and try again."
   }
 }

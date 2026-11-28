@@ -12,6 +12,21 @@ import (
 
 const m2ModelMigration = "1795602300_m2_model.go"
 
+// sinceM2Model returns the number of migrations from T023's on: the ones an M1 database has yet to apply.
+func sinceM2Model(t *testing.T) int {
+	t.Helper()
+	n := 0
+	for _, item := range core.AppMigrations.Items() {
+		if item.File >= m2ModelMigration {
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatalf("no migration %s", m2ModelMigration)
+	}
+	return n
+}
+
 // m1DataDir returns a pb_data directory as the last M1 release (v0.1.0-rc.1) leaves it: every migration before T023's
 // applied, with made-up rows in the collections whose new fields the T023 migration fills in.
 func m1DataDir(t *testing.T) (dir string, ids map[string][]string) {
@@ -32,6 +47,8 @@ func m1DataDir(t *testing.T) (dir string, ids map[string][]string) {
 	for _, item := range core.AppMigrations.Items() {
 		if item.File == m2ModelMigration {
 			found = true
+		}
+		if item.File >= m2ModelMigration { // T023's and the later ones (sinceM2Model)
 			continue
 		}
 		m1.Add(item)
@@ -193,7 +210,7 @@ func TestUpgradeFromM1(t *testing.T) {
 func TestUpgradeFromM1WithDuplicateRecommendations(t *testing.T) {
 	app := newApp(t)
 	runner := core.NewMigrationsRunner(app, core.AppMigrations)
-	if _, err := runner.Down(1); err != nil {
+	if _, err := runner.Down(sinceM2Model(t)); err != nil {
 		t.Fatal(err)
 	}
 	ids := seedM1Rows(t, app)
@@ -235,7 +252,7 @@ func TestM2ModelDown(t *testing.T) {
 	}
 	report := seedRecommendationAndReport(t, app, member.Id)
 
-	if _, err := runner.Down(1); err != nil {
+	if _, err := runner.Down(sinceM2Model(t)); err != nil {
 		t.Fatal(err)
 	}
 	gone := map[string][]string{

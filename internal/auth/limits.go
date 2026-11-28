@@ -82,6 +82,10 @@ type Limits struct {
 	// TOTPFailures and RecoveryFailures count failed second steps per member.
 	TOTPFailures     ratelimit.Policy
 	RecoveryFailures ratelimit.Policy
+	// MemberWrites is every member's budget of the state-changing invite routes (creating and revoking invites), per
+	// member over all their sessions and addresses: since members invite too (D12), one account must not flood the
+	// invites and the audit log. It is the counterpart of the write budget of internal/api.
+	MemberWrites ratelimit.Rate
 	// Capacity is the number of keys each counter holds at most; zero or less means [DefaultLimitCapacity].
 	Capacity int
 }
@@ -99,6 +103,7 @@ func DefaultLimits() Limits {
 		AccountFailures:  ratelimit.Policy{Threshold: 30, Lockout: time.Minute, MaxLockout: 15 * time.Minute, Forget: day},
 		TOTPFailures:     ratelimit.Policy{Threshold: 5, Lockout: time.Minute, MaxLockout: time.Hour, Forget: day},
 		RecoveryFailures: ratelimit.Policy{Threshold: 10, Lockout: time.Minute, MaxLockout: time.Hour, Forget: day},
+		MemberWrites:     ratelimit.Rate{Burst: 60, Every: 2 * time.Second},
 		Capacity:         DefaultLimitCapacity,
 	}
 }
@@ -117,6 +122,8 @@ type limiter struct {
 	// The recovery of a passkey-only member: per client and login name, and per login name.
 	recoverLogin   *ratelimit.Lockouts
 	recoverAccount *ratelimit.Lockouts
+	// The state-changing invite routes, per member uuid.
+	memberWrites *ratelimit.Budgets
 
 	proxyWarning sync.Once
 }
@@ -137,6 +144,7 @@ func newLimiter(l Limits) *limiter {
 
 		recoverLogin:   ratelimit.NewLockouts(l.LoginFailures, c, clock),
 		recoverAccount: ratelimit.NewLockouts(l.AccountFailures, c, clock),
+		memberWrites:   ratelimit.NewBudgets(l.MemberWrites, c, clock),
 	}
 }
 
@@ -239,6 +247,29 @@ func RateLimit(limit Limit) *hook.Handler[*core.RequestEvent] {
 				return e.Next()
 			}
 			return lim.serve(e, limit)
+		},
+	}
+}
+
+// MemberWriteBudgetMiddlewareID is the route middleware of [MemberWriteBudget].
+const MemberWriteBudgetMiddlewareID = "osfmMemberWriteBudget"
+
+// MemberWriteBudget returns the route middleware that counts the request against the signed-in member's
+// [Limits].MemberWrites budget: 429 [CodeRateLimited] with Retry-After when it is used up. Bind it to the
+// state-changing routes of internal/auth that members use (creating and revoking invites).
+func MemberWriteBudget() *hook.Handler[*core.RequestEvent] {
+	return &hook.Handler[*core.RequestEvent]{
+		Id:       MemberWriteBudgetMiddlewareID,
+		Priority: RateLimitMiddlewarePriority,
+		Func: func(e *core.RequestEvent) error {
+			lim, m := limiterOf(e.App), CurrentMember(e)
+			if lim == nil || m == nil {
+				return e.Next()
+			}
+			if ok, wait := lim.memberWrites.Take(m.GetString(store.FieldUUID)); !ok {
+				return tooManyAttempts(e, wait)
+			}
+			return e.Next()
 		},
 	}
 }

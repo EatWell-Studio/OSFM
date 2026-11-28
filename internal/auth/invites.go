@@ -10,12 +10,15 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/EatWell-Studio/OSFM/internal/domain"
+	"github.com/EatWell-Studio/OSFM/internal/settings"
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
-// Invites (D1, D2). Nobody joins without an invite: a maintainer creates one, which yields a one-time code; the code
-// goes to the new member as a link, and registration consumes it. An invite row stores only the SHA-256 hash of its
-// code (N5), the inviter, the expiry and, once used, the new member and the time.
+// Invites (D1, D2, D12). Nobody joins without an invite: a maintainer, or a member whose cooling-off period is over
+// (domain.CanInvite), creates one, which yields a one-time code; the code goes to the new member as a link, and
+// registration consumes it. An invite row stores only the SHA-256 hash of its code (N5), the inviter, the expiry and,
+// once used, the new member and the time. Members see and revoke their own invites, maintainers all of them.
 //
 //   - A code is 256 bits from crypto/rand, base64url-encoded (43 characters), the same form as a session token. With
 //     that much randomness a plain hash is enough: guessing a code is hopeless however often one tries, and the
@@ -49,6 +52,11 @@ const (
 	AuditRevokeInvite = "invites.revoke"
 	// AuditRevokeInvites: the open invites of a member who left, was removed or was deleted were revoked.
 	AuditRevokeInvites = "invites.revoke_all"
+	// AuditInvitePermission: a maintainer switched a member's invite permission off or on (details: canInvite).
+	AuditInvitePermission = "members.invite_permission"
+	// AuditInviteEarly: a maintainer ended a member's cooling-off period early (details: cooldownEndsAt, the end
+	// before).
+	AuditInviteEarly = "members.invite_early"
 )
 
 // ErrInvalidInvite is returned for every invite code that cannot be used: malformed, unknown, expired, used, revoked,
@@ -61,10 +69,65 @@ var ErrInviteUsed = errors.New("auth: the invite has been used")
 // errInviteDays is returned by [CreateInvite] for a validity outside [MinInviteDays, MaxInviteDays].
 var errInviteDays = fmt.Errorf("auth: an invite is valid for %d to %d days", MinInviteDays, MaxInviteDays)
 
-// CreateInvite creates an invite valid for days days (within [MinInviteDays, MaxInviteDays]) on behalf of inviter, a
-// maintainer, and writes an audit_log entry. It returns the code, which exists only in this return value: the
-// database keeps only its hash, so the caller must hand it out now. Only maintainers create invites in M1; the route
-// checks the role, this function does not.
+// ErrInviteLimit is returned by [CreateInvite] when a member who is not a maintainer has
+// [domain.MaxActiveInvites] active invites already.
+var ErrInviteLimit = errors.New("auth: too many active invites")
+
+// InviteNotAllowedError is returned by [CreateInvite] when the inviter may not invite now: their permission is off or
+// their cooling-off period is not over (D12). Right says which, and when the period ends.
+type InviteNotAllowedError struct {
+	Right domain.InviteRight
+}
+
+func (e *InviteNotAllowedError) Error() string {
+	return "auth: the member may not invite now (" + e.Right.Reason + ")"
+}
+
+// InviterOf returns member as a [domain.Inviter]. A member without joined_at (rows written outside OSFM) counts as
+// having joined when the record was created.
+func InviterOf(member *core.Record) domain.Inviter {
+	joined := member.GetDateTime("joined_at")
+	if joined.IsZero() {
+		joined = member.GetDateTime(store.FieldCreated)
+	}
+	return domain.Inviter{
+		Maintainer:  IsMaintainer(member),
+		CanInvite:   member.GetBool("can_invite"),
+		JoinedAt:    joined.Time().UTC(),
+		AllowedFrom: member.GetDateTime("invite_allowed_from").Time().UTC(),
+	}
+}
+
+// InviteRightOf returns whether member may invite now, with the cooling-off period as the instance settings have it
+// now ([domain.CanInvite]). A member who may not sign in may not invite.
+func InviteRightOf(app core.App, member *core.Record) (domain.InviteRight, error) {
+	if !CanSignIn(member) {
+		return domain.InviteRight{Reason: domain.InviteReasonDisabled}, nil
+	}
+	circle, err := settings.LoadCircle(app)
+	if err != nil {
+		return domain.InviteRight{}, err
+	}
+	return domain.CanInvite(InviterOf(member), circle.InviteCooldownDays, now().UTC()), nil
+}
+
+// CountActiveInvites returns the number of invites of member that are active now: neither used, revoked nor expired.
+func CountActiveInvites(app core.App, member *core.Record) (int, error) {
+	var n int
+	err := app.DB().Select("COUNT(*)").From(store.Invites).
+		Where(dbx.HashExp{"created_by": member.Id, "used_at": "", "revoked_at": ""}).
+		AndWhere(dbx.NewExp("expires_at > {:now}", dbx.Params{"now": dbTime(now())})).Row(&n)
+	return n, err
+}
+
+// CreateInvite creates an invite valid for days days (within [MinInviteDays, MaxInviteDays]) on behalf of inviter and
+// writes an audit_log entry. It returns the code, which exists only in this return value: the database keeps only its
+// hash, so the caller must hand it out now.
+//
+// In the same transaction it checks that the inviter may invite ([InviteRightOf]; an [*InviteNotAllowedError]
+// otherwise) and, for a member who is not a maintainer, that they have fewer than [domain.MaxActiveInvites] active
+// invites ([ErrInviteLimit] otherwise). Transactions run one after another, so two requests at once cannot both take
+// the last place.
 func CreateInvite(app core.App, inviter *core.Record, days int) (code string, invite *core.Record, err error) {
 	if !isMember(inviter) {
 		return "", nil, ErrNotMember
@@ -76,6 +139,25 @@ func CreateInvite(app core.App, inviter *core.Record, days int) (code string, in
 		return "", nil, err
 	}
 	err = app.RunInTransaction(func(tx core.App) error {
+		current, err := tx.FindRecordById(store.Members, inviter.Id)
+		if err != nil {
+			return err
+		}
+		right, err := InviteRightOf(tx, current)
+		if err != nil {
+			return err
+		}
+		if !right.Allowed {
+			return &InviteNotAllowedError{Right: right}
+		}
+		active, err := CountActiveInvites(tx, current)
+		if err != nil {
+			return err
+		}
+		if domain.InviteLimitReached(InviterOf(current), active) {
+			return ErrInviteLimit
+		}
+
 		c, err := tx.FindCachedCollectionByNameOrId(store.Invites)
 		if err != nil {
 			return err
@@ -90,7 +172,13 @@ func CreateInvite(app core.App, inviter *core.Record, days int) (code string, in
 		return store.WriteAudit(tx, inviter, AuditCreateInvite, store.Invites, invite.GetString(store.FieldUUID),
 			map[string]any{"days": days, "expiresAt": invite.GetDateTime("expires_at").Time().Format(time.RFC3339)})
 	})
-	if err != nil {
+	var notAllowed *InviteNotAllowedError
+	switch {
+	case errors.As(err, &notAllowed):
+		return "", nil, notAllowed
+	case errors.Is(err, ErrInviteLimit):
+		return "", nil, ErrInviteLimit
+	case err != nil:
 		return "", nil, fmt.Errorf("auth: create invite: %w", err)
 	}
 	return code, invite, nil
@@ -236,6 +324,7 @@ func RegisterWithInvite(app core.App, code string, register Registration) (*core
 		member.Set("role", RoleMember)
 		member.Set("invited_by", inviter.Id)
 		member.Set("joined_at", t)
+		member.Set("can_invite", true) // M2-Q11: on by default, from the end of the cooling-off period
 		if err := register(tx, member); err != nil {
 			return err
 		}

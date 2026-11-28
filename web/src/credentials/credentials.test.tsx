@@ -231,6 +231,8 @@ describe('the admin page', () => {
     role: 'member',
     joinedAt: '2026-01-01T10:00:00Z',
     canInvite: false,
+    inviteCooldownEndsAt: '2026-01-31T10:00:00Z',
+    inviteCooldown: false,
     invitedBy: { uuid: maintainer.uuid, displayName: 'Test Maintainer' },
     leftAt: null,
     passkeys: 2,
@@ -244,6 +246,7 @@ describe('the admin page', () => {
       displayName: 'Test Maintainer',
       role: 'maintainer',
       canInvite: true,
+      inviteCooldownEndsAt: null,
       invitedBy: null,
       passkeys: 0,
       passwordTotp: true,
@@ -293,7 +296,8 @@ describe('the admin page', () => {
     expect(rows[1]).toHaveTextContent(
       zhCN.members.joinedInvited.replace(/.*\{\{date\}\}/, '').replace('{{name}}', 'Test Maintainer'),
     )
-    expect(rows[1]).toHaveTextContent(zhCN.members.cannotInvite)
+    expect(within(rowOf(list, 1)).getByRole('checkbox', { name: zhCN.members.invites.permission })).not.toBeChecked()
+    expect(rows[0]).toHaveTextContent(zhCN.members.invites.maintainer)
     const left = screen.getByRole('list', { name: zhCN.members.left })
     expect(within(left).getByRole('listitem')).toHaveTextContent('Test Gone')
     expect(within(left).queryByRole('button')).toBeNull()

@@ -22,5 +22,23 @@
   "usedBy": "Used by {{name}} on {{date}}",
   "revokedAt": "Revoked on {{date}}",
   "expiresAt": "Valid until {{date}}",
-  "unknownMember": "(unknown member)"
+  "unknownMember": "(unknown member)",
+  "errors": {
+    "notAllowed": "You cannot invite right now. Reload the page to see why.",
+    "limit_one": "You can have at most {{count}} active invite. Revoke it, or wait until it is used or expires.",
+    "limit_other": "You can have at most {{count}} active invites. Revoke one, or wait until one is used or expires.",
+    "rateLimited": "Too many requests. Try again later."
+  },
+  "me": {
+    "maintainer": "As a maintainer you can invite new members at any time, and see and revoke every invite on the admin page.",
+    "toAdmin": "See all invites",
+    "loadError": "Could not check whether you can invite. Check your connection and try again.",
+    "disabled": "A maintainer has turned off your invite permission. You can still see and revoke your own invites.",
+    "cooldown_one": "New members wait a while before they can invite: {{count}} day left, you can invite from {{date}}.",
+    "cooldown_other": "New members wait a while before they can invite: {{count}} days left, you can invite from {{date}}.",
+    "limitReached_one": "You have {{count}} active invite, the most you can have. Revoke it, or wait until it is used or expires.",
+    "limitReached_other": "You have {{count}} active invites, the most you can have. Revoke one, or wait until one is used or expires.",
+    "allowed_one": "You can invite new members: each link registers one person, and you can have {{count}} active invite at a time (now {{active}}). The people you invite are recorded as invited by you.",
+    "allowed_other": "You can invite new members: each link registers one person, and you can have up to {{count}} active invites at a time (now {{active}}). The people you invite are recorded as invited by you."
+  }
 }

@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { useId, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
+import { MaxActiveInvites } from '@/api/types.gen'
 import { Button } from '@/components/ui/button'
 import {
   createInvite,
@@ -9,17 +11,39 @@ import {
   fetchInvites,
   type Invite,
   inviteDayChoices,
+  inviteLimitReachedCode,
   inviteLink,
+  inviteNotAllowedCode,
   invitesQueryKey,
   revokeInvite,
 } from '@/invites/invites'
 import { ShownOnceLink } from '@/components/ShownOnceLink'
+import { authErrorCode, rateLimitedCode } from '@/lib/authApi'
 
 /**
  * The invites (D1, D2), /admin/invites: creating an invite link with a validity, shown once, and the list of invites
- * with their state, to revoke the active ones.
+ * with their state, to revoke the active ones. A maintainer sees every invite.
  */
 export function InvitesAdmin() {
+  const { t } = useTranslation('invites')
+  const headingId = useId()
+  return (
+    <section aria-labelledby={headingId} className="flex flex-col gap-4 px-4 pb-4">
+      <h2 id={headingId} className="text-lg font-medium">
+        {t('title')}
+      </h2>
+      <InviteManager canCreate />
+    </section>
+  )
+}
+
+/**
+ * Creating invites and the list of invites, for the admin page and for a member's own invites on the "me" page (D12):
+ * the list is what the server gives the caller (every invite for a maintainer, their own for a member). Without
+ * canCreate the create button is disabled (a member in the cooling-off period, without the permission, or at the
+ * limit of active invites).
+ */
+export function InviteManager({ canCreate }: { canCreate: boolean }) {
   const { t } = useTranslation(['invites', 'common'])
   const queryClient = useQueryClient()
   const daysId = useId()
@@ -31,6 +55,9 @@ export function InvitesAdmin() {
     mutationFn: () => createInvite(days),
     onSuccess: ({ invite, code }) => {
       setCreated({ uuid: invite.uuid, link: inviteLink(window.location.origin, code) })
+    },
+    // Also the invite status after a refusal: the server knows better whether the member may invite.
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: invitesQueryKey })
     },
   })
@@ -45,16 +72,14 @@ export function InvitesAdmin() {
   })
 
   return (
-    <section aria-labelledby={`${daysId}-heading`} className="flex flex-col gap-4 px-4 pb-4">
-      <h2 id={`${daysId}-heading`} className="text-lg font-medium">
-        {t('title')}
-      </h2>
+    <>
       <div className="flex flex-wrap items-end gap-3">
         <label htmlFor={daysId} className="flex flex-col gap-1 text-sm">
           {t('validity')}
           <select
             id={daysId}
             value={days}
+            disabled={!canCreate}
             onChange={(e) => {
               setDays(Number(e.target.value))
             }}
@@ -68,7 +93,7 @@ export function InvitesAdmin() {
           </select>
         </label>
         <Button
-          disabled={create.isPending}
+          disabled={!canCreate || create.isPending}
           onClick={() => {
             create.mutate()
           }}
@@ -79,7 +104,7 @@ export function InvitesAdmin() {
       </div>
       {create.isError && (
         <p role="alert" className="text-sm text-destructive">
-          {t('createError')}
+          {createErrorMessage(t, create.error)}
         </p>
       )}
       {created && <ShownOnceLink link={created.link} label={t('link')} note={t('shownOnce')} />}
@@ -122,8 +147,21 @@ export function InvitesAdmin() {
           ))}
         </ul>
       )}
-    </section>
+    </>
   )
+}
+
+function createErrorMessage(t: TFunction<['invites', 'common']>, error: unknown): string {
+  switch (authErrorCode(error)) {
+    case inviteNotAllowedCode:
+      return t('errors.notAllowed')
+    case inviteLimitReachedCode:
+      return t('errors.limit', { count: MaxActiveInvites })
+    case rateLimitedCode:
+      return t('errors.rateLimited')
+    default:
+      return t('createError')
+  }
 }
 
 function InviteRow({ invite, revoking, onRevoke }: { invite: Invite; revoking: boolean; onRevoke: () => void }) {
