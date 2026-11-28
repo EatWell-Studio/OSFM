@@ -56,6 +56,9 @@ type Options struct {
 	// [App.SetupCode]). Without it, the instance has the made-up maintainer, member, author and city described at
 	// [App].
 	Unconfigured bool
+	// DataDir, when set, boots the app on this existing data directory (such as one a backup was restored into)
+	// instead of a new one: nothing is copied into it and nothing is seeded, so the App's seeded records are nil.
+	DataDir string
 }
 
 // UnreachableSearchURL is where the place search's upstream services are in every app [Start] boots, unless
@@ -138,7 +141,10 @@ func Start(t testing.TB, opts Options) *App {
 	if opts.Bind == nil {
 		t.Fatal("testapp: Options.Bind is required")
 	}
-	dir := t.TempDir()
+	dir := opts.DataDir
+	if dir == "" {
+		dir = t.TempDir()
+	}
 	cfg, err := config.Parse(UnreachableSearch(func(name string) (string, bool) {
 		if name == config.EnvDataDir {
 			return dir, true
@@ -149,8 +155,10 @@ func Start(t testing.TB, opts Options) *App {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := pbtest.CopyTemplate(cfg.PBDataDir()); err != nil {
-		t.Fatal(err)
+	if opts.DataDir == "" {
+		if err := pbtest.CopyTemplate(cfg.PBDataDir()); err != nil {
+			t.Fatal(err)
+		}
 	}
 	app := core.NewBaseApp(core.BaseAppConfig{DataDir: cfg.PBDataDir()})
 	opts.Bind(app, cfg)
@@ -160,7 +168,7 @@ func Start(t testing.TB, opts Options) *App {
 	t.Cleanup(func() { _ = app.ClearBootstrap() })
 
 	a := &App{App: app, Config: cfg, t: t}
-	if !opts.Unconfigured {
+	if !opts.Unconfigured && opts.DataDir == "" {
 		a.seed()
 	}
 

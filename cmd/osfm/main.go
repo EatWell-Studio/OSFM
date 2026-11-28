@@ -2,9 +2,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"github.com/pocketbase/pocketbase"
@@ -45,7 +47,13 @@ func main() {
 	app.RootCmd.AddCommand(cmd.NewSuperuserCommand(app))
 	app.RootCmd.AddCommand(newServeCommand(app, cfg))
 	app.RootCmd.AddCommand(newSetupCodeCommand(app, cfg))
-	if err := app.Execute(); err != nil {
+	app.RootCmd.AddCommand(newBackupCommand(app, cfg), newRestoreCommand(app, cfg))
+	// Execute bootstraps the app before any command runs; backup and restore must not (see noBootstrap).
+	execute := app.Execute
+	if skipsBootstrap(app.RootCmd, os.Args[1:]) {
+		execute = app.RootCmd.Execute
+	}
+	if err := execute(); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -56,13 +64,31 @@ func bind(app core.App, cfg *config.Config) {
 	// The data directory and the keys are prepared when the app bootstraps, before PocketBase opens its database, so
 	// that `osfm --help` and `osfm --version` leave the file system alone.
 	var keys *config.Keys
+	// Every command that opens the instance holds a shared lock on the data directory until it ends, so that
+	// `osfm restore` (exclusive) can tell that the instance is running, and no instance starts during a restore.
+	var lock *config.DataDirLock
 	app.OnBootstrap().BindFunc(func(be *core.BootstrapEvent) error {
+		if lock == nil {
+			l, err := cfg.LockDataDir(false)
+			if errors.Is(err, config.ErrDataDirLocked) {
+				return errors.New("a restore is running on the data directory; start the instance when it is done")
+			}
+			if err != nil {
+				return err
+			}
+			lock = l
+		}
 		// The authentication code takes the master key (TOTP secrets) from here, see auth.Options.MasterKey.
 		var err error
 		if keys, err = cfg.Prepare(be.App.DataDir(), slog.Default()); err != nil {
 			return err
 		}
 		return be.Next()
+	})
+	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		lock.Release()
+		lock = nil
+		return e.Next()
 	})
 	// Bound after the hook above, so it runs once the data directory is ready: backs up an existing database that has
 	// migrations to apply, bootstraps (PocketBase's system migrations) and applies the OSFM migrations (G6).

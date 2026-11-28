@@ -90,6 +90,15 @@ func (m *PasswordMember) SignIn() *Client {
 	return c
 }
 
+// On returns the member as a member of b, an app on a copy of this one's data (such as a restored backup): signing
+// in then goes to b, with the same TOTP secret and the same record of used time steps.
+func (m *PasswordMember) On(b *App) *PasswordMember {
+	b.t.Helper()
+	c := *m
+	c.app, c.Client, c.Record = b, nil, b.memberByLoginName(m.LoginName)
+	return &c
+}
+
 // PasskeyMember is a member who registered with a passkey.
 type PasskeyMember struct {
 	Record        *core.Record
@@ -139,6 +148,15 @@ func (m *PasskeyMember) SignIn() *Client {
 		m.app.t.Fatal("testapp: no session cookie after signing in")
 	}
 	return c
+}
+
+// On returns the member as a member of b, an app on a copy of this one's data (such as a restored backup): signing
+// in then goes to b, with the same authenticator.
+func (m *PasskeyMember) On(b *App) *PasskeyMember {
+	b.t.Helper()
+	c := *m
+	c.app, c.Client, c.Record = b, nil, b.memberByLoginName(m.LoginName)
+	return &c
 }
 
 // passkeyOptions is auth.PasskeyOptionsResponse with the options kept as JSON for the authenticator.
