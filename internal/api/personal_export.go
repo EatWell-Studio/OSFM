@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -26,8 +27,11 @@ import (
 //   - Credentials are summarised: kind, device name, dates. No password hash, TOTP secret, passkey ID or public key,
 //     no recovery code, session or token.
 //   - Recommendations are the caller's own as store.VisibleRecommendations gives them to their author: private,
-//     hidden and pseudonym ones included; deleted ones (whose content is erased) and ones of a place that was deleted
-//     are not. Each comes with its place (uuid, name, coordinates) and its revisions, newest first.
+//     hidden and pseudonym ones included; deleted ones (whose content is erased) are not. One exception to the
+//     visibility rule, here only (M2-Q20): the caller's live recommendations of a place a maintainer deleted, which
+//     nobody sees any more but whose text is still the author's, are exported too, marked placeDeleted, with the place
+//     as stored. Nothing says who deleted the place or why (that is in the audit log only). Each recommendation comes
+//     with its place (uuid, name, coordinates) and its revisions, newest first.
 //   - A file download (Content-Disposition: attachment), not cached, with a per-member budget of its own: the export
 //     reads every collection, and nobody needs it more than a few times in a row.
 
@@ -118,6 +122,9 @@ type PersonalRecommendation struct {
 	// Hidden says why it is hidden; null when it is not.
 	Hidden *HiddenInfo   `json:"hidden"`
 	Place  PersonalPlace `json:"place"`
+	// PlaceDeleted is true when a maintainer deleted the place: the recommendation is still the member's, but nobody
+	// sees it any more. Place is the place as it was stored.
+	PlaceDeleted bool `json:"placeDeleted"`
 	// Revisions are the content before each edit, newest first.
 	Revisions []PersonalRevision `json:"revisions"`
 }
@@ -307,29 +314,48 @@ func personalCredentials(app core.App, m *core.Record) ([]PersonalCredential, er
 
 func personalRecommendations(app core.App, m *core.Record) ([]PersonalRecommendation, error) {
 	v := MemberViewer(m)
-	recs, err := store.VisibleRecommendations(app, v).
-		Where(dbx.HashExp{store.Recommendations + ".author": m.Id}).
-		OrderBy(store.Recommendations+".created DESC", store.Recommendations+".uuid DESC").All()
+	byAuthor := dbx.HashExp{store.Recommendations + ".author": m.Id}
+	recs, err := store.VisibleRecommendations(app, v).Where(byAuthor).All()
 	if err != nil {
 		return nil, err
+	}
+	placeByID := map[string]*core.Record{}
+	if len(recs) > 0 {
+		placeIDs := make([]any, 0, len(recs))
+		for _, r := range recs {
+			placeIDs = append(placeIDs, r.GetString("place"))
+		}
+		places, err := store.VisiblePlaces(app, v).Where(dbx.In(store.Places+".id", placeIDs...)).All()
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range places {
+			placeByID[p.Id] = p
+		}
+	}
+	// The exception (M2-Q20): the member's live recommendations of deleted places, which no visibility query returns.
+	orphans, gonePlaces, err := recommendationsOfDeletedPlaces(app, m)
+	if err != nil {
+		return nil, err
+	}
+	recs = append(recs, orphans...)
+	for id, p := range gonePlaces {
+		placeByID[id] = p
 	}
 	out := make([]PersonalRecommendation, 0, len(recs))
 	if len(recs) == 0 {
 		return out, nil
 	}
+	sort.SliceStable(recs, func(i, j int) bool { // newest first, as the query of each part had it
+		ci, cj := recs[i].GetDateTime(store.FieldCreated).Time(), recs[j].GetDateTime(store.FieldCreated).Time()
+		if !ci.Equal(cj) {
+			return ci.After(cj)
+		}
+		return recs[i].GetString(store.FieldUUID) > recs[j].GetString(store.FieldUUID)
+	})
 	recIDs := make([]any, 0, len(recs))
-	placeIDs := make([]any, 0, len(recs))
 	for _, r := range recs {
 		recIDs = append(recIDs, r.Id)
-		placeIDs = append(placeIDs, r.GetString("place"))
-	}
-	places, err := store.VisiblePlaces(app, v).Where(dbx.In(store.Places+".id", placeIDs...)).All()
-	if err != nil {
-		return nil, err
-	}
-	placeByID := make(map[string]*core.Record, len(places))
-	for _, p := range places {
-		placeByID[p.Id] = p
 	}
 	var revisions []*core.Record
 	if err := app.RecordQuery(store.RecommendationRevisions).
@@ -346,7 +372,7 @@ func personalRecommendations(app core.App, m *core.Record) ([]PersonalRecommenda
 	for _, r := range recs {
 		place, ok := placeByID[r.GetString("place")]
 		if !ok {
-			continue // cannot happen: a recommendation visible to its author has a live place
+			continue // cannot happen: the place is live and visible to the author, or a deleted one loaded above
 		}
 		view := recommendationView(v, r, domain.Author{})
 		rec := PersonalRecommendation{
@@ -370,7 +396,8 @@ func personalRecommendations(app core.App, m *core.Record) ([]PersonalRecommenda
 				Lat:  place.GetFloat("lat"),
 				Lon:  place.GetFloat("lon"),
 			},
-			Revisions: revsByRec[r.Id],
+			PlaceDeleted: store.IsDeleted(place),
+			Revisions:    revsByRec[r.Id],
 		}
 		if rec.Revisions == nil {
 			rec.Revisions = []PersonalRevision{}
@@ -378,6 +405,33 @@ func personalRecommendations(app core.App, m *core.Record) ([]PersonalRecommenda
 		out = append(out, rec)
 	}
 	return out, nil
+}
+
+// recommendationsOfDeletedPlaces returns the live recommendations of member m whose place was soft-deleted, with those
+// places by record ID. It is the export's one exception to the visibility rule (M2-Q20): only the author, only their
+// own recommendations that are not deleted themselves, only for their own copy of their data.
+func recommendationsOfDeletedPlaces(app core.App, m *core.Record) ([]*core.Record, map[string]*core.Record, error) {
+	places, err := store.Query(app, store.Places).IncludeDeleted().
+		Where(dbx.Not(store.NotDeleted(store.Places))).
+		Where(dbx.Exists(dbx.NewExp("SELECT 1 FROM {{"+store.Recommendations+"}} AS [[ro]] WHERE [[ro.place]] = [["+
+			store.Places+".id]] AND [[ro.author]] = {:author} AND [[ro."+store.FieldDeletedAt+"]] = ''",
+			dbx.Params{"author": m.Id}))).All()
+	if err != nil || len(places) == 0 {
+		return nil, nil, err
+	}
+	byID := make(map[string]*core.Record, len(places))
+	ids := make([]any, 0, len(places))
+	for _, p := range places {
+		byID[p.Id] = p
+		ids = append(ids, p.Id)
+	}
+	recs, err := store.Query(app, store.Recommendations).
+		Where(dbx.HashExp{store.Recommendations + ".author": m.Id}).
+		Where(dbx.In(store.Recommendations+".place", ids...)).All()
+	if err != nil {
+		return nil, nil, err
+	}
+	return recs, byID, nil
 }
 
 func personalRevision(rev *core.Record) PersonalRevision {

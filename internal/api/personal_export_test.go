@@ -102,7 +102,7 @@ func TestPersonalExport(t *testing.T) {
 		DisplayAs: domain.SignAsPseudonym, Text: "Test other text"})
 
 	// More of the author's recommendations: a hidden one with every content field, a deleted one and one of a place
-	// a maintainer deleted.
+	// a maintainer deleted (M2-Q20: exported, marked; the other member's recommendation of that place is not).
 	hiddenPlace := a.SeedPlace(testapp.PlaceSeed{Name: "Test Hidden Grill", Lat: 0.332, Lon: 7.072})
 	hiddenRec := a.SeedRecommendation(testapp.RecommendationSeed{Place: hiddenPlace, Author: a.Author,
 		Attitude: domain.AttitudeAvoid, Text: "Test hidden text", Dishes: []string{"Test Dish"},
@@ -114,7 +114,10 @@ func TestPersonalExport(t *testing.T) {
 	a.SeedRecommendation(testapp.RecommendationSeed{Place: deletedPlace, Author: a.Author,
 		Text: "Test deleted text", Deleted: true})
 	gonePlace := a.SeedPlace(testapp.PlaceSeed{Name: "Test Gone Canteen", Lat: 0.336, Lon: 7.076})
-	a.SeedRecommendation(testapp.RecommendationSeed{Place: gonePlace, Author: a.Author, Text: "Test gone text"})
+	time.Sleep(2 * time.Millisecond) // created has millisecond precision: goneRec is the newest
+	goneRec := a.SeedRecommendation(testapp.RecommendationSeed{Place: gonePlace, Author: a.Author,
+		DisplayAs: domain.SignAsPseudonym, Text: "Test gone text"})
+	a.SeedRecommendation(testapp.RecommendationSeed{Place: gonePlace, Author: other, Text: "Test other gone text"})
 	if err := store.SoftDelete(a, gonePlace); err != nil {
 		t.Fatal(err)
 	}
@@ -182,8 +185,8 @@ func TestPersonalExport(t *testing.T) {
 	for _, r := range ex.Recommendations {
 		recs[r.UUID] = r
 	}
-	if len(ex.Recommendations) != 4 || len(recs) != 4 {
-		t.Fatalf("%d recommendations, want the four live ones of live places: %+v", len(ex.Recommendations),
+	if len(ex.Recommendations) != 5 || len(recs) != 5 {
+		t.Fatalf("%d recommendations, want the five live ones: %+v", len(ex.Recommendations),
 			ex.Recommendations)
 	}
 	main := recs[a.Recommendation.GetString(store.FieldUUID)]
@@ -220,6 +223,21 @@ func TestPersonalExport(t *testing.T) {
 		t.Errorf("revision of the hidden recommendation %+v, want %+v", h.Revisions, wantContent)
 	}
 
+	for uuid, r := range recs {
+		if r.PlaceDeleted != (uuid == goneRec.GetString(store.FieldUUID)) {
+			t.Errorf("recommendation %s: placeDeleted %v", r.Text, r.PlaceDeleted)
+		}
+	}
+	if g := recs[goneRec.GetString(store.FieldUUID)]; g.Text != "Test gone text" || g.DisplayAs != domain.SignAsPseudonym ||
+		g.Place != (api.PersonalPlace{UUID: gonePlace.GetString(store.FieldUUID), Name: "Test Gone Canteen",
+			Lat: 0.336, Lon: 7.076}) {
+		t.Errorf("recommendation of the deleted place %+v", g)
+	}
+	// Newest first, across the visible ones and the exception.
+	if ex.Recommendations[0].UUID != goneRec.GetString(store.FieldUUID) {
+		t.Errorf("first recommendation %q, want the newest (of the deleted place)", ex.Recommendations[0].Text)
+	}
+
 	if len(ex.Reports) != 1 || ex.Reports[0].Recommendation != otherRec.GetString(store.FieldUUID) ||
 		ex.Reports[0].Reason != store.ReasonAdvertising || ex.Reports[0].Note != "Test report note" ||
 		ex.Reports[0].CreatedAt.IsZero() {
@@ -237,7 +255,7 @@ func TestPersonalExport(t *testing.T) {
 	absent(t, "the author", body, memberStrings(a.Member)...)
 	absent(t, "the author", body, a.Maintainer.GetString(store.FieldUUID), a.Maintainer.GetString("login_name"))
 	absent(t, "the author", body, "Test other text", "Test other old text", "Test foreign note", "Test Tea House",
-		"Test deleted text", "Test Deleted Diner", "Test gone text", "Test Gone Canteen", "editor\"",
+		"Test deleted text", "Test Deleted Diner", "Test other gone text", "editor\"",
 		"reporter", "usedBy", "used_by")
 	if strings.Count(body, "Test Maintainer") != 1 {
 		t.Error("the inviter's main name should appear once, as invitedBy")

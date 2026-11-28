@@ -14,7 +14,7 @@ OSFM 导出的文件的格式。每种文件在顶层用 `osfm:schema` 写明格
 
 - **其他成员的任何信息**，唯一的例外是邀请人的主名（`account.invitedBy`）：没有其他成员的 `uuid`、登录名或化名，没有谁用了自己的邀请，修改记录只写修改人的角色（作者 / 维护者），没有隐藏推荐的维护者，举报只写被举报推荐的 `uuid`、不写它的作者或内容。
 - **任何秘密**：没有密码哈希、TOTP 密钥、passkey 的凭据 ID 与公钥、用户句柄、恢复码（及其哈希）、会话或令牌。凭据只有类型、设备名和日期。
-- **已删除的推荐**（删除时正文已被抹去）与**所在地点已被维护者删除的推荐**（这类推荐对任何人都不可见，包括作者本人）。
+- **已删除的推荐**（删除时正文已被抹去）。所在地点已被维护者删除、推荐本身未删除的，仍然导出（推荐语仍属于作者），标为 `placeDeleted: true`，地点按保存时的样子给出；不写谁删除了地点、为什么删除。
 - 实例内部的记录 ID：对象一律用 `uuid`（UUIDv7）指代。
 
 文件里有成员自己的私密推荐，也写明了哪些推荐用的是化名（`displayAs`）：这正是只有本人才能知道的信息，文件应妥善保管。
@@ -65,6 +65,7 @@ OSFM 导出的文件的格式。每种文件在顶层用 `osfm:schema` 写明格
       "editedByMaintainerAt": null,
       "hidden": null,
       "place": { "uuid": "0190a1b2-0000-7000-8000-000000000030", "name": "Example Noodle Bar", "lat": 0.34, "lon": 7.06 },
+      "placeDeleted": false,
       "revisions": [
         {
           "uuid": "0190a1b2-0000-7000-8000-000000000040",
@@ -114,7 +115,7 @@ OSFM 导出的文件的格式。每种文件在顶层用 `osfm:schema` 写明格
 | `account.invitedBy` | 邀请人的主名；第一个维护者为空字符串 |
 | `invites[]` | 自己创建的邀请，新的在前：`uuid`、`state`（`active`、`used`、`expired`、`revoked`）、`createdAt`、`expiresAt`、`usedAt`、`revokedAt`。邀请码本身只在创建时出现一次，不在导出里 |
 | `credentials[]` | 登录方式，旧的在前：`kind`（`passkey` 或 `password_totp`）、`deviceName`（passkey 的名称，密码 + TOTP 为空）、`createdAt`、`lastUsedAt`（最近一次用它登录或再次验证的日期，UTC 零点；从未用过为 `null`） |
-| `recommendations[]` | 自己的推荐，新的在前，包括私密的、被隐藏的和用化名署名的 |
+| `recommendations[]` | 自己的推荐，新的在前，包括私密的、被隐藏的、用化名署名的，以及所在地点已被删除的 |
 | `….displayAs` | 署名方式：`main`（主名）或 `pseudonym`（化名） |
 | `….visibility` | `private`（只有自己）或 `circle`（圈内） |
 | `….attitude` | `must_try`、`good`、`ok`、`avoid` |
@@ -122,6 +123,7 @@ OSFM 导出的文件的格式。每种文件在顶层用 `osfm:schema` 写明格
 | `….createdAt`、`updatedAt`、`editedByMaintainerAt` | 创建、最后修改、维护者最后一次修改的时间 |
 | `….hidden` | 未隐藏时为 `null`；被隐藏时为 `{kind, reason?}`，`kind` 为 `maintainer`、`reports`、`member_removed`，`reason` 是维护者写的原因（举报自动隐藏没有原因） |
 | `….place` | 所在地点：`uuid`、`name`、`lat`、`lon`（WGS-84，5 位小数） |
+| `….placeDeleted` | 所在地点已被维护者删除时为 `true`：推荐不再对任何人显示，但仍是作者的数据；`place` 是删除前保存的地点 |
 | `….revisions[]` | 修改记录，新的在前：`uuid`、`createdAt`、`editorRole`（`author` 或 `maintainer`）、`content`（修改前的内容：`attitude`、`text`、`dishes`、`timeSlots`、`season`、`sources`、`visitedOn`） |
 | `reports[]` | 自己提交的举报，新的在前：`recommendation`（被举报推荐的 `uuid`）、`reason`（`advertising`、`abuse`、`political_illegal`、`unverified_claim`、`false_or_duplicate`、`other`）、`note`（自己写的说明）、`createdAt` |
 | `notices[]` | 站内提示，新的在前：`uuid`、`kind`（如 `maintainer_edited`、`hidden_by_maintainer`、`hidden_by_reports`、`restored`、`violation_deleted`）、`ref`（相关推荐的 `uuid`）、`createdAt`、`readAt` |

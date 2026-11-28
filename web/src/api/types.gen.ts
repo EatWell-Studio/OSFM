@@ -466,6 +466,11 @@ export interface PersonalRecommendation {
   hidden?: HiddenInfo;
   place: PersonalPlace;
   /**
+   * PlaceDeleted is true when a maintainer deleted the place: the recommendation is still the member's, but nobody
+   * sees it any more. Place is the place as it was stored.
+   */
+  placeDeleted: boolean;
+  /**
    * Revisions are the content before each edit, newest first.
    */
   revisions: PersonalRevision[];
