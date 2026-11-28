@@ -97,8 +97,10 @@ describe('the administration', () => {
     renderAt(`/admin/${section}`)
     expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.admin.notAllowed)
     expect(screen.queryByRole('navigation', { name: zhCN.admin.nav.label })).not.toBeInTheDocument()
-    // No maintainer route is asked for.
-    expect(fetchMock.mock.calls.map(([input]) => input)).toEqual(['/api/osfm/me', '/api/osfm/instance'])
+    // No maintainer route is asked for (the bottom navigation reads the member's notices).
+    expect(fetchMock.mock.calls.map(([input]) => input).sort()).toEqual(
+      ['/api/osfm/me', '/api/osfm/instance', '/api/osfm/me/notices'].sort(),
+    )
   })
 
   it.each(sections)('/admin/%s shows its section to a maintainer', async (section, heading) => {

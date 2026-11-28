@@ -1,3 +1,38 @@
 {
-  "title": "Notices"
+  "title": "Notices",
+  "empty": "No notices.",
+  "loadError": "Could not load the notices. Check the connection and try again.",
+  "retry": "Try again",
+  "markAllRead": "Mark all as read",
+  "markRead": "Mark as read",
+  "markError": "Could not mark the notices as read. Try again later.",
+  "unread": "Unread",
+  "unreadBadge_one": ", {{count}} unread notice",
+  "unreadBadge_other": ", {{count}} unread notices",
+  "kind": {
+    "maintainer_edited": {
+      "target": "A maintainer edited your recommendation of “{{place}}”. Open it to see the revisions.",
+      "gone": "A maintainer edited one of your recommendations, which no longer exists."
+    },
+    "hidden_by_maintainer": {
+      "target": "A maintainer hid your recommendation of “{{place}}”. Open it to see why.",
+      "gone": "A maintainer hid one of your recommendations, which no longer exists."
+    },
+    "hidden_by_reports": {
+      "target": "Your recommendation of “{{place}}” was reported and is hidden until a maintainer reviews it.",
+      "gone": "One of your recommendations was hidden after reports; it no longer exists."
+    },
+    "restored": {
+      "target": "Your recommendation of “{{place}}” is shown again.",
+      "gone": "One of your recommendations was shown again; it no longer exists."
+    },
+    "violation_deleted": {
+      "target": "A maintainer deleted your recommendation of “{{place}}” for breaking the circle's rules.",
+      "gone": "A maintainer deleted one of your recommendations for breaking the circle's rules."
+    },
+    "other": {
+      "target": "There is a new notice about your recommendation of “{{place}}”.",
+      "gone": "You have a new notice."
+    }
+  }
 }
