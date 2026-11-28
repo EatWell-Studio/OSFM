@@ -146,6 +146,15 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 
 **实例设置**（`internal/api/settings.go`）：`GET /api/osfm/instance` 对成员返回 `name`、`cities`、`geocoderEnabled`（前端据此隐藏搜索框），对维护者另返回 `reportThreshold`、`inviteCooldownDays`、`geocoderContact`；`POST`（只限维护者、写额度）只修改请求里带的字段，没带的（或为 `null` 的）保留已存的值——管理页的"名称与城市"表单与"举报、邀请与地名搜索"表单各自只发自己的字段。校验：名称与城市同向导（`instance_name_invalid`、`cities_invalid`），举报阈值 1–100（`report_threshold_invalid`），冷静期 0–3650 天（`invite_cooldown_invalid`），联系方式去首尾空白后 ≤ 200 字符且无控制字符（`geocoder_contact_invalid`）；保存与审计 `settings.update` 在同一事务，审计记录名称、城市标识与各项数值，联系方式只记是否设置。各功能用 `settings.LoadCircle` 读取当前值（改设置立即生效）。
 
+**地点与推荐：写入**（`internal/api/places.go`，T026）：
+
+- `POST /api/osfm/places`（写额度）：请求体 `CreatePlaceRequest` 是地点字段加上第一条推荐 `recommendation`（`RecommendationInput`），两者在同一个事务里写入，再写审计 `places.create`（操作人是新建者，目标是地点的 `uuid`；地点层本身没有任何成员字段，§3.5）。201 返回 `{place, recommendation}` 两个 `uuid`。地点没有单独新建的入口：地点只在有一条请求者可见的推荐时存在（§3.4）。
+- `POST /api/osfm/places/{uuid}/recommendations`（写额度）：请求体是同一个 `RecommendationInput`。地点经 `store.VisiblePlaces` 查找，看不到的与不存在的同为 404；请求者在这个地点已有未删除的推荐时返回 409 `already_recommended`，`data.recommendation` 是他自己那条的 `uuid`（只告诉作者本人，客户端转去编辑）。检查与写入在同一事务里（SQLite 只有一个写连接，事务依次执行）；`(place, author)` 部分唯一索引是最后一道防线，写入失败时再查一次，同样答 409。
+- `GET /api/osfm/places/nearby?lat=&lon=&name=`（重名提示，`B6`）：先按 `(lat, lon)` 索引取约 100 m 的外接框内、经 `store.VisiblePlaces` 过滤的地点，再按大圆距离保留 100 m 以内、店名或别名与 `name` 相似的，按距离排序，最多 5 个，只返回 `uuid`、店名、类别与取整到 10 m 的距离（`H3`），不返回坐标。名称比较用 `domain.PlaceNameKey`（NFKC、转小写、去掉空白与标点）：相等、较短的（至少 2 个字符）包含在较长的里面，或编辑距离不超过 1（3–5 个字符）/ 2（6 个字符以上）。
+- **校验**都在 `internal/domain` 的纯函数里（`NormalizePlace`、`NormalizeRecommendation`）：店名 1–200 个字符、单行；别名最多 10 个；坐标必须落在实例某个城市的范围内（`outside_cities`）；精度默认 `exact`；类别为空或在白名单内，菜系只接受列表值；位置描述 ≤ 500；参照物是请求者看得到的地点（`{type: "place", place}`）或一段文字（`{type: "text", text}`，≤ 200）；推荐的态度必选，推荐语去首尾空白后非空、≤ 5000；推荐的菜最多 20 个；时段只接受五个取值；季节 ≤ 100；来源最多 10 条，链接只接受带主机名的 http(s)，摘录 ≤ 500；到店日期不晚于地球上最晚时区的"今天"；署名默认主名，选化名而成员没有化名时 `no_pseudonym`；可见性只接受 `private` 与 `circle`（默认），`federated` 只是预留值，写入时拒绝。其余不合规的字段答 400 `invalid_request`，`data.field` 是请求里的字段路径（如 `recommendation.sources[1].url`）。文本去首尾空白，多行文本的换行统一为 `\n`，单行字段不接受控制字符；列表去掉空项与重复项。
+- **固定取值**（类别、菜系、时段、精度、来源类型、可见性、署名方式）以 `internal/domain` 的列表为准；前端的 `web/src/lib/enums.ts` 列出相同的值、相同的顺序，`domain` 的 Go 测试解析这个文件并逐一比较，两边不一致时失败（tygo 只生成常量，不生成列表，前端又需要它们作为字面量类型）。
+- **坐标**：`lat`、`lon` 照收到的值交给 `store`，由钩子取 5 位小数；`source_coord` 保存未取整的原值、坐标系与来源：`{"lat", "lon", "crs": "wgs84", "source": "crosshair" | "search"}`（请求里的 `sourceCoord` 只带 `crs` 与 `source`，缺省为 WGS-84 的准星）。M2 只有 WGS-84，其他坐标系随分享链接的坐标换算（`B10`）再加。参照地点存为 `{"type": "place", "place_uuid"}`，文字参照物为 `{"type": "text", "text"}`。
+
 ### 3.3 认证与会话
 
 使用的库：WebAuthn 用 `github.com/go-webauthn/webauthn`；TOTP 用 `github.com/pquerna/otp`（RFC 6238，30 秒、6 位）；密码哈希用 argon2id（`golang.org/x/crypto/argon2`）。
