@@ -210,6 +210,206 @@ export interface LandmarkPlace {
 
 
 //////////
+// source: places.go
+
+/**
+ * PlacesPath is POST: a new place with its first recommendation ([CreatePlaceRequest] → 201 [CreatedPlace]).
+ */
+export const PlacesPath = "/api/osfm/places";
+/**
+ * PlacesNearbyPath is GET ?lat=&lon=&name=: the places the caller can see within 100 m with a similar name
+ * ([NearbyPlaces]).
+ */
+export const PlacesNearbyPath = "/api/osfm/places/nearby";
+/**
+ * PlaceRecommendationsPath is POST: a recommendation for the place {uuid} ([RecommendationInput] → 201
+ * [CreatedRecommendation]; 409 [CodeAlreadyRecommended] with [AlreadyRecommended] in the error's data).
+ */
+export const PlaceRecommendationsPath = "/api/osfm/places/{uuid}/recommendations";
+/**
+ * CodeOutsideCities (400): the coordinates are in none of the instance's cities (H2).
+ */
+export const CodeOutsideCities = "outside_cities";
+/**
+ * CodeNoPseudonym (400): the recommendation is to be signed with a pseudonym, and the member has none.
+ */
+export const CodeNoPseudonym = "no_pseudonym";
+/**
+ * CodeAlreadyRecommended (409): the member has a live recommendation of this place already; the error's data is
+ * [AlreadyRecommended], the uuid of that recommendation (theirs), so that the app opens it for editing (M2-Q1).
+ */
+export const CodeAlreadyRecommended = "already_recommended";
+/**
+ * AuditPlaceCreate is the audit action of a new place: the actor is the member who created it, the target the place.
+ */
+export const AuditPlaceCreate = "places.create";
+/**
+ * CreatePlaceRequest is the body of POST [PlacesPath]: a new place and its first recommendation. Only the name, the
+ * coordinates and the recommendation's attitude and text are required (B2, C2).
+ */
+export interface CreatePlaceRequest {
+  /**
+   * Name has 1 to 200 characters, on one line.
+   */
+  name: string;
+  /**
+   * Aliases are other names of the place: at most 10, each like a name.
+   */
+  aliases?: string[];
+  /**
+   * Lat and Lon are WGS-84 degrees, inside one of the instance's cities ([CodeOutsideCities]). They are stored
+   * rounded to 5 decimals; the values as sent are kept in the place's source coordinates.
+   */
+  lat: number;
+  lon: number;
+  /**
+   * Precision is exact (the default), approx or area.
+   */
+  precision?: string;
+  /**
+   * PositionNote describes where the place is in the member's words (at most 500 characters, may span lines).
+   */
+  positionNote?: string;
+  /**
+   * Landmark is what the position is described relative to: a place the member can see, or a text.
+   */
+  landmark?: LandmarkInput;
+  /**
+   * Category is empty or one of the food whitelist (web/src/lib/enums.ts: categories).
+   */
+  category?: string;
+  /**
+   * Cuisine lists values of the cuisine list (enums.ts: cuisines).
+   */
+  cuisine?: string[];
+  /**
+   * SourceCoord says how the coordinates were entered; absent means WGS-84 from the crosshair.
+   */
+  sourceCoord?: SourceCoordInput;
+  /**
+   * Recommendation is the place's first recommendation.
+   */
+  recommendation: RecommendationInput;
+}
+/**
+ * LandmarkInput is a landmark (B4): {type: "place", place: <uuid>} or {type: "text", text}.
+ */
+export interface LandmarkInput {
+  type: string;
+  /**
+   * Place is the uuid of a place the member can see, for type "place".
+   */
+  place?: string;
+  /**
+   * Text has 1 to 200 characters on one line, for type "text".
+   */
+  text?: string;
+}
+/**
+ * SourceCoordInput says how a place's coordinates were entered (B12).
+ */
+export interface SourceCoordInput {
+  /**
+   * CRS is the coordinate system of lat and lon: only "wgs84" (the default) for now.
+   */
+  crs?: string;
+  /**
+   * Source is "crosshair" (the default: the member placed the map's crosshair) or "search" (a place search result,
+   * not moved afterwards).
+   */
+  source?: string;
+}
+/**
+ * RecommendationInput is a recommendation as a member writes it: the body of POST [PlaceRecommendationsPath] and the
+ * recommendation of [CreatePlaceRequest]. Only the attitude and the text are required (C2).
+ */
+export interface RecommendationInput {
+  /**
+   * Attitude is must_try, good, ok or avoid.
+   */
+  attitude: string;
+  /**
+   * Text is not empty once trimmed, at most 5000 characters, may span lines.
+   */
+  text: string;
+  /**
+   * Dishes are at most 20, of at most 100 characters each.
+   */
+  dishes?: string[];
+  /**
+   * TimeSlots are values of enums.ts: timeSlots.
+   */
+  timeSlots?: string[];
+  /**
+   * Season is at most 100 characters ("winter").
+   */
+  season?: string;
+  /**
+   * Sources are at most 10: an optional http(s) link, a kind (enums.ts: sourceKinds) and an optional excerpt of at
+   * most 500 characters.
+   */
+  sources?: Source[];
+  /**
+   * VisitedOn is the date of the last visit, YYYY-MM-DD, not later than today.
+   */
+  visitedOn?: string;
+  /**
+   * DisplayAs is main (the default) or pseudonym, which needs a pseudonym ([CodeNoPseudonym]). It cannot be changed
+   * later.
+   */
+  displayAs?: string;
+  /**
+   * Visibility is circle (the default) or private; federated is reserved and refused.
+   */
+  visibility?: string;
+}
+/**
+ * CreatedPlace is the response of POST [PlacesPath]: the uuids of the new place and of its first recommendation.
+ */
+export interface CreatedPlace {
+  place: string;
+  recommendation: string;
+}
+/**
+ * CreatedRecommendation is the response of POST [PlaceRecommendationsPath]: the uuid of the new recommendation.
+ */
+export interface CreatedRecommendation {
+  recommendation: string;
+}
+/**
+ * AlreadyRecommended is the data of a [CodeAlreadyRecommended] error: the uuid of the caller's own live
+ * recommendation of the place.
+ */
+export interface AlreadyRecommended {
+  recommendation: string;
+}
+/**
+ * InvalidField is the data of an invalid_request error of these routes about one field: its name as in the request
+ * ("name", "recommendation.text", "recommendation.sources[1].url").
+ */
+export interface InvalidField {
+  field: string;
+}
+/**
+ * NearbyPlaces is the response of GET [PlacesNearbyPath]: at most 5 places, the nearest first.
+ */
+export interface NearbyPlaces {
+  places: NearbyPlace[];
+}
+/**
+ * NearbyPlace is a place offered by the duplicate hint: no coordinates, only how far it is.
+ */
+export interface NearbyPlace {
+  uuid: string;
+  name: string;
+  category: string;
+  /**
+   * Distance is in metres, rounded to 10 m (H3).
+   */
+  distance: number /* int */;
+}
+
+//////////
 // source: projection.go
 
 /**

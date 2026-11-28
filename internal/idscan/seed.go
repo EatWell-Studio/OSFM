@@ -57,6 +57,10 @@ const (
 	LeftMemberUUID = "0190a1b2-0000-7000-8000-00000000d003"
 )
 
+// UnrecommendedPlaceUUID is the uuid of a seeded live place with a single circle recommendation, by neither the seeded
+// member nor the seeded maintainer: both may add theirs (the probes of new recommendations).
+const UnrecommendedPlaceUUID = "0190a1b2-0000-7000-8000-00000000e001"
+
 // Seed writes made-up records into every OSFM collection of app, a bootstrapped app with the OSFM migrations
 // applied, including soft-deleted ones, and returns their internal IDs. It fails the test if a collection that is
 // not one of PocketBase's system collections is left without a record: a task that adds a collection adds its records
@@ -167,6 +171,11 @@ func Seed(t testing.TB, app core.App) *Seeded {
 		"resolution": store.ResolutionRestored})
 	save(store.Notices, map[string]any{"member": m, "kind": "test"})
 	save(store.Notices, map[string]any{"member": m, "kind": "test", "read_at": "2026-01-06 00:00:00Z"})
+
+	unrecommended := save(store.Places, map[string]any{store.FieldUUID: UnrecommendedPlaceUUID,
+		"name": "Test Corner Bakery", "lat": 31.235, "lon": 121.475, "precision": "exact", "category": "bakery"})
+	save(store.Recommendations, map[string]any{"place": unrecommended.Id, "author": reset.Id, "display_as": "main",
+		"attitude": "must_try", "visibility": "circle", "text": "Test bakery text"})
 
 	// The single settings row exists from the migration; give it a made-up name and city.
 	settings, err := app.FindRecordById(store.InstanceSettings, store.SettingsID)
