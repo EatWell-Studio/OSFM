@@ -378,7 +378,8 @@ func TestAuditEvents(t *testing.T) {
 	maintainer := pe.member("test_maintainer", auth.RoleMaintainer)
 	invite, inviteRecord := pe.invite(maintainer)
 	start := decode[auth.RegisterPasswordStartResponse](t, pe.postFrom(client(1), auth.RegisterPasswordStartPath,
-		auth.RegisterPasswordStartRequest{Invite: invite, LoginName: newLogin, Password: testPassword}))
+		auth.RegisterPasswordStartRequest{Invite: invite, LoginName: newLogin, DisplayName: "Test New",
+			Password: testPassword}))
 	regCode := pe.code(start.Secret, 0)
 	rec := pe.postFrom(client(1), auth.RegisterPasswordConfirmPath,
 		auth.RegisterPasswordConfirmRequest{Invite: invite, Enrolment: start.Enrolment, Code: regCode})

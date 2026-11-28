@@ -100,7 +100,7 @@ func expectError(t *testing.T, what string, rec *httptest.ResponseRecorder, stat
 func (pe *pwEnv) start(invite, login, password string) *httptest.ResponseRecorder {
 	pe.t.Helper()
 	return pe.post(auth.RegisterPasswordStartPath, "", auth.RegisterPasswordStartRequest{
-		Invite: invite, LoginName: login, DisplayName: "Test New", Password: password,
+		Invite: invite, LoginName: login, DisplayName: "Test " + strings.TrimSpace(login), Password: password,
 	})
 }
 
@@ -460,16 +460,22 @@ func TestRegistrationErrors(t *testing.T) {
 		status                   int
 		code                     string
 	}{
-		{"ab", "", testPassword, http.StatusBadRequest, auth.CodeLoginNameInvalid},
-		{"test new", "", testPassword, http.StatusBadRequest, auth.CodeLoginNameInvalid},
-		{strings.Repeat("a", 33), "", testPassword, http.StatusBadRequest, auth.CodeLoginNameInvalid},
-		{"test_maintainer", "", testPassword, http.StatusConflict, auth.CodeLoginNameTaken},
-		{"TEST_MAINTAINER", "", testPassword, http.StatusConflict, auth.CodeLoginNameTaken},
+		{"ab", "Test New", testPassword, http.StatusBadRequest, auth.CodeLoginNameInvalid},
+		{"test new", "Test New", testPassword, http.StatusBadRequest, auth.CodeLoginNameInvalid},
+		{strings.Repeat("a", 33), "Test New", testPassword, http.StatusBadRequest, auth.CodeLoginNameInvalid},
+		{"test_maintainer", "Test New", testPassword, http.StatusConflict, auth.CodeLoginNameTaken},
+		{"TEST_MAINTAINER", "Test New", testPassword, http.StatusConflict, auth.CodeLoginNameTaken},
 		{newLogin, strings.Repeat("x", 65), testPassword, http.StatusBadRequest, auth.CodeDisplayNameInvalid},
 		{newLogin, "a\nb", testPassword, http.StatusBadRequest, auth.CodeDisplayNameInvalid},
-		{newLogin, "", "short", http.StatusBadRequest, auth.CodePasswordTooShort},
-		{newLogin, "", strings.Repeat("x", 129), http.StatusBadRequest, auth.CodePasswordTooLong},
-		{"test_new_name", "", "Test_New_Name", http.StatusBadRequest, auth.CodePasswordIsLogin},
+		// The display name is required, is not the login name and is no one else's name (M2-Q6).
+		{newLogin, "", testPassword, http.StatusBadRequest, auth.CodeDisplayNameInvalid},
+		{newLogin, " " + strings.ToUpper(newLogin) + " ", testPassword, http.StatusBadRequest,
+			auth.CodeDisplayNameIsLogin},
+		{newLogin, "test test_maintainer", testPassword, http.StatusConflict, auth.CodeNameTaken},
+		{newLogin, "ＴＥＳＴ　ｔｅｓｔ＿ｍａｉｎｔａｉｎｅｒ", testPassword, http.StatusConflict, auth.CodeNameTaken},
+		{newLogin, "Test New", "short", http.StatusBadRequest, auth.CodePasswordTooShort},
+		{newLogin, "Test New", strings.Repeat("x", 129), http.StatusBadRequest, auth.CodePasswordTooLong},
+		{"test_new_name", "Test New", "Test_New_Name", http.StatusBadRequest, auth.CodePasswordIsLogin},
 	} {
 		rec := pe.post(auth.RegisterPasswordStartPath, "", auth.RegisterPasswordStartRequest{
 			Invite: invite, LoginName: c.login, DisplayName: c.display, Password: c.password,
@@ -632,7 +638,7 @@ func TestWithoutMasterKey(t *testing.T) {
 	en := newEnv(t)
 	maintainer := en.member("test_maintainer", auth.RoleMaintainer)
 	invite, _ := en.invite(maintainer)
-	body, _ := json.Marshal(auth.RegisterPasswordStartRequest{Invite: invite, LoginName: newLogin, Password: testPassword}) // #nosec G117 -- made up
+	body, _ := json.Marshal(auth.RegisterPasswordStartRequest{Invite: invite, LoginName: newLogin, DisplayName: "Test New", Password: testPassword}) // #nosec G117 -- made up
 	if rec := en.reqJSON(http.MethodPost, auth.RegisterPasswordStartPath, "", string(body)); rec.Code != http.StatusInternalServerError {
 		t.Errorf("status %d", rec.Code)
 	}

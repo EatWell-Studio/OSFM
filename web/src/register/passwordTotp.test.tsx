@@ -164,6 +164,7 @@ describe('registration with password and TOTP', () => {
     checkAnswer = () => Response.json({ valid: true })
     renderAt('/register')
     await user.type(await screen.findByLabelText(reg.loginName), 'test_new')
+    await user.type(screen.getByLabelText(reg.displayName), 'Test New')
     await user.type(screen.getByLabelText(reg.password), password)
     await user.type(screen.getByLabelText(reg.repeat), password)
     await user.click(screen.getByRole('button', { name: reg.next }))
@@ -172,9 +173,13 @@ describe('registration with password and TOTP', () => {
 
   it('checks the form before sending it, and shows the server errors at their field', async () => {
     const user = userEvent.setup()
+    let starts = 0
     const fetchMock = stubApi({
       '/api/osfm/invites/check': () => Response.json({ valid: true }),
-      '/api/osfm/register/password/start': () => authError(409, 'login_name_taken'),
+      '/api/osfm/register/password/start': () => {
+        starts++
+        return starts === 1 ? authError(409, 'login_name_taken') : authError(409, 'name_taken')
+      },
     })
     renderAt(`/register#invite=${invite}`)
 
@@ -183,6 +188,9 @@ describe('registration with password and TOTP', () => {
     await user.click(screen.getByRole('button', { name: reg.next }))
     expect(screen.getByText(reg.errors.loginNameInvalid)).toBeInTheDocument()
     expect(screen.getByText(reg.errors.passwordTooShort)).toBeInTheDocument()
+    // The display name is required and is not the login name (M2-Q6).
+    expect(screen.getByText(reg.errors.displayNameInvalid)).toBeInTheDocument()
+    await user.type(screen.getByLabelText(reg.displayName), 'ABC')
 
     await user.type(screen.getByLabelText(reg.loginName), 'c')
     await user.clear(screen.getByLabelText(reg.password))
@@ -190,6 +198,9 @@ describe('registration with password and TOTP', () => {
     await user.type(screen.getByLabelText(reg.repeat), password + 'x')
     await user.click(screen.getByRole('button', { name: reg.next }))
     expect(screen.getByText(reg.errors.passwordsDiffer)).toBeInTheDocument()
+    expect(screen.getByText(reg.errors.displayNameIsLoginName)).toBeInTheDocument()
+    await user.clear(screen.getByLabelText(reg.displayName))
+    await user.type(screen.getByLabelText(reg.displayName), 'Test New')
     expect(fetchMock.mock.calls.some(([input]) => input === '/api/osfm/register/password/start')).toBe(false)
 
     await user.clear(screen.getByLabelText(reg.repeat))
@@ -197,6 +208,10 @@ describe('registration with password and TOTP', () => {
     await user.click(screen.getByRole('button', { name: reg.next }))
     expect(await screen.findByText(reg.errors.loginNameTaken)).toHaveAttribute('role', 'alert')
     expect(screen.getByLabelText(reg.loginName)).toHaveAttribute('aria-invalid', 'true')
+    // Another member's name: said at the display name, without saying whose or which kind.
+    await user.click(screen.getByRole('button', { name: reg.next }))
+    expect(await screen.findByText(reg.errors.nameTaken)).toHaveAttribute('role', 'alert')
+    expect(screen.getByLabelText(reg.displayName)).toHaveAttribute('aria-invalid', 'true')
   })
 })
 

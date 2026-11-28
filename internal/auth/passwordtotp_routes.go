@@ -36,6 +36,8 @@ const (
 	CodeLoginNameInvalid   = "login_name_invalid"
 	CodeLoginNameTaken     = "login_name_taken"
 	CodeDisplayNameInvalid = "display_name_invalid"
+	CodeDisplayNameIsLogin = "display_name_is_login_name"
+	CodeNameTaken          = "name_taken" // another member's main name or pseudonym; which is not said (M2-Q6)
 	CodePasswordTooShort   = "password_too_short"
 	CodePasswordTooLong    = "password_too_long"
 	CodePasswordIsLogin    = "password_is_login_name"
@@ -55,8 +57,8 @@ type AuthError struct {
 	Code    string         `json:"code"`
 }
 
-// RegisterPasswordStartRequest is the body of POST [RegisterPasswordStartPath]. displayName may be empty: the login
-// name is used then.
+// RegisterPasswordStartRequest is the body of POST [RegisterPasswordStartPath]. displayName, the main name, is required:
+// it must differ from the login name and from every member's main name and pseudonym (M2-Q6).
 type RegisterPasswordStartRequest struct {
 	Invite      string `json:"invite"`
 	LoginName   string `json:"loginName"`
@@ -147,7 +149,12 @@ func registrationError(e *core.RequestEvent, err error) error {
 		return authError(e, http.StatusConflict, CodeLoginNameTaken, "This login name is taken.")
 	case errors.Is(err, errDisplayNameInvalid):
 		return authError(e, http.StatusBadRequest, CodeDisplayNameInvalid,
-			"A display name has at most 64 characters and no control characters.")
+			"A display name has 1 to 64 characters and no control characters.")
+	case errors.Is(err, errDisplayNameIsLogin):
+		return authError(e, http.StatusBadRequest, CodeDisplayNameIsLogin,
+			"The display name must not be the login name.")
+	case errors.Is(err, errNameTaken):
+		return authError(e, http.StatusConflict, CodeNameTaken, "This name is taken.")
 	case errors.Is(err, errPasswordTooShort):
 		return authError(e, http.StatusBadRequest, CodePasswordTooShort, "The password is too short.")
 	case errors.Is(err, errPasswordTooLong):

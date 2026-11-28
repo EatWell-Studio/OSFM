@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/base32"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -155,15 +156,22 @@ func TestLoginAndDisplayNames(t *testing.T) {
 	if NormalizeLoginName("  Test_Member ") != "test_member" {
 		t.Error("login names are not trimmed and lowercased")
 	}
-	if n, ok := normalizeDisplayName("  ", "test_member"); !ok || n != "test_member" {
-		t.Errorf("empty display name: %q, %v", n, ok)
+	if n, err := normalizeDisplayName(" 测试 成员 ", "test_member"); err != nil || n != "测试 成员" {
+		t.Errorf("display name: %q, %v", n, err)
 	}
-	if n, ok := normalizeDisplayName(" 测试 成员 ", "x"); !ok || n != "测试 成员" {
-		t.Errorf("display name: %q, %v", n, ok)
+	if n, err := normalizeDisplayName(strings.Repeat("名", 64), "test_member"); err != nil || n == "" {
+		t.Errorf("64 characters: %v", err)
 	}
-	for _, bad := range []string{strings.Repeat("名", 65), "a\nb", "a\u200eb", "a\x00b"} {
-		if _, ok := normalizeDisplayName(bad, "x"); ok {
-			t.Errorf("accepted display name %q", bad)
+	// Required since M2-Q6: an empty name is not replaced with the login name any more.
+	for _, bad := range []string{"", "  ", strings.Repeat("名", 65), "a\nb", "a\u200eb", "a\x00b", "\u200b", "\ufe0f"} {
+		if _, err := normalizeDisplayName(bad, "test_member"); !errors.Is(err, errDisplayNameInvalid) {
+			t.Errorf("display name %q: %v", bad, err)
+		}
+	}
+	// The login name, in any letter case or width, is not a display name.
+	for _, login := range []string{"test_member", " Test_Member ", "ＴＥＳＴ＿ｍｅｍｂｅｒ"} {
+		if _, err := normalizeDisplayName(login, "test_member"); !errors.Is(err, errDisplayNameIsLogin) {
+			t.Errorf("display name %q: %v", login, err)
 		}
 	}
 }

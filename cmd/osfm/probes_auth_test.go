@@ -56,11 +56,11 @@ func init() {
 			// in internal/auth).
 			"POST " + auth.RegisterPasswordStartPath: {
 				{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Status: http.StatusOK,
-					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_scan","password":"test scan password"}`},
+					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_scan","displayName":"Test Scan","password":"test scan password"}`},
 				{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Status: http.StatusConflict,
-					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member","password":"test scan password"}`},
+					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member","displayName":"Test Scan","password":"test scan password"}`},
 				{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Status: http.StatusForbidden,
-					Body: `{"invite":"x","loginName":"test_scan","password":"test scan password"}`},
+					Body: `{"invite":"x","loginName":"test_scan","displayName":"Test Scan","password":"test scan password"}`},
 				{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Body: `{`,
 					Status: http.StatusBadRequest},
 			},
@@ -74,7 +74,7 @@ func init() {
 			// step refuses (the same answer as for a wrong password); tickets are sealed like enrolments.
 			"POST " + auth.SignInPasswordPath: {
 				{Method: http.MethodPost, Path: auth.SignInPasswordPath, Header: csrfHeader, Status: http.StatusUnauthorized,
-					Body: `{"loginName":"test_member","password":"test scan password"}`},
+					Body: `{"loginName":"test_member","displayName":"Test Scan","password":"test scan password"}`},
 				{Method: http.MethodPost, Path: auth.SignInPasswordPath, Header: csrfHeader, Body: `{`,
 					Status: http.StatusBadRequest},
 			},
@@ -92,9 +92,9 @@ func init() {
 				{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusOK,
 					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_probe","displayName":"Test Probe"}`},
 				{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusConflict,
-					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member"}`},
+					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member","displayName":"Test Probe"}`},
 				{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusForbidden,
-					Body: `{"invite":"x","loginName":"test_probe"}`},
+					Body: `{"invite":"x","loginName":"test_probe","displayName":"Test Probe"}`},
 				{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusBadRequest,
 					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"x"}`},
 				{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusBadRequest,
@@ -127,7 +127,7 @@ func init() {
 			},
 			"POST " + auth.SetupPasswordStartPath: {
 				{Method: http.MethodPost, Path: auth.SetupPasswordStartPath, Header: csrfHeader, Status: http.StatusNotFound,
-					Body: `{"setupCode":"0000-0000-0000-0000","loginName":"test_scan","password":"test scan password"}`},
+					Body: `{"setupCode":"0000-0000-0000-0000","loginName":"test_scan","displayName":"Test Scan","password":"test scan password"}`},
 			},
 			"POST " + auth.SetupPasswordConfirmPath: {
 				{Method: http.MethodPost, Path: auth.SetupPasswordConfirmPath, Header: csrfHeader, Status: http.StatusNotFound,
@@ -135,7 +135,7 @@ func init() {
 			},
 			"POST " + auth.SetupPasskeyOptionsPath: {
 				{Method: http.MethodPost, Path: auth.SetupPasskeyOptionsPath, Header: csrfHeader, Status: http.StatusNotFound,
-					Body: `{"setupCode":"0000-0000-0000-0000","loginName":"test_probe"}`},
+					Body: `{"setupCode":"0000-0000-0000-0000","loginName":"test_probe","displayName":"Test Probe"}`},
 			},
 			"POST " + auth.SetupPasskeyPath: {
 				{Method: http.MethodPost, Path: auth.SetupPasskeyPath, Header: csrfHeader, Status: http.StatusNotFound,

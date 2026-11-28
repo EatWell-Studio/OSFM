@@ -3,7 +3,10 @@ package store
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
+	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
@@ -52,4 +55,46 @@ func invisible(r rune) bool {
 		return true
 	}
 	return unicode.Is(unicode.Cf, r) || unicode.IsControl(r) || unicode.Is(unicode.Variation_Selector, r)
+}
+
+// MaxNameLength is the longest main name or pseudonym, in characters (members.display_name and members.pseudonym).
+const MaxNameLength = 64
+
+// NormalizeName returns a main name or pseudonym as it is stored: with white space at both ends removed. ok is false
+// when the name is empty, longer than [MaxNameLength] characters, not valid UTF-8, contains control or format
+// characters, or is made only of characters that [NameKey] removes (so that it would look like no name at all). The
+// same rules apply at registration and on the profile (M2-Q6).
+func NormalizeName(name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" || !utf8.ValidString(name) || utf8.RuneCountInString(name) > MaxNameLength {
+		return "", false
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return "", false
+		}
+	}
+	if NameKey(name) == "" {
+		return "", false
+	}
+	return name, true
+}
+
+// NameTaken reports whether a member other than the one with the internal ID except (none when empty) has a main name
+// or a pseudonym whose [NameKey] is key (M2-Q6). Members who left and deleted members count too: their pseudonym
+// recommendations keep showing the pseudonym (M2-Q10), and a reused name would pass as theirs. An empty key is never
+// taken. Call it inside the transaction that saves the name, so that two members cannot take the same name at once.
+func NameTaken(app core.App, key, except string) (bool, error) {
+	if key == "" {
+		return false, nil
+	}
+	q := Query(app, Members).IncludeDeleted().Where(dbx.Or(
+		dbx.HashExp{Members + "." + FieldDisplayNameKey: key},
+		dbx.HashExp{Members + "." + FieldPseudonymKey: key},
+	))
+	if except != "" {
+		q.Where(dbx.Not(dbx.HashExp{Members + ".id": except}))
+	}
+	n, err := q.Count()
+	return n > 0, err
 }

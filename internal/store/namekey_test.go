@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -78,4 +79,24 @@ func TestMemberNameKeysFollowTheNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("test renamed", "")
+}
+
+func TestNormalizeName(t *testing.T) {
+	for in, want := range map[string]string{"  Test Name ": "Test Name", "测试 名字": "测试 名字"} {
+		if got, ok := store.NormalizeName(in); !ok || got != want {
+			t.Errorf("NormalizeName(%q) = %q, %v", in, got, ok)
+		}
+	}
+	long := strings.Repeat("名", store.MaxNameLength)
+	if _, ok := store.NormalizeName(long); !ok {
+		t.Error("a name of MaxNameLength characters is refused")
+	}
+	// Control and format characters, a variation selector alone, a Hangul filler alone, invalid UTF-8.
+	r := func(c rune) string { return string(c) }
+	for _, bad := range []string{"", "   ", long + "x", "Test" + r(0x0a) + "Name", "Test" + r(0x200b) + "Name",
+		"Test" + r(0x202e) + "Name", r(0xfe0f), r(0x3164), string([]byte{0xff})} {
+		if _, ok := store.NormalizeName(bad); ok {
+			t.Errorf("NormalizeName(%q) accepted", bad)
+		}
+	}
 }

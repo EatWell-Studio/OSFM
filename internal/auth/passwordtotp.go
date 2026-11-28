@@ -11,8 +11,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -75,9 +73,12 @@ var (
 	errLoginNameInvalid   = errors.New("auth: invalid login name")
 	errLoginNameTaken     = errors.New("auth: login name taken")
 	errDisplayNameInvalid = errors.New("auth: invalid display name")
-	errPasswordTooShort   = errors.New("auth: password too short")
-	errPasswordTooLong    = errors.New("auth: password too long")
-	errPasswordIsLogin    = errors.New("auth: password is the login name")
+	errDisplayNameIsLogin = errors.New("auth: display name is the login name")
+	// errNameTaken: another member has the display name as their main name or pseudonym (M2-Q6).
+	errNameTaken        = errors.New("auth: name taken")
+	errPasswordTooShort = errors.New("auth: password too short")
+	errPasswordTooLong  = errors.New("auth: password too long")
+	errPasswordIsLogin  = errors.New("auth: password is the login name")
 	// errCodeInvalid: the TOTP or recovery code does not match (or has been used).
 	errCodeInvalid = errors.New("auth: invalid code")
 	// errEnrolmentInvalid: the pending enrolment is malformed, changed, expired or from another invite.
@@ -106,22 +107,32 @@ func validLoginName(login string) bool {
 	return n >= MinLoginNameLength && n <= MaxLoginNameLength && loginNameRegexp.MatchString(login)
 }
 
-// normalizeDisplayName returns the display name as stored: trimmed, the login name when empty; ok is false for a name
-// that is too long or contains control or format characters.
-func normalizeDisplayName(s, login string) (string, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return login, true
+// normalizeDisplayName returns the display name (the main name) as stored, trimmed. It is required and follows the
+// rules of store.NormalizeName (errDisplayNameInvalid), and it must not be the login name, whatever the letter case or
+// width (errDisplayNameIsLogin): the login name is half of the password sign-in and is shown to no one (M2-Q6).
+func normalizeDisplayName(s, login string) (string, error) {
+	s, ok := store.NormalizeName(s)
+	if !ok {
+		return "", errDisplayNameInvalid
 	}
-	if !utf8.ValidString(s) || utf8.RuneCountInString(s) > MaxDisplayNameLength {
-		return "", false
+	if store.NameKey(s) == store.NameKey(login) {
+		return "", errDisplayNameIsLogin
 	}
-	for _, r := range s {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
-			return "", false
-		}
+	return s, nil
+}
+
+// displayNameTaken returns errNameTaken when another member has the display name as their main name or pseudonym
+// (M2-Q6). The registration checks it when it starts, to tell the member early, and again in the transaction that
+// creates the member.
+func displayNameTaken(app core.App, display string) error {
+	taken, err := store.NameTaken(app, store.NameKey(display), "")
+	if err != nil {
+		return err
 	}
-	return s, true
+	if taken {
+		return errNameTaken
+	}
+	return nil
 }
 
 func checkPassword(password, login string) error {
@@ -209,9 +220,9 @@ func startPasswordEnrolment(ctx context.Context, app core.App, aad []byte, bindH
 	if !validLoginName(login) {
 		return nil, errLoginNameInvalid
 	}
-	display, ok := normalizeDisplayName(displayName, login)
-	if !ok {
-		return nil, errDisplayNameInvalid
+	display, err := normalizeDisplayName(displayName, login)
+	if err != nil {
+		return nil, err
 	}
 	if err := checkPassword(password, login); err != nil {
 		return nil, err
@@ -222,6 +233,9 @@ func startPasswordEnrolment(ctx context.Context, app core.App, aad []byte, bindH
 	}
 	if taken {
 		return nil, errLoginNameTaken
+	}
+	if err := displayNameTaken(app, display); err != nil {
+		return nil, err
 	}
 
 	hash, err := hashPassword(ctx, password)
@@ -324,6 +338,9 @@ func passwordRegistration(app core.App, aad []byte, bindHash, enrolment, code st
 		}
 		if taken {
 			return errLoginNameTaken
+		}
+		if err := displayNameTaken(tx, p.DisplayName); err != nil {
+			return err
 		}
 		member.Set(store.FieldUUID, memberUUID)
 		member.Set("login_name", p.LoginName)
