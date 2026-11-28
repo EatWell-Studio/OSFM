@@ -41,6 +41,23 @@ func TestParseDefaults(t *testing.T) {
 	if cfg.TrustedProxyHeaders != nil {
 		t.Errorf("TrustedProxyHeaders = %q, want none", cfg.TrustedProxyHeaders)
 	}
+	if cfg.GeocoderPhotonURL != DefaultGeocoderPhotonURL || cfg.GeocoderNominatimURL != DefaultGeocoderNominatimURL {
+		t.Errorf("geocoder URLs = %q, %q", cfg.GeocoderPhotonURL, cfg.GeocoderNominatimURL)
+	}
+}
+
+func TestParseGeocoderURLs(t *testing.T) {
+	cfg, err := Parse(env(map[string]string{
+		EnvGeocoderPhotonURL:    " http://127.0.0.1:2322/api ",
+		EnvGeocoderNominatimURL: "https://nominatim.example.test/search?countrycodes=xx",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GeocoderPhotonURL != "http://127.0.0.1:2322/api" ||
+		cfg.GeocoderNominatimURL != "https://nominatim.example.test/search?countrycodes=xx" {
+		t.Errorf("geocoder URLs = %q, %q", cfg.GeocoderPhotonURL, cfg.GeocoderNominatimURL)
+	}
 }
 
 func TestParseTrustedProxyHeaders(t *testing.T) {
@@ -150,6 +167,11 @@ func TestParseInvalid(t *testing.T) {
 		{EnvTrustedProxyHeaders, "X-Forwarded-For,"},
 		{EnvTrustedProxyHeaders, "X Forwarded For"},
 		{EnvTrustedProxyHeaders, "X-Forwarded-For: 1"},
+		{EnvGeocoderPhotonURL, "photon.example.test/api"},
+		{EnvGeocoderPhotonURL, "ftp://photon.example.test/api"},
+		{EnvGeocoderPhotonURL, "https://user:secret@photon.example.test/api"},
+		{EnvGeocoderNominatimURL, "https:///search"},
+		{EnvGeocoderNominatimURL, "https://nominatim.example.test/search#x"},
 	} {
 		_, err := Parse(env(map[string]string{tc.name: tc.value}))
 		if err == nil {

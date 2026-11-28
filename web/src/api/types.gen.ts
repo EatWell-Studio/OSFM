@@ -43,6 +43,41 @@ export const CodeForbidden = "forbidden"; // 403: the caller may not do this
 export const CodeRateLimited = "rate_limited"; // 429: over the budget; Retry-After says when to try again (as auth's)
 
 //////////
+// source: geocode.go
+
+/**
+ * GeocodePath is GET ?q=<search term>&city=<city slug> → [GeocodeResult] list (at most 10), places inside the city.
+ */
+export const GeocodePath = "/api/osfm/geocode";
+/**
+ * Error codes of place search.
+ */
+export const CodeGeocoderDisabled = "geocoder_disabled"; // 404: the maintainers turned place search off
+/**
+ * Error codes of place search.
+ */
+export const CodeGeocoderUnavailable = "geocoder_unavailable"; // 503: neither search service answered; place the pin by hand
+/**
+ * MaxGeocodeQuery is the longest search term, in characters.
+ */
+export const MaxGeocodeQuery = 200;
+/**
+ * GeocodeResult is one place found by GET [GeocodePath].
+ */
+export interface GeocodeResult {
+  /**
+   * Name is the place's name, or its street address when it has none.
+   */
+  name: string;
+  /**
+   * Label says where it is (street, district, town), to tell places of the same name apart; may be empty.
+   */
+  label: string;
+  lat: number /* float64 */;
+  lon: number /* float64 */;
+}
+
+//////////
 // source: governance_invites.go
 
 /**

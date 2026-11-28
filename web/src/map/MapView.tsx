@@ -3,7 +3,7 @@
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useQuery } from '@tanstack/react-query'
 import { AttributionControl, Map as MapLibreMap, type MapRef, Marker } from '@vis.gl/react-maplibre'
-import { LocateFixedIcon, MinusIcon, PlusIcon } from 'lucide-react'
+import { LocateFixedIcon, MapPinIcon, MinusIcon, PlusIcon } from 'lucide-react'
 import * as maplibregl from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { instanceQuery } from '@/instance/instance'
+import { type GeocodeResult, PlaceSearch } from '@/search/PlaceSearch'
 import { type City, citiesQueryKey, contains, fetchCities, type MapCity, mergeCities, pickCity } from './cities'
 import { basemapLanguage, buildStyle, localIdeographFontFamily } from './style'
 import { type Position, useLocate } from './useLocate'
@@ -109,7 +110,7 @@ function CityView({ choices }: { choices: MapCity[] }) {
   )
 
   const select = (
-    <div className="absolute top-2.5 left-2.5 z-[2]">
+    <div className="shrink-0">
       <label className="sr-only" htmlFor="map-city">
         {t('city')}
       </label>
@@ -133,7 +134,7 @@ function CityView({ choices }: { choices: MapCity[] }) {
   if (!chosen.tiles) {
     return (
       <div className="relative h-full">
-        {select}
+        <div className="absolute top-2.5 left-2.5 z-[2]">{select}</div>
         <MapMessage>{t('noTiles', { city: chosen.label })}</MapMessage>
       </div>
     )
@@ -154,8 +155,11 @@ function CityMap({
   selectCity: (id: string) => void
 }) {
   const { t, i18n } = useTranslation('map')
+  const { t: tSearch } = useTranslation('search')
   const mapRef = useRef<MapRef>(null)
   const [position, setPosition] = useState<Position | null>(null)
+  // The place search result the member picked, marked on the map until another city is shown.
+  const [found, setFound] = useState<GeocodeResult | null>(null)
   // A position to center on once the map shows the city it lies in.
   const pendingCenter = useRef<Position | null>(null)
 
@@ -177,6 +181,7 @@ function CityMap({
       return
     }
     shownCity.current = city.id
+    setFound(null)
     const center = pendingCenter.current
     pendingCenter.current = null
     if (center) {
@@ -206,6 +211,11 @@ function CityMap({
     [cities, city, selectCity],
   )
   const { locate, locating, message } = useLocate(showPosition)
+  const showFound = useCallback((r: GeocodeResult) => {
+    setFound(r)
+    const map = mapRef.current
+    map?.flyTo({ center: [r.lon, r.lat], zoom: Math.max(map.getZoom(), 16) })
+  }, [])
   const [atMinZoom, setAtMinZoom] = useState(false)
   const updateZoomLimit = useCallback(() => {
     const map = mapRef.current
@@ -246,9 +256,22 @@ function CityMap({
             />
           </Marker>
         )}
+        {found && (
+          <Marker longitude={found.lon} latitude={found.lat} anchor="bottom">
+            <MapPinIcon
+              role="img"
+              aria-label={tSearch('marker', { name: found.name })}
+              className="size-8 fill-red-600 text-white drop-shadow"
+            />
+          </Marker>
+        )}
       </MapLibreMap>
 
-      {select}
+      {/* The city and the place search across the top, left of the map buttons. */}
+      <div className="absolute top-2.5 right-14 left-2.5 z-[3] flex items-start gap-2">
+        {select}
+        <PlaceSearch city={city.id} onSelect={showFound} className="min-w-0 flex-1" />
+      </div>
 
       {/* Our own buttons rather than MapLibre's controls, whose icons are data: URLs that the CSP refuses (§4.7). */}
       <div className="absolute top-2.5 right-2.5 z-[2] flex flex-col gap-2">

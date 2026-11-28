@@ -1,5 +1,5 @@
 // The instance settings members see, GET /api/osfm/instance (settings.Instance on the server): the instance's name
-// and its cities. A city's slug is also the name of its basemap archive (/tiles/<slug>/…), which may not exist yet.
+// and its cities, and whether place search is on. A city's slug is also the name of its basemap archive (/tiles/<slug>/…), which may not exist yet.
 
 import { queryOptions } from '@tanstack/react-query'
 import { apiJson } from '@/lib/api'
@@ -16,6 +16,11 @@ export interface InstanceCity {
 export interface Instance {
   name: string
   cities: InstanceCity[]
+  /**
+   * Whether place search is on (the search box is hidden when it is false); absent from responses that do not say,
+   * such as the setup's.
+   */
+  geocoderEnabled?: boolean
 }
 
 export const instancePath = '/instance'
@@ -48,10 +53,14 @@ export function parseInstance(body: unknown): Instance {
     throw new Error(`${instancePath}: unexpected response`)
   }
   const b = body as Record<string, unknown>
-  return {
+  const instance: Instance = {
     name: typeof b.name === 'string' ? b.name : '',
     cities: Array.isArray(b.cities) ? b.cities.filter(isInstanceCity) : [],
   }
+  if (typeof b.geocoderEnabled === 'boolean') {
+    instance.geocoderEnabled = b.geocoderEnabled
+  }
+  return instance
 }
 
 export const instanceQuery = queryOptions({

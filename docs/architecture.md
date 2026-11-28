@@ -511,10 +511,13 @@ erDiagram
 
 ### 3.7 地名搜索代理
 
-- `GET /api/osfm/geocode?q=…&city=…`：服务器请求 Photon 公共实例，失败时回退 Nominatim；结果限制在当前城市范围内。
-- 缓存：查询结果存在 SQLite 中，默认 30 天。
-- 限速：整个实例对 Nominatim 不超过 1 次/秒；单个成员的请求也限速；不做逐字补全（Nominatim 政策禁止），前端在用户停止输入后再发请求。
-- User-Agent 为 `OSFM/<版本>`，维护者可以在设置里补充联系方式（公共服务的使用政策要求可识别的来源）。
+- `GET /api/osfm/geocode?q=…&city=…`（`internal/geocode`，接口在 `internal/api/geocode.go`；需要登录）：服务器先请求 Photon（`bbox` 限当前城市），失败时（出错、超时、非 200、响应无法解析）回退 Nominatim（`viewbox` + `bounded=1`）；结果再按城市范围过滤，只返回 `[{name, label, lat, lon}]`，最多 10 条。`city` 必须是实例设置里的城市标识，`q` 为 1–200 个字符，否则 400 `invalid_request`。
+- 开关（M2-Q13）：默认开启，维护者在管理页可以关闭（`instance_settings.geocoder_enabled`）；关闭时接口返回 404 `geocoder_disabled`，成员的 `GET /api/osfm/instance` 中 `geocoderEnabled: false`，前端不显示搜索框。两个上游都失败时返回 503 `geocoder_unavailable`，前端提示"可以直接拖动地图打点"，不影响手动打点。
+- 上游地址默认是 komoot 的公共 Photon（`https://photon.komoot.io/api`）与 OpenStreetMap 基金会的 Nominatim（`https://nominatim.openstreetmap.org/search`），可由 `OSFM_GEOCODER_PHOTON_URL`、`OSFM_GEOCODER_NOMINATIM_URL` 改为自建实例（测试指向假上游）。上游地址只在服务器端，前端构建产物里没有。
+- 发给上游的只有搜索词、城市范围和 User-Agent：`OSFM/<版本> (+<项目地址>; <联系方式>)`，联系方式是维护者在设置里填的（只保留可打印 ASCII；公共服务的使用政策要求可识别的来源）。不转发成员的 cookie、地址、语言或其他请求头。每个上游请求超时 5 秒。
+- 缓存：只在内存中（LRU，最多 1000 条，保留 24 小时；M2-Q13：持久化的搜索历史本身是位置相关数据），键为规范化的搜索词与城市范围；失败不缓存。重启即清空。
+- 限速：整个实例对 Nominatim 的请求间隔至少 1 秒（排队最多等 3 秒，否则视为失败）；每个成员 10 次起、每 6 秒补 1 次（每分钟约 10 次，缓存命中也计数），超出时 429 `rate_limited`。不做逐字补全（Nominatim 政策禁止）：前端只在回车或点按钮时请求。
+- 日志：搜索词只在请求的查询串里，请求日志已去掉查询串（§3.9）；上游失败只记服务名与失败类型（net/http 的错误信息含请求地址，不原样记录）。
 - 吸附附近 POI（`B8`，P1）用同样的方式代理 Overpass。
 
 ### 3.8 导出、备份与联邦预留
@@ -668,9 +671,9 @@ erDiagram
 
 | 来源 | 内容 |
 | --- | --- |
-| 环境变量 `OSFM_*` | 监听地址 `OSFM_LISTEN`（默认 `127.0.0.1:8090`，`serve --http` 优先）、对外 URL `OSFM_PUBLIC_URL`（必须是 `https://`，主机为 `localhost`、`*.localhost` 或回环地址时可以是 `http://`：会话 cookie 带 `Secure`，见 §3.3；是公网主机名的 `https://` 时，另外发送 HSTS、会话 cookie 加 `__Host-` 前缀，见 §3.3、§4.7；passkey 的依赖方 ID 与允许的来源也由它得出，见 §3.3。生产部署应当设置它，主机名不能是 IP 地址，否则 passkey 不可用）、数据目录 `OSFM_DATA_DIR`（默认 `./data`，镜像中为 `/data`）、是否开启 PocketBase 管理后台 `OSFM_ADMIN_UI`（默认关闭）、管理后台的单独监听地址 `OSFM_ADMIN_LISTEN`（默认 `127.0.0.1:8091`，见 §5.4）、反向代理传递客户端地址的请求头 `OSFM_TRUSTED_PROXY_HEADERS`（逗号分隔，通常是 `X-Forwarded-For`；每次启动写入 PocketBase 的 `trustedProxy` 设置并取最右边的有效地址，限速按它计数，见 §3.1、§3.3；不设时保留管理后台里的值）；由 `internal/config` 读取和校验，启动时打印生效的配置 |
+| 环境变量 `OSFM_*` | 监听地址 `OSFM_LISTEN`（默认 `127.0.0.1:8090`，`serve --http` 优先）、对外 URL `OSFM_PUBLIC_URL`（必须是 `https://`，主机为 `localhost`、`*.localhost` 或回环地址时可以是 `http://`：会话 cookie 带 `Secure`，见 §3.3；是公网主机名的 `https://` 时，另外发送 HSTS、会话 cookie 加 `__Host-` 前缀，见 §3.3、§4.7；passkey 的依赖方 ID 与允许的来源也由它得出，见 §3.3。生产部署应当设置它，主机名不能是 IP 地址，否则 passkey 不可用）、数据目录 `OSFM_DATA_DIR`（默认 `./data`，镜像中为 `/data`）、是否开启 PocketBase 管理后台 `OSFM_ADMIN_UI`（默认关闭）、管理后台的单独监听地址 `OSFM_ADMIN_LISTEN`（默认 `127.0.0.1:8091`，见 §5.4）、反向代理传递客户端地址的请求头 `OSFM_TRUSTED_PROXY_HEADERS`（逗号分隔，通常是 `X-Forwarded-For`；每次启动写入 PocketBase 的 `trustedProxy` 设置并取最右边的有效地址，限速按它计数，见 §3.1、§3.3；不设时保留管理后台里的值）、地名搜索的上游地址 `OSFM_GEOCODER_PHOTON_URL`（默认 `https://photon.komoot.io/api`）与 `OSFM_GEOCODER_NOMINATIM_URL`（默认 `https://nominatim.openstreetmap.org/search`；`http://` 或 `https://`，可带查询参数，见 §3.7）；由 `internal/config` 读取和校验，启动时打印生效的配置 |
 | 首次启动向导（`G3`，§3.3） | 实例名称、第一个维护者（同样强制两步验证；需要服务器日志里的设置码）、关心的城市（显示名称、标识即底图文件名、范围）；底图文件本身仍由部署者用 `deploy/tiles.sh` 放进 `tiles/` |
-| 维护者设置页 | 举报阈值、冷静期天数、搜索服务的联系方式 |
+| 维护者设置页 | 举报阈值、冷静期天数、地名搜索的开关与联系方式 |
 
 ### 5.3 运行
 

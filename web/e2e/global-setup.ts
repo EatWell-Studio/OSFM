@@ -6,7 +6,9 @@
 //   features (support/shared.ts: sharedInstance(), inviteMember(), createPlace()). Each spec file adds its own members
 //   and data to it; none relies on what another spec file left.
 //
-// The returned function stops both servers and removes the data.
+// Both point their place search at a fake of the search services (support/geocoder.ts), never at the real ones.
+//
+// The returned function stops both servers and the fake, and removes the data.
 //
 // The binary is OSFM_E2E_BINARY; without it, the setup builds one with `go build` from the web app already built in
 // dist/app (pnpm run build), into node_modules/.cache/osfm-e2e. The server logs go to test-results/osfm-server.log and
@@ -24,6 +26,7 @@ import {
   sharedPortVariable,
   sharedStateVariable,
 } from './support/env.ts'
+import { geocoderEnv, geocoderVariable, startFakeGeocoder } from './support/geocoder.ts'
 import { startServer } from './support/server.ts'
 import { setUpSharedInstance } from './support/shared.ts'
 
@@ -75,14 +78,19 @@ export default async function globalSetup(config: FullConfig): Promise<() => Pro
   }
 
   try {
+    const geocoder = await startFakeGeocoder()
+    stops.push(geocoder.stop)
+    process.env[geocoderVariable] = geocoder.url
+    const extraEnv = geocoderEnv(geocoder)
+
     const dataDir = join(workDir, 'data')
-    const fresh = await startServer(bin, port, dataDir, join(outputDir, 'osfm-server.log'))
+    const fresh = await startServer(bin, port, dataDir, join(outputDir, 'osfm-server.log'), extraEnv)
     stops.push(fresh.stop)
     process.env[setupCodeVariable] = fresh.setupCode
     process.env[dataDirVariable] = dataDir
 
     const sharedDir = join(workDir, 'shared')
-    const shared = await startServer(bin, sharedPort, sharedDir, join(outputDir, 'osfm-server-shared.log'))
+    const shared = await startServer(bin, sharedPort, sharedDir, join(outputDir, 'osfm-server-shared.log'), extraEnv)
     stops.push(shared.stop)
     const state = await setUpSharedInstance(sharedPort, sharedDir, shared.setupCode)
     const stateFile = join(workDir, 'shared-instance.json')

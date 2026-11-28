@@ -58,6 +58,8 @@ func (c *Config) Prepare(pbDataDir string, logger *slog.Logger) (*Keys, error) {
 		slog.String("passkey_rp_id", rpID),
 		slog.String("passkey_origins", strings.Join(rpOrigins, " ")),
 		slog.String("trusted_proxy_headers", trustedProxy),
+		slog.String("geocoder_photon_url", c.GeocoderPhotonURL),
+		slog.String("geocoder_nominatim_url", c.GeocoderNominatimURL),
 	)
 
 	if err := c.EnsureDirs(); err != nil {

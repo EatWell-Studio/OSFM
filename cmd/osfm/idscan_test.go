@@ -17,6 +17,7 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/federation"
 	"github.com/EatWell-Studio/OSFM/internal/idscan"
 	"github.com/EatWell-Studio/OSFM/internal/store"
+	"github.com/EatWell-Studio/OSFM/internal/testapp"
 )
 
 // The probes of the internal ID scan, gathered from the per-feature files cmd/osfm/probes_<feature>_test.go, so that
@@ -151,12 +152,13 @@ func bootServed(t *testing.T, seed bool) (app core.App, cfg *config.Config, seed
 	r *router.Router[*core.RequestEvent]) {
 	t.Helper()
 	dir := t.TempDir()
-	cfg, err := config.Parse(func(name string) (string, bool) {
+	// The place search's upstream services at an address nothing listens on: no test reaches the public ones.
+	cfg, err := config.Parse(testapp.UnreachableSearch(func(name string) (string, bool) {
 		if name == config.EnvDataDir {
 			return dir, true
 		}
 		return "", false
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
