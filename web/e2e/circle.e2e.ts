@@ -390,7 +390,8 @@ test('the maintainer sees the members, without login names', async () => {
   await expect(rows.filter({ hasText: 'Test Alice' })).toContainText(text(t.methods, { methods: t.passwordTotp }))
   const bobRow = rows.filter({ hasText: 'Test Bob' })
   await expect(bobRow).toContainText(text(t.methods, { methods: text(t.passkeys_one, { count: 1 }) }))
-  await expect(bobRow).toContainText(t.cannotInvite)
+  // New members may invite after the cooling-off period (T034).
+  await expect(bobRow.getByRole('checkbox', { name: t.invites.permission, exact: true })).toBeChecked()
   expect(await page.locator('main').innerText()).not.toMatch(/test_(maintainer|alice|bob)/)
 })
 

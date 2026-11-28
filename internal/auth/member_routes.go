@@ -8,6 +8,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/EatWell-Studio/OSFM/internal/boundary"
+	"github.com/EatWell-Studio/OSFM/internal/domain"
+	"github.com/EatWell-Studio/OSFM/internal/settings"
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
@@ -27,18 +29,22 @@ const MembersPath = boundary.OSFMPrefix + "members"
 
 // MemberInfo is a member as the maintainers' list shows it. leftAt is null for a member who is still in the circle;
 // invitedBy is null for the first maintainer. pendingResetLink is the member's reset link that can still be used,
-// null when there is none.
+// null when there is none. inviteCooldownEndsAt is when the member's invite cooling-off period ends or ended
+// (domain.CooldownEnd, with the setting as it is now); null for maintainers, who may always invite. inviteCooldown is
+// true while that period runs.
 type MemberInfo struct {
-	UUID             string            `json:"uuid"`
-	DisplayName      string            `json:"displayName"`
-	Role             string            `json:"role"`
-	JoinedAt         time.Time         `json:"joinedAt"`
-	CanInvite        bool              `json:"canInvite"`
-	InvitedBy        *MemberRef        `json:"invitedBy"`
-	LeftAt           *time.Time        `json:"leftAt"`
-	Passkeys         int64             `json:"passkeys"`
-	PasswordTOTP     bool              `json:"passwordTotp"`
-	PendingResetLink *PendingResetLink `json:"pendingResetLink"`
+	UUID                 string            `json:"uuid"`
+	DisplayName          string            `json:"displayName"`
+	Role                 string            `json:"role"`
+	JoinedAt             time.Time         `json:"joinedAt"`
+	CanInvite            bool              `json:"canInvite"`
+	InviteCooldownEndsAt *time.Time        `json:"inviteCooldownEndsAt"`
+	InviteCooldown       bool              `json:"inviteCooldown"`
+	InvitedBy            *MemberRef        `json:"invitedBy"`
+	LeftAt               *time.Time        `json:"leftAt"`
+	Passkeys             int64             `json:"passkeys"`
+	PasswordTOTP         bool              `json:"passwordTotp"`
+	PendingResetLink     *PendingResetLink `json:"pendingResetLink"`
 }
 
 // PendingResetLink is a reset link that can still be used, as the member list shows it.
@@ -96,6 +102,11 @@ func ListMembers(app core.App) ([]MemberInfo, error) {
 		}
 	}
 
+	circle, err := settings.LoadCircle(app)
+	if err != nil {
+		return nil, err
+	}
+
 	t := now().UTC()
 	links, err := app.FindAllRecords(store.ResetLinks, dbx.HashExp{"used_at": "", "revoked_at": ""},
 		dbx.NewExp("expires_at > {:now}", dbx.Params{"now": dbTime(t)}))
@@ -130,6 +141,11 @@ func ListMembers(app core.App) ([]MemberInfo, error) {
 			LeftAt:       optionalTime(m, "left_at"),
 			Passkeys:     passkeys[m.Id],
 			PasswordTOTP: password[m.Id],
+		}
+		if !IsMaintainer(m) {
+			end := domain.CooldownEnd(InviterOf(m), circle.InviteCooldownDays)
+			info.InviteCooldownEndsAt = &end
+			info.InviteCooldown = t.Before(end)
 		}
 		// A link of a member who can no longer sign in cannot be used (findValidResetLink).
 		if CanSignIn(m) {

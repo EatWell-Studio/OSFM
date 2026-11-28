@@ -1,6 +1,7 @@
 // The fixed values of places, recommendations, reports and notices, in the order the app lists them. Their labels are
 // in the "common" namespace under the same names (common.attitude.must_try, …); locales test checks that every value
-// has one. The server accepts the same values (places and recommendations: migrations and internal/store).
+// has one. The server accepts the same values: its canonical lists are in internal/domain (and internal/store for the
+// report reasons), and a Go test there (TestEnumsMatchWebApp) fails when a list here differs from the server's.
 
 /** A member's verdict on a place (C2): one per recommendation, required. */
 export const attitudes = ['must_try', 'good', 'ok', 'avoid'] as const
@@ -14,7 +15,7 @@ export type TimeSlot = (typeof timeSlots)[number]
 export const precisions = ['exact', 'approx', 'area'] as const
 export type Precision = (typeof precisions)[number]
 
-/** The food categories (B5, H1): OpenStreetMap tag values, the same whitelist as store.PlaceCategories. */
+/** The food categories (B5, H1): OpenStreetMap tag values, the same whitelist as domain.PlaceCategories. */
 export const categories = [
   'restaurant',
   'fast_food',

@@ -1,3 +1,33 @@
 {
-  "title": "资料与化名"
+  "title": "资料与化名",
+  "loadError": "无法读取资料，请检查网络后重试。",
+  "displayName": "主名",
+  "displayNameHint": "你的推荐默认署这个名字，其他成员都能看到。1–64 个字符，不能和你的登录名相同，也不能和其他成员的名字重复。",
+  "pseudonym": "化名（可选）",
+  "pseudonymHint": "写推荐时可以选择用化名署名。其他成员看不出化名是谁，化名推荐也不显示外部链接；只有维护者在处理滥用时能查到。留空表示没有化名。",
+  "pseudonymHintInUse": "你有用化名署名的推荐：化名可以修改（这些推荐会显示新化名），但不能清空。",
+  "links": "外部链接",
+  "linksHint": "最多 {{max}} 条，必须是 https 地址，可以加一个标签。只显示在主名推荐的署名旁边，不经过验证。",
+  "linkURL": "链接 {{n}}",
+  "linkLabel": "链接 {{n}} 的标签（可选）",
+  "removeLink": "删除链接 {{n}}",
+  "addLink": "添加链接",
+  "loginNameNotice": "你的主名现在和登录名相同。登录名是登录用的，不应该给别人看，请改一个主名后保存。",
+  "save": "保存",
+  "working": "正在保存…",
+  "saved": "已保存。",
+  "errors": {
+    "nameInvalid": "名字需要 1–64 个字符，不能有控制字符。",
+    "nameIsLoginName": "不能用你的登录名。",
+    "nameTaken": "这个名字已经有人用了，请换一个。",
+    "pseudonymInUse": "你有用化名署名的推荐，化名可以修改，但不能清空。",
+    "linksInvalid": "外部链接最多 {{max}} 条，每条都必须是 https 地址；标签最多 64 个字符。",
+    "network": "无法保存，请检查网络后重试。"
+  },
+  "signatureLinks": {
+    "label_one": "{{count}} 个链接",
+    "label_other": "{{count}} 个链接",
+    "toggle_one": "{{name}} 的外部链接（{{count}} 个）",
+    "toggle_other": "{{name}} 的外部链接（{{count}} 个）"
+  }
 }

@@ -1,3 +1,33 @@
 {
-  "title": "Profile and pseudonym"
+  "title": "Profile and pseudonym",
+  "loadError": "Could not load your profile. Check your connection and try again.",
+  "displayName": "Main name",
+  "displayNameHint": "Your recommendations are signed with this name unless you choose otherwise; every member sees it. 1 to 64 characters, not your login name and not another member's name.",
+  "pseudonym": "Pseudonym (optional)",
+  "pseudonymHint": "When writing a recommendation you can sign it with your pseudonym. Other members cannot tell whose it is, and pseudonym recommendations show no external links; only maintainers can look it up when handling abuse. Leave it empty for none.",
+  "pseudonymHintInUse": "Some of your recommendations are signed with your pseudonym: you can change it (they will show the new one), but not remove it.",
+  "links": "External links",
+  "linksHint": "Up to {{max}} https links, each with an optional label. They are shown next to your main name only and are not verified.",
+  "linkURL": "Link {{n}}",
+  "linkLabel": "Label of link {{n}} (optional)",
+  "removeLink": "Remove link {{n}}",
+  "addLink": "Add a link",
+  "loginNameNotice": "Your main name is your login name. The login name is for signing in and should not be shown to anyone: choose another main name and save.",
+  "save": "Save",
+  "working": "Saving…",
+  "saved": "Saved.",
+  "errors": {
+    "nameInvalid": "A name has 1 to 64 characters and no control characters.",
+    "nameIsLoginName": "This is your login name.",
+    "nameTaken": "This name is taken. Choose another one.",
+    "pseudonymInUse": "Some of your recommendations are signed with your pseudonym: you can change it, but not remove it.",
+    "linksInvalid": "Up to {{max}} external links, each an https address; labels have at most 64 characters.",
+    "network": "Could not save. Check your connection and try again."
+  },
+  "signatureLinks": {
+    "label_one": "{{count}} link",
+    "label_other": "{{count}} links",
+    "toggle_one": "External link of {{name}}",
+    "toggle_other": "External links of {{name}} ({{count}})"
+  }
 }

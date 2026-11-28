@@ -1,8 +1,11 @@
-// Invites (D1, D2; docs/architecture.md §3.3). Maintainers create, list and revoke them; the registration page checks a
-// code before showing the form. Types are hand-written until they are generated from the server's structs
-// (auth.InviteInfo and friends).
+// Invites (D1, D2, D12; docs/architecture.md §3.3). Maintainers create, list and revoke them, and so do members once
+// their cooling-off period is over (their own invites only); the registration page checks a code before showing the
+// form. The invite types are hand-written until they are generated from the server's structs (auth.InviteInfo and
+// friends); the invite status is generated (api.InviteStatus).
 
+import type { InviteStatus } from '@/api/types.gen'
 import { apiJson } from '@/lib/api'
+import { postAuth } from '@/lib/authApi'
 import { registerPath } from '@/lib/next'
 
 export type InviteState = 'active' | 'used' | 'expired' | 'revoked'
@@ -27,7 +30,13 @@ export interface Invite {
 export const inviteDayChoices = [1, 3, 7, 14, 30] as const
 export const defaultInviteDays = 7
 
+/** The list of invites; also the prefix of the invite status, so that invalidating it refreshes both. */
 export const invitesQueryKey = ['invites'] as const
+export const inviteStatusQueryKey = ['invites', 'status'] as const
+
+/** The error codes of creating an invite (auth.CodeInviteNotAllowed, auth.CodeInviteLimitReached). */
+export const inviteNotAllowedCode = 'invite_not_allowed'
+export const inviteLimitReachedCode = 'invite_limit_reached'
 
 const states = new Set<string>(['active', 'used', 'expired', 'revoked'])
 
@@ -65,7 +74,7 @@ function field(body: unknown, name: string): unknown {
   return typeof body === 'object' && body !== null ? (body as Record<string, unknown>)[name] : undefined
 }
 
-/** GET /api/osfm/invites: every invite, newest first (maintainers only). */
+/** GET /api/osfm/invites: newest first; every invite for a maintainer, the member's own for a member. */
 export async function fetchInvites(): Promise<Invite[]> {
   const list = field(await apiJson('/invites'), 'invites')
   if (!Array.isArray(list) || !list.every(isInvite)) {
@@ -74,13 +83,12 @@ export async function fetchInvites(): Promise<Invite[]> {
   return list
 }
 
-/** POST /api/osfm/invites: a new invite and its code, which the server never shows again. */
+/**
+ * POST /api/osfm/invites: a new invite and its code, which the server never shows again. A member who may not invite
+ * gets an AuthApiError with inviteNotAllowedCode, one with too many active invites inviteLimitReachedCode.
+ */
 export async function createInvite(days: number): Promise<{ invite: Invite; code: string }> {
-  const body = await apiJson('/invites', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ days }),
-  })
+  const body = await postAuth('/invites', { days })
   const invite = field(body, 'invite')
   const code = field(body, 'code')
   if (!isInvite(invite) || typeof code !== 'string') {
@@ -97,6 +105,37 @@ export async function revokeInvite(uuid: string): Promise<Invite> {
     throw new Error(`${path}: unexpected response`)
   }
   return invite
+}
+
+function isNullableTime(v: unknown): v is string | null {
+  return v === null || (typeof v === 'string' && !Number.isNaN(Date.parse(v)))
+}
+
+/** GET /api/osfm/me/invite-status: whether the signed-in member may invite now, and why not. */
+export async function fetchInviteStatus(): Promise<InviteStatus> {
+  const body = await apiJson('/me/invite-status')
+  const allowed = field(body, 'allowed')
+  const reason = field(body, 'reason')
+  const cooldownEndsAt = field(body, 'cooldownEndsAt')
+  const activeInvites = field(body, 'activeInvites')
+  const maxActiveInvites = field(body, 'maxActiveInvites')
+  if (
+    typeof allowed !== 'boolean' ||
+    typeof reason !== 'string' ||
+    !isNullableTime(cooldownEndsAt) ||
+    typeof activeInvites !== 'number' ||
+    (maxActiveInvites !== null && typeof maxActiveInvites !== 'number')
+  ) {
+    throw new Error('/me/invite-status: unexpected response')
+  }
+  return { allowed, reason, cooldownEndsAt, activeInvites, maxActiveInvites }
+}
+
+const dayMs = 24 * 60 * 60 * 1000
+
+/** The whole days left until end, counting a started day as a day; 0 once end has passed. */
+export function daysLeft(end: string, now: number = Date.now()): number {
+  return Math.max(0, Math.ceil((Date.parse(end) - now) / dayMs))
 }
 
 /**

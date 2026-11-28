@@ -3,18 +3,22 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ShownOnceLink } from '@/components/ShownOnceLink'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { credentialsQueryKey, errorCode, fetchCredentials } from '@/credentials/api'
 import { credentialErrorMessage } from '@/credentials/messages'
 import { useStepUp } from '@/credentials/useStepUp'
 import { useSession } from '@/session/useSession'
-import { fetchMembers, type MemberInfo, membersQueryKey } from './membersApi'
+import { invitesQueryKey } from '@/invites/invites'
+import { fetchMembers, type MemberInfo, membersQueryKey, openInviteEarly, setInvitePermission } from './membersApi'
 import { createResetLink, resetLinksQueryKey, resetLinkUrl } from './resetLinkApi'
 
 /**
  * The member list (maintainers only): who is in the circle, their role, when they joined and who invited them, whether
  * they may invite, how they can sign in (counts, nothing about the credentials) and whether a reset link is waiting
  * for them; members who left are listed separately. No login names. A reset link (D5) is created from a member's row:
- * it needs a recent re-verification, since it hands over the account, and is shown once with a copy button.
+ * it needs a recent re-verification, since it hands over the account, and is shown once with a copy button. Each row
+ * of a member who is not a maintainer also switches their invite permission and, during their cooling-off period,
+ * opens inviting early (D6, D12).
  */
 export function Members() {
   const { t } = useTranslation(['members', 'common'])
@@ -51,6 +55,25 @@ export function Members() {
           setError(credentialErrorMessage(err))
       }
     },
+  })
+
+  const inviteRightsDone = {
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: membersQueryKey })
+      void queryClient.invalidateQueries({ queryKey: invitesQueryKey })
+    },
+    onError: () => {
+      setError(t('invites.error'))
+    },
+  }
+  const permission = useMutation({
+    mutationFn: ({ member, canInvite }: { member: MemberInfo; canInvite: boolean }) =>
+      setInvitePermission(member.uuid, canInvite),
+    ...inviteRightsDone,
+  })
+  const early = useMutation({
+    mutationFn: (member: MemberInfo) => openInviteEarly(member.uuid),
+    ...inviteRightsDone,
   })
 
   const createFor = (member: MemberInfo) => {
@@ -110,6 +133,18 @@ export function Members() {
               onCreateResetLink={() => {
                 createFor(member)
               }}
+              invitePending={
+                (permission.isPending && permission.variables.member.uuid === member.uuid) ||
+                (early.isPending && early.variables.uuid === member.uuid)
+              }
+              onSetInvitePermission={(canInvite) => {
+                setError(null)
+                permission.mutate({ member, canInvite })
+              }}
+              onOpenInviteEarly={() => {
+                setError(null)
+                early.mutate(member)
+              }}
             />
           ))}
         </ul>
@@ -133,11 +168,17 @@ function MemberRow({
   self,
   creating,
   onCreateResetLink,
+  invitePending = false,
+  onSetInvitePermission,
+  onOpenInviteEarly,
 }: {
   member: MemberInfo
   self: boolean
   creating: boolean
   onCreateResetLink?: () => void
+  invitePending?: boolean
+  onSetInvitePermission?: (canInvite: boolean) => void
+  onOpenInviteEarly?: () => void
 }) {
   const { t, i18n } = useTranslation(['members', 'common'])
   const day = (iso: string) => new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium' }).format(new Date(iso))
@@ -174,12 +215,76 @@ function MemberRow({
         {t('methods', {
           methods: methods.length > 0 ? methods.join(t('separator')) : t('noMethods'),
         })}
-        {' · '}
-        {member.canInvite ? t('canInvite') : t('cannotInvite')}
+        {!onSetInvitePermission && (
+          <>
+            {' · '}
+            {member.role === 'maintainer' || member.canInvite ? t('canInvite') : t('cannotInvite')}
+          </>
+        )}
       </span>
+      {onSetInvitePermission && (
+        <InviteRights
+          member={member}
+          pending={invitePending}
+          onSetPermission={onSetInvitePermission}
+          onOpenEarly={onOpenInviteEarly}
+        />
+      )}
       {member.pendingResetLink && (
         <span>{t('pendingReset', { date: dateTime(member.pendingResetLink.expiresAt) })}</span>
       )}
     </li>
+  )
+}
+
+/**
+ * A member's invite rights on their row: maintainers may always invite; for a member, the permission as a checkbox
+ * and, while it is on and the cooling-off period runs, its end and "open early".
+ */
+function InviteRights({
+  member,
+  pending,
+  onSetPermission,
+  onOpenEarly,
+}: {
+  member: MemberInfo
+  pending: boolean
+  onSetPermission: (canInvite: boolean) => void
+  onOpenEarly?: () => void
+}) {
+  const { t, i18n } = useTranslation('members')
+  const id = useId()
+  if (member.role === 'maintainer' || member.inviteCooldownEndsAt === null) {
+    return <span className="text-muted-foreground">{t('invites.maintainer')}</span>
+  }
+  const end = member.inviteCooldownEndsAt
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={id}
+          checked={member.canInvite}
+          disabled={pending}
+          onCheckedChange={(checked) => {
+            onSetPermission(checked === true)
+          }}
+        />
+        <label htmlFor={id}>{t('invites.permission')}</label>
+      </div>
+      {member.canInvite && member.inviteCooldown && (
+        <>
+          <span className="text-muted-foreground">
+            {t('invites.cooldownUntil', {
+              date: new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium' }).format(new Date(end)),
+            })}
+          </span>
+          {onOpenEarly && (
+            <Button variant="outline" size="sm" disabled={pending} onClick={onOpenEarly}>
+              {t('invites.openEarly')}
+            </Button>
+          )}
+        </>
+      )}
+    </div>
   )
 }

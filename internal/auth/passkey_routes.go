@@ -34,8 +34,8 @@ const (
 	CodePasskeysUnavailable = "passkeys_unavailable"
 )
 
-// PasskeyRegisterOptionsRequest is the body of POST [PasskeyRegisterOptionsPath]. displayName may be empty: the login
-// name is used then.
+// PasskeyRegisterOptionsRequest is the body of POST [PasskeyRegisterOptionsPath]. displayName is required, with the
+// rules of [RegisterPasswordStartRequest].
 type PasskeyRegisterOptionsRequest struct {
 	Invite      string `json:"invite"`
 	LoginName   string `json:"loginName"`

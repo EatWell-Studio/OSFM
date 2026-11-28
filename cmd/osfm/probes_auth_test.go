@@ -19,19 +19,25 @@ func init() {
 			"POST " + auth.LogoutPath: {
 				{Method: http.MethodPost, Path: auth.LogoutPath, Header: csrfHeader, Status: http.StatusNoContent},
 			},
-			// Maintainers only (maintainerRoutes): a member gets 403.
+			// Maintainers see every invite, members their own (T034): the seeded member has none.
 			"GET " + auth.InvitesPath: {
 				{Path: auth.InvitesPath, Status: http.StatusOK},
 			},
+			// The seeded member may not invite (permission off): 403 invite_not_allowed.
 			"POST " + auth.InvitesPath: {
-				{Method: http.MethodPost, Path: auth.InvitesPath, Body: `{"days":7}`, Header: csrfHeader, Status: http.StatusCreated},
-				{Method: http.MethodPost, Path: auth.InvitesPath, Header: csrfHeader, Status: http.StatusCreated},
+				{Method: http.MethodPost, Path: auth.InvitesPath, Body: `{"days":7}`, Header: csrfHeader, Status: http.StatusCreated,
+					MemberStatus: http.StatusForbidden},
+				{Method: http.MethodPost, Path: auth.InvitesPath, Header: csrfHeader, Status: http.StatusCreated,
+					MemberStatus: http.StatusForbidden},
 				{Method: http.MethodPost, Path: auth.InvitesPath, Body: `{"days":99}`, Header: csrfHeader, Status: http.StatusBadRequest},
 			},
+			// The seeded invites are the maintainer's: another member's invite is 404 for a member.
 			"POST " + auth.InviteRevokePath: {
-				// Revoking is idempotent, so every identity sees the same status.
-				{Method: http.MethodPost, Path: revokePath(idscan.ExpiredInviteUUID), Header: csrfHeader, Status: http.StatusOK},
-				{Method: http.MethodPost, Path: revokePath(idscan.UsedInviteUUID), Header: csrfHeader, Status: http.StatusConflict},
+				// Revoking is idempotent, so the maintainer sees the same status every time.
+				{Method: http.MethodPost, Path: revokePath(idscan.ExpiredInviteUUID), Header: csrfHeader, Status: http.StatusOK,
+					MemberStatus: http.StatusNotFound},
+				{Method: http.MethodPost, Path: revokePath(idscan.UsedInviteUUID), Header: csrfHeader, Status: http.StatusConflict,
+					MemberStatus: http.StatusNotFound},
 				{Method: http.MethodPost, Path: revokePath("0190a1b2-0000-7000-8000-00000000ffff"), Header: csrfHeader,
 					Status: http.StatusNotFound},
 				{Method: http.MethodPost, Path: revokePath("x"), Header: csrfHeader, Status: http.StatusNotFound},
@@ -50,11 +56,11 @@ func init() {
 			// in internal/auth).
 			"POST " + auth.RegisterPasswordStartPath: {
 				{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Status: http.StatusOK,
-					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_scan","password":"test scan password"}`},
+					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_scan","displayName":"Test Scan","password":"test scan password"}`},
 				{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Status: http.StatusConflict,
-					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member","password":"test scan password"}`},
+					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member","displayName":"Test Scan","password":"test scan password"}`},
 				{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Status: http.StatusForbidden,
-					Body: `{"invite":"x","loginName":"test_scan","password":"test scan password"}`},
+					Body: `{"invite":"x","loginName":"test_scan","displayName":"Test Scan","password":"test scan password"}`},
 				{Method: http.MethodPost, Path: auth.RegisterPasswordStartPath, Header: csrfHeader, Body: `{`,
 					Status: http.StatusBadRequest},
 			},
@@ -68,7 +74,7 @@ func init() {
 			// step refuses (the same answer as for a wrong password); tickets are sealed like enrolments.
 			"POST " + auth.SignInPasswordPath: {
 				{Method: http.MethodPost, Path: auth.SignInPasswordPath, Header: csrfHeader, Status: http.StatusUnauthorized,
-					Body: `{"loginName":"test_member","password":"test scan password"}`},
+					Body: `{"loginName":"test_member","displayName":"Test Scan","password":"test scan password"}`},
 				{Method: http.MethodPost, Path: auth.SignInPasswordPath, Header: csrfHeader, Body: `{`,
 					Status: http.StatusBadRequest},
 			},
@@ -86,9 +92,9 @@ func init() {
 				{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusOK,
 					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_probe","displayName":"Test Probe"}`},
 				{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusConflict,
-					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member"}`},
+					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"test_member","displayName":"Test Probe"}`},
 				{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusForbidden,
-					Body: `{"invite":"x","loginName":"test_probe"}`},
+					Body: `{"invite":"x","loginName":"test_probe","displayName":"Test Probe"}`},
 				{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusBadRequest,
 					Body: `{"invite":"` + idscan.InviteCode + `","loginName":"x"}`},
 				{Method: http.MethodPost, Path: auth.PasskeyRegisterOptionsPath, Header: csrfHeader, Status: http.StatusBadRequest,
@@ -121,7 +127,7 @@ func init() {
 			},
 			"POST " + auth.SetupPasswordStartPath: {
 				{Method: http.MethodPost, Path: auth.SetupPasswordStartPath, Header: csrfHeader, Status: http.StatusNotFound,
-					Body: `{"setupCode":"0000-0000-0000-0000","loginName":"test_scan","password":"test scan password"}`},
+					Body: `{"setupCode":"0000-0000-0000-0000","loginName":"test_scan","displayName":"Test Scan","password":"test scan password"}`},
 			},
 			"POST " + auth.SetupPasswordConfirmPath: {
 				{Method: http.MethodPost, Path: auth.SetupPasswordConfirmPath, Header: csrfHeader, Status: http.StatusNotFound,
@@ -129,7 +135,7 @@ func init() {
 			},
 			"POST " + auth.SetupPasskeyOptionsPath: {
 				{Method: http.MethodPost, Path: auth.SetupPasskeyOptionsPath, Header: csrfHeader, Status: http.StatusNotFound,
-					Body: `{"setupCode":"0000-0000-0000-0000","loginName":"test_probe"}`},
+					Body: `{"setupCode":"0000-0000-0000-0000","loginName":"test_probe","displayName":"Test Probe"}`},
 			},
 			"POST " + auth.SetupPasskeyPath: {
 				{Method: http.MethodPost, Path: auth.SetupPasskeyPath, Header: csrfHeader, Status: http.StatusNotFound,
@@ -326,9 +332,6 @@ func init() {
 			"POST " + auth.ResetPasskeyPath,
 		},
 		maintainerOnly: []string{
-			"GET " + auth.InvitesPath,
-			"POST " + auth.InvitesPath,
-			"POST " + auth.InviteRevokePath,
 			"POST " + auth.SetupCompletePath,
 			"GET " + auth.MembersPath,
 			"GET " + auth.ResetLinksPath,

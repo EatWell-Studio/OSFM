@@ -238,8 +238,22 @@ describe('passkey registration', () => {
     })
     render(<PasskeyRegistration entitlement={{ invite: 'test-code' }} onDone={vi.fn()} />)
     await userEvent.type(screen.getByLabelText(zhCN.auth.passkey.register.loginName), 'test_taken')
+    await userEvent.type(screen.getByLabelText(zhCN.auth.passkey.register.displayName), 'Test Taken')
     await userEvent.click(screen.getByRole('button', { name: zhCN.auth.passkey.register.submit }))
     expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.auth.passkey.register.errors.loginNameTaken)
     expect(screen.getByLabelText(zhCN.auth.passkey.register.loginName)).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('shows a taken display name at the display name, without saying whose it is', async () => {
+    stubWebAuthn({})
+    stubFetch({
+      '/api/osfm/passkey/register/options': () => Response.json({ status: 409, code: 'name_taken' }, { status: 409 }),
+    })
+    render(<PasskeyRegistration entitlement={{ invite: 'test-code' }} onDone={vi.fn()} />)
+    await userEvent.type(screen.getByLabelText(zhCN.auth.passkey.register.loginName), 'test_new')
+    await userEvent.type(screen.getByLabelText(zhCN.auth.passkey.register.displayName), 'Test Taken')
+    await userEvent.click(screen.getByRole('button', { name: zhCN.auth.passkey.register.submit }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(zhCN.auth.passkey.register.errors.nameTaken)
+    expect(screen.getByLabelText(zhCN.auth.passkey.register.displayName)).toHaveAttribute('aria-invalid', 'true')
   })
 })
