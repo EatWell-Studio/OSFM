@@ -88,7 +88,7 @@ func TestBackupAndRestore(t *testing.T) {
 	dir := t.TempDir()
 	cfg := configFor(t, dir)
 	var out bytes.Buffer
-	if err := runRestore(cfg, cfg.PBDataDir(), path, false, &out); err != nil {
+	if err := runRestore(cfg, cfg.PBDataDir(), path, nil, false, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "restored the backup") {
@@ -290,7 +290,7 @@ func TestRestoreRefuses(t *testing.T) {
 	path := createBackup(t, a)
 
 	// The running instance holds the lock on its data directory.
-	err := runRestore(a.Config, a.Config.PBDataDir(), path, true, io.Discard)
+	err := runRestore(a.Config, a.Config.PBDataDir(), path, nil, true, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "the instance is running") {
 		t.Errorf("restore into the running instance: %v", err)
 	}
@@ -298,10 +298,10 @@ func TestRestoreRefuses(t *testing.T) {
 	// A stopped instance's data directory: refused without --force, moved aside with it.
 	dir := t.TempDir()
 	cfg := configFor(t, dir)
-	if err := runRestore(cfg, cfg.PBDataDir(), path, false, io.Discard); err != nil {
+	if err := runRestore(cfg, cfg.PBDataDir(), path, nil, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if err := runRestore(cfg, cfg.PBDataDir(), path, false, io.Discard); !errors.Is(err, backup.ErrNotEmpty) {
+	if err := runRestore(cfg, cfg.PBDataDir(), path, nil, false, io.Discard); !errors.Is(err, backup.ErrNotEmpty) {
 		t.Errorf("restore into a data directory with an instance: %v", err)
 	}
 	// The backup is in the restored pb_data/backups, as after restoring one made on the same server.
@@ -313,7 +313,7 @@ func TestRestoreRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := runRestore(cfg, cfg.PBDataDir(), inside, true, &out); err != nil {
+	if err := runRestore(cfg, cfg.PBDataDir(), inside, nil, true, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), ".before-restore-") {
@@ -322,8 +322,24 @@ func TestRestoreRefuses(t *testing.T) {
 	if _, err := os.Stat(inside); err != nil {
 		t.Errorf("pb_data/backups did not move into the restored pb_data: %v", err)
 	}
-	if err := runRestore(cfg, cfg.PBDataDir(), filepath.Join(dir, "missing.zip"), true, io.Discard); err == nil {
+	if err := runRestore(cfg, cfg.PBDataDir(), filepath.Join(dir, "missing.zip"), nil, true, io.Discard); err == nil {
 		t.Error("restore of a missing file succeeded")
+	}
+	// From the standard input, as into a container.
+	in, err := os.Open(path) // #nosec G304 -- a test directory
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = in.Close() }()
+	other := configFor(t, t.TempDir())
+	if err := runRestore(other, other.PBDataDir(), "-", in, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.ReadKeys(other.SecretsDir()); err != nil {
+		t.Errorf("keys restored from the standard input: %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(other.DataDir, ".restore-*")); len(left) != 0 {
+		t.Errorf("left behind: %v", left)
 	}
 }
 

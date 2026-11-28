@@ -95,7 +95,7 @@ func TestRestoreOlderBackup(t *testing.T) {
 
 	dir := t.TempDir()
 	cfg := configFor(t, dir)
-	if err := runRestore(cfg, cfg.PBDataDir(), path, false, io.Discard); err != nil {
+	if err := runRestore(cfg, cfg.PBDataDir(), path, nil, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	b := testapp.Start(t, testapp.Options{Bind: bind, DataDir: dir})

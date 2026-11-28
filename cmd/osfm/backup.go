@@ -100,12 +100,13 @@ func newRestoreCommand(app core.App, cfg *config.Config) *cobra.Command {
 			"stopped. The backup is checked completely before anything changes. A data directory that already holds " +
 			"an instance is refused unless --force is given; then its pb_data and secrets are renamed to " +
 			"<name>.before-restore-<time> (pb_data/backups moves into the restored pb_data). The next start applies " +
-			"the migrations of this version, as after an upgrade.",
+			"the migrations of this version, as after an upgrade. With \"-\" as the file, the backup is read from the " +
+			"standard input (for a container that cannot read the file directly).",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		Annotations:  map[string]string{noBootstrap: "true"},
 		RunE: func(c *cobra.Command, args []string) error {
-			return runRestore(cfg, app.DataDir(), args[0], force, c.OutOrStdout())
+			return runRestore(cfg, app.DataDir(), args[0], c.InOrStdin(), force, c.OutOrStdout())
 		},
 	}
 	c.Flags().BoolVar(&force, "force", false,
@@ -113,10 +114,12 @@ func newRestoreCommand(app core.App, cfg *config.Config) *cobra.Command {
 	return c
 }
 
-// runRestore restores the backup file into the data directory of cfg with pb_data at pbDataDir.
-func runRestore(cfg *config.Config, pbDataDir, file string, force bool, out io.Writer) error {
-	if _, err := os.Stat(file); err != nil {
-		return fmt.Errorf("restore: %w", err)
+// runRestore restores the backup file ("-": read from stdin) into the data directory of cfg with pb_data at pbDataDir.
+func runRestore(cfg *config.Config, pbDataDir, file string, stdin io.Reader, force bool, out io.Writer) error {
+	if file != "-" {
+		if _, err := os.Stat(file); err != nil {
+			return fmt.Errorf("restore: %w", err)
+		}
 	}
 	lock, err := cfg.LockDataDir(true)
 	if errors.Is(err, config.ErrDataDirLocked) {
@@ -128,6 +131,22 @@ func runRestore(cfg *config.Config, pbDataDir, file string, force bool, out io.W
 	}
 	defer lock.Release()
 
+	if file == "-" {
+		// A zip is read from its end: the standard input goes to a file in the data directory first (mode 0600).
+		f, err := os.CreateTemp(cfg.DataDir, ".restore-*.zip")
+		if err != nil {
+			return fmt.Errorf("restore: %w", err)
+		}
+		defer func() { _ = os.Remove(f.Name()) }()
+		_, err = io.Copy(f, stdin)
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			return fmt.Errorf("restore: read the standard input: %w", err)
+		}
+		file = f.Name()
+	}
 	r, err := backup.Restore(file, backup.Target{PBDataDir: pbDataDir, SecretsDir: cfg.SecretsDir()},
 		backup.RestoreOptions{Force: force})
 	if err != nil {

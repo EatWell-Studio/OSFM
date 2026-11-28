@@ -257,22 +257,80 @@ ssh -L 8091:127.0.0.1:8091 you@food.example.org
 
 Everything that matters is in the data directory:
 
-| Path                       | Content                                                                                                                                                                   | If it is lost                                                                                                                                                                                                                                                                                                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pb_data/`                 | The SQLite databases: `data.db` (members, credentials, invites, settings, audit log, …) and `auxiliary.db` (request logs only); `backups/` with the pre-migration backups | Everything the circle has entered                                                                                                                                                                                                                                                                                                                                  |
-| `secrets/master.key`       | 32-byte key (AES-256-GCM). Members' TOTP secrets are stored encrypted with it; pending password registrations and sign-in tickets are sealed with it                      | The database alone is useless for TOTP: no member can sign in with their authenticator app any more. Passkeys and recovery codes do not depend on the key (they are public keys and hashes), so members can still use them, then set up a new authenticator; others need a reset link from a maintainer _(not yet tested)_. Do not count on this: back up the key. |
-| `secrets/instance_ed25519` | The instance's signing key; its public key is published in `/.well-known/osfm.json`, reserved for exchanging data between instances later                                 | The instance gets a new identity                                                                                                                                                                                                                                                                                                                                   |
-| `tiles/`                   | The basemaps                                                                                                                                                              | Can be extracted again with `deploy/tiles.sh` (from a newer build)                                                                                                                                                                                                                                                                                                 |
+| Path                       | Content                                                                                                                                                                                      | If it is lost                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pb_data/`                 | The SQLite databases: `data.db` (members, credentials, invites, settings, audit log, …) and `auxiliary.db` (request logs only); `backups/` with OSFM's backups and the pre-migration backups | Everything the circle has entered                                                                                                                                                                                                                                                                                                                                  |
+| `secrets/master.key`       | 32-byte key (AES-256-GCM). Members' TOTP secrets are stored encrypted with it; pending password registrations and sign-in tickets are sealed with it                                         | The database alone is useless for TOTP: no member can sign in with their authenticator app any more. Passkeys and recovery codes do not depend on the key (they are public keys and hashes), so members can still use them, then set up a new authenticator; others need a reset link from a maintainer _(not yet tested)_. Do not count on this: back up the key. |
+| `secrets/instance_ed25519` | The instance's signing key; its public key is published in `/.well-known/osfm.json`, reserved for exchanging data between instances later                                                    | The instance gets a new identity                                                                                                                                                                                                                                                                                                                                   |
+| `tiles/`                   | The basemaps                                                                                                                                                                                 | Can be extracted again with `deploy/tiles.sh` (from a newer build)                                                                                                                                                                                                                                                                                                 |
 
 `secrets/setup_code` exists only until the first maintainer is created and need not be backed up.
 
-**Always back up `pb_data/` and `secrets/` together, and restore them together.** A database restored next to a newly generated key loses all TOTP secrets: when OSFM starts with an existing database but has to generate a key, it logs `A NEW MASTER KEY WAS GENERATED FOR EXISTING DATA` (or the same for the signing key). Stop it and put the right key back. Keep the backups somewhere else than the server, and treat them as secret: `secrets/` decrypts the TOTP secrets in the database.
+**Always back up `pb_data/` and `secrets/` together, and restore them together.** A database restored next to a newly generated key loses all TOTP secrets: when OSFM starts with an existing database but has to generate a key, it logs `A NEW MASTER KEY WAS GENERATED FOR EXISTING DATA` (or the same for the signing key). Stop it and put the right key back. The backups below always contain both.
 
-A one-click backup in the app (database, GeoJSON export of the places and recommendations, and the keys) is planned but not available yet.
+**A backup is as secret as the keys.** It contains `secrets/master.key`, so whoever has the file can decrypt every member's TOTP secret, besides reading the whole database (private and hidden recommendations, the pseudonym of every member). Backup files are created with mode `0600`. Keep copies somewhere else than the server (encrypted, for example with `age` or `gpg`), never in a group chat or a public file share, and delete old copies you no longer need.
 
-### How
+### Backups with OSFM
 
-SQLite keeps recent changes in a write-ahead log next to the database (`-wal` files), so copying the files of a running instance can give an inconsistent copy. Either stop OSFM, or copy the database with SQLite's own tools.
+A backup is one zip file, `osfm_<UTC time>.zip`:
+
+| Entry                                            | Content                                                                                                                                                                       |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data.db`, `auxiliary.db`, other files           | `pb_data/` in PocketBase's backup layout: consistent copies of the databases (made with SQLite's `VACUUM INTO`, so the instance can keep running), without `pb_data/backups/` |
+| `osfm/secrets/master.key`, `instance_ed25519`    | The two keys from `secrets/`                                                                                                                                                  |
+| `osfm/places.geojson`, `recommendations.geojson` | The circle's layers, as the per-layer export writes them ([data-format.md](data-format.md)), to read without OSFM; a restore does not need them                               |
+| `osfm/manifest.json`                             | Format (`osfm-backup/1`), time, OSFM version, newest database migration, and the size and SHA-256 of every other file                                                         |
+
+**From the admin page**: _Admin → Backups_ creates a backup in `pb_data/backups/` and lists the backups there (also the pre-migration ones, see [Upgrades](#upgrades)), to download or delete. Creating, downloading and deleting ask the maintainer to confirm it is them first, and each is recorded in the audit log. A backup on the server's disk is lost with the disk: download one now and then, or copy them off the server.
+
+**On the command line**, while the instance runs or while it is stopped:
+
+```bash
+# Docker Compose: into pb_data/backups in the volume (listed on the admin page) …
+docker compose exec osfm osfm backup
+# … or straight to a file on the host
+(umask 077 && docker compose exec -T osfm osfm backup --out - > osfm-$(date -u +%Y%m%dT%H%M%SZ).zip)
+
+# systemd
+sudo -u osfm env OSFM_DATA_DIR=/var/lib/osfm osfm backup                          # into pb_data/backups
+sudo -u osfm env OSFM_DATA_DIR=/var/lib/osfm osfm backup --out /path/to/dir    # a new file, or into a directory
+```
+
+Use the same `OSFM_DATA_DIR` as the service (the container image sets it). A backup needs free space in the data directory for a temporary copy of the database, besides the zip. Memory use stays low however large the database is _(about 40 MB for a 1 GB database on a development machine; not yet measured on a 2-core ARM board)_.
+
+For regular backups, run the command from cron or a systemd timer and copy the file elsewhere; OSFM does not prune `pb_data/backups/`.
+
+### Restore
+
+`osfm restore` puts the database and the keys of a backup back into the data directory. **The instance must be stopped**: the command refuses to run while it is (OSFM holds a lock on `osfm.lock` in the data directory while it runs; this does not work across machines on a shared network file system). It checks the whole backup first (manifest, checksums, keys, database) and changes nothing if anything is wrong. A data directory that already holds an instance is refused unless `--force` is given; then its `pb_data/` and `secrets/` are renamed to `pb_data.before-restore-<time>` and `secrets.before-restore-<time>` (not deleted: remove them once the restored instance works), and `pb_data/backups/` moves into the restored `pb_data/`. `tiles/` is left as it is.
+
+```bash
+# Docker Compose: the backup is read from the standard input, so the container's user need not be able to read the file
+docker compose stop osfm
+docker compose run --rm -T osfm restore --force - < osfm_20261201030000.zip
+docker compose start osfm
+# a backup already in the volume: docker compose run --rm osfm restore --force /data/pb_data/backups/osfm_20261201030000.zip
+
+# systemd
+sudo systemctl stop osfm
+sudo -u osfm env OSFM_DATA_DIR=/var/lib/osfm osfm restore --force /path/to/osfm_20261201030000.zip
+sudo systemctl start osfm
+```
+
+Run it as the user the instance runs as (the image's user 65532, as `docker compose run` does; `osfm` for systemd), so that the restored files have the right owner. A backup made by an older version of OSFM restores the same way, and the next start migrates it as an upgrade would (with a pre-migration backup first). A backup made by a newer version is refused: install that version or a later one first.
+
+**Test a backup before you need it**, in another directory or on another machine:
+
+```bash
+OSFM_DATA_DIR=$PWD/restore-test ./osfm restore osfm_20261201030000.zip
+OSFM_DATA_DIR=$PWD/restore-test OSFM_LISTEN=127.0.0.1:18090 ./osfm serve
+```
+
+The log must not show `A NEW MASTER KEY WAS GENERATED FOR EXISTING DATA`. Then open `http://localhost:18090` and sign in with a password and authenticator app: that proves the key matches the database. (Passkeys only work at the instance's own host name, so they cannot be tested on such a copy.) Stop the test instance and delete `restore-test/` afterwards: it is a full copy of the instance, keys included.
+
+### Manual backups
+
+Without OSFM's command, copy the files yourself. SQLite keeps recent changes in a write-ahead log next to the database (`-wal` files), so copying the files of a running instance can give an inconsistent copy. Either stop OSFM, or copy the database with SQLite's own tools.
 
 **Stopped (simplest)**: a few seconds of downtime _(not yet verified on a server)_.
 
@@ -300,24 +358,13 @@ sudo cp -a /var/lib/osfm/secrets /root/osfm-backup/
 
 For the Docker volume, the files are under the volume's mount point on the host (`docker volume inspect osfm_osfm-data`).
 
-**PocketBase's backups**: with the [admin UI](#admin-ui) turned on, its _Backups_ settings page creates, downloads and restores zip archives of `pb_data/` (stored in `pb_data/backups/`), and can create them on a schedule _(not yet verified with OSFM)_. They do **not** include `secrets/`; back that up separately. The pre-migration backups described under [Upgrades](#upgrades) appear in the same list.
+**PocketBase's backups**: with the [admin UI](#admin-ui) turned on, its _Backups_ settings page creates, downloads and restores zip archives of `pb_data/` (stored in `pb_data/backups/`), and can create them on a schedule _(not yet verified with OSFM)_. They do **not** include `secrets/`; back that up separately. The pre-migration backups and OSFM's backups appear in the same list. Restore OSFM's backups with `osfm restore`, not there: PocketBase would put the database back but also copy `osfm/` (the keys) into `pb_data/`.
 
-### Restore, and test it
-
-To restore: stop OSFM, replace `pb_data/` and `secrets/` in the data directory with the ones from the backup (with the right owner: user 65532 for the image, `osfm` for the systemd unit; `secrets/` mode 0700, the key files 0600: OSFM refuses to start with keys readable by others), and start it. For a copy made with `VACUUM INTO`, put it in place as `pb_data/data.db` and remove any old `data.db-wal` and `data.db-shm` files.
-
-Test a backup before you need it, on another machine or in another directory _(not yet verified)_:
-
-```bash
-mkdir restore-test && tar -xzf osfm-20261201T030000Z.tar.gz -C restore-test
-OSFM_DATA_DIR=$PWD/restore-test OSFM_LISTEN=127.0.0.1:18090 ./osfm serve
-```
-
-The log must not show `A NEW MASTER KEY WAS GENERATED FOR EXISTING DATA`. Then open `http://localhost:18090` and sign in with a password and authenticator app: that proves the key matches the database. (Passkeys only work at the instance's own host name, so they cannot be tested on such a copy.)
+To restore a manual backup: stop OSFM, replace `pb_data/` and `secrets/` in the data directory with the ones from the backup (with the right owner: user 65532 for the image, `osfm` for the systemd unit; `secrets/` mode 0700, the key files 0600: OSFM refuses to start with keys readable by others), and start it. For a copy made with `VACUUM INTO`, put it in place as `pb_data/data.db` and remove any old `data.db-wal` and `data.db-shm` files. Test it as above, starting the copy with `OSFM_DATA_DIR` pointing at the extracted directory.
 
 ## Upgrades
 
-1. **Back up first** (see above), and read the release notes on the [releases page](https://github.com/EatWell-Studio/OSFM/releases).
+1. **Back up first** (`osfm backup`, see [Backups](#backups)), and read the release notes on the [releases page](https://github.com/EatWell-Studio/OSFM/releases).
 2. **Replace the program**:
    - Docker Compose: set the new tag in `compose.yml` (pin a version such as `1.2.3` or `1.2` rather than `latest`, so that upgrades happen when you choose), then `docker compose pull && docker compose up -d`.
    - systemd: verify and install the new binary as above, then `sudo systemctl restart osfm`.
