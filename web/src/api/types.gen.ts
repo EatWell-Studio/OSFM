@@ -43,6 +43,373 @@ export const CodeForbidden = "forbidden"; // 403: the caller may not do this
 export const CodeRateLimited = "rate_limited"; // 429: over the budget; Retry-After says when to try again (as auth's)
 
 //////////
+// source: map.go
+
+/**
+ * MapPlacesPath is GET with ?city=<slug> and optional bbox and filters: []MapPlace, sorted by name, then uuid.
+ */
+export const MapPlacesPath = "/api/osfm/places";
+/**
+ * PlaceCardPath is GET of one place: [PlaceCard]; 404 when the caller may not see the place, as when it does not
+ * exist.
+ */
+export const PlaceCardPath = "/api/osfm/places/{uuid}";
+/**
+ * SignaturesPath is GET with ?city=<slug>: []string, the signatures to filter the map by.
+ */
+export const SignaturesPath = "/api/osfm/signatures";
+/**
+ * MapParamCity is the city's slug (required).
+ */
+export const MapParamCity = "city";
+/**
+ * MapParamBBox is minLon,minLat,maxLon,maxLat in WGS-84 degrees; it is clipped to the city, and the whole city
+ * when absent. A box that does not overlap the city is refused (400 outside_city).
+ */
+export const MapParamBBox = "bbox";
+/**
+ * MapParamSlots keeps the places with a counted recommendation for one of these time slots.
+ */
+export const MapParamSlots = "slots";
+/**
+ * MapParamCategory keeps the places of one of these categories (places without a category never match).
+ */
+export const MapParamCategory = "category";
+/**
+ * MapParamCuisine keeps the places with one of these cuisines (lowercase OSM cuisine values).
+ */
+export const MapParamCuisine = "cuisine";
+/**
+ * MapParamBy keeps the places with a counted recommendation signed with exactly one of these names (repeat the
+ * parameter for several; names are not split at commas). A main name does not match its member's pseudonym
+ * recommendations, and no name matches the main-name recommendations of a member who left.
+ */
+export const MapParamBy = "by";
+/**
+ * MapParamMustTry, set to 1, keeps the places where someone says must try (counts.mustTry > 0).
+ */
+export const MapParamMustTry = "mustTry";
+/**
+ * MapParamNoAvoid, set to 1, leaves out the places where someone says avoid (keeps counts.avoid == 0).
+ */
+export const MapParamNoAvoid = "noAvoid";
+/**
+ * CodeMapUnknownCity: the city parameter names no city of the instance.
+ */
+export const CodeMapUnknownCity = "unknown_city";
+/**
+ * CodeMapOutsideCity: the bbox does not overlap the city.
+ */
+export const CodeMapOutsideCity = "outside_city";
+/**
+ * MapPlace is a place on the map (architecture §3.2): the minimal fields to draw and filter it. It carries no member
+ * information and no average.
+ */
+export interface MapPlace {
+  uuid: string;
+  name: string;
+  lat: number /* float64 */;
+  lon: number /* float64 */;
+  /**
+   * Precision is exact, approx or area: approx and area places are drawn as circles, not pins (H3).
+   */
+  precision: string;
+  /**
+   * Category is one of the place categories, "" when the place has none.
+   */
+  category: string;
+  counts: PlaceCounts;
+  /**
+   * TimeSlots are the time slots of the counted recommendations, in the order breakfast, lunch, afternoon, dinner,
+   * late_night.
+   */
+  timeSlots: string[];
+}
+/**
+ * PlaceCounts is the number of people per attitude at a place (A4): only the recommendations the caller may see that
+ * are not hidden count, each author once. Numbers only.
+ */
+export interface PlaceCounts {
+  mustTry: number /* int */;
+  good: number /* int */;
+  ok: number /* int */;
+  avoid: number /* int */;
+}
+/**
+ * PlaceCard is GET [PlaceCardPath]: the place's fields, its counts and every recommendation the caller may see,
+ * newest first. Hidden recommendations are listed for those who may see them (their author, maintainers) with
+ * hidden set, but never counted.
+ */
+export interface PlaceCard {
+  uuid: string;
+  name: string;
+  aliases: string[];
+  lat: number /* float64 */;
+  lon: number /* float64 */;
+  /**
+   * Precision is exact, approx or area (H3).
+   */
+  precision: string;
+  positionNote: string;
+  /**
+   * Landmark is absent when the place has none, or when it names a place the caller may not see.
+   */
+  landmark?: PlaceLandmark;
+  /**
+   * Category is one of the place categories, "" when the place has none.
+   */
+  category: string;
+  cuisine: string[];
+  /**
+   * Status (open, maybe_closed, closed) and when it was last confirmed, absent when nobody confirmed one.
+   */
+  status?: string;
+  statusConfirmedAt?: string /* RFC 3339 */;
+  /**
+   * City is the slug of the first city of the instance whose bounding box holds the place; "" when none does.
+   */
+  city: string;
+  counts: PlaceCounts;
+  recommendations: RecommendationView[];
+}
+/**
+ * Kinds of [PlaceLandmark].
+ */
+export const LandmarkKindPlace = "place";
+/**
+ * Kinds of [PlaceLandmark].
+ */
+export const LandmarkKindText = "text";
+/**
+ * PlaceLandmark is what a place's position is described by (B4): another place of the instance, or a text.
+ */
+export interface PlaceLandmark {
+  /**
+   * Type is LandmarkKindPlace or LandmarkKindText.
+   */
+  type: string;
+  /**
+   * Place is the landmark place, for LandmarkKindPlace.
+   */
+  place?: LandmarkPlace;
+  /**
+   * Text is the landmark text, for LandmarkKindText; shown as plain text.
+   */
+  text?: string;
+}
+/**
+ * LandmarkPlace is a landmark place, which the caller may see: its uuid (for a link to its card) and name.
+ */
+export interface LandmarkPlace {
+  uuid: string;
+  name: string;
+}
+
+//////////
+// source: map_query.go
+
+
+//////////
+// source: places.go
+
+/**
+ * PlacesPath is POST: a new place with its first recommendation ([CreatePlaceRequest] → 201 [CreatedPlace]).
+ */
+export const PlacesPath = "/api/osfm/places";
+/**
+ * PlacesNearbyPath is GET ?lat=&lon=&name=: the places the caller can see within 100 m with a similar name
+ * ([NearbyPlaces]).
+ */
+export const PlacesNearbyPath = "/api/osfm/places/nearby";
+/**
+ * PlaceRecommendationsPath is POST: a recommendation for the place {uuid} ([RecommendationInput] → 201
+ * [CreatedRecommendation]; 409 [CodeAlreadyRecommended] with [AlreadyRecommended] in the error's data).
+ */
+export const PlaceRecommendationsPath = "/api/osfm/places/{uuid}/recommendations";
+/**
+ * CodeOutsideCities (400): the coordinates are in none of the instance's cities (H2).
+ */
+export const CodeOutsideCities = "outside_cities";
+/**
+ * CodeNoPseudonym (400): the recommendation is to be signed with a pseudonym, and the member has none.
+ */
+export const CodeNoPseudonym = "no_pseudonym";
+/**
+ * CodeAlreadyRecommended (409): the member has a live recommendation of this place already; the error's data is
+ * [AlreadyRecommended], the uuid of that recommendation (theirs), so that the app opens it for editing (M2-Q1).
+ */
+export const CodeAlreadyRecommended = "already_recommended";
+/**
+ * AuditPlaceCreate is the audit action of a new place: the actor is the member who created it, the target the place.
+ */
+export const AuditPlaceCreate = "places.create";
+/**
+ * CreatePlaceRequest is the body of POST [PlacesPath]: a new place and its first recommendation. Only the name, the
+ * coordinates and the recommendation's attitude and text are required (B2, C2).
+ */
+export interface CreatePlaceRequest {
+  /**
+   * Name has 1 to 200 characters, on one line.
+   */
+  name: string;
+  /**
+   * Aliases are other names of the place: at most 10, each like a name.
+   */
+  aliases?: string[];
+  /**
+   * Lat and Lon are WGS-84 degrees, inside one of the instance's cities ([CodeOutsideCities]). They are stored
+   * rounded to 5 decimals; the values as sent are kept in the place's source coordinates.
+   */
+  lat: number;
+  lon: number;
+  /**
+   * Precision is exact (the default), approx or area.
+   */
+  precision?: string;
+  /**
+   * PositionNote describes where the place is in the member's words (at most 500 characters, may span lines).
+   */
+  positionNote?: string;
+  /**
+   * Landmark is what the position is described relative to: a place the member can see, or a text.
+   */
+  landmark?: LandmarkInput;
+  /**
+   * Category is empty or one of the food whitelist (web/src/lib/enums.ts: categories).
+   */
+  category?: string;
+  /**
+   * Cuisine lists values of the cuisine list (enums.ts: cuisines).
+   */
+  cuisine?: string[];
+  /**
+   * SourceCoord says how the coordinates were entered; absent means WGS-84 from the crosshair.
+   */
+  sourceCoord?: SourceCoordInput;
+  /**
+   * Recommendation is the place's first recommendation.
+   */
+  recommendation: RecommendationInput;
+}
+/**
+ * LandmarkInput is a landmark (B4): {type: "place", place: <uuid>} or {type: "text", text}.
+ */
+export interface LandmarkInput {
+  type: string;
+  /**
+   * Place is the uuid of a place the member can see, for type "place".
+   */
+  place?: string;
+  /**
+   * Text has 1 to 200 characters on one line, for type "text".
+   */
+  text?: string;
+}
+/**
+ * SourceCoordInput says how a place's coordinates were entered (B12).
+ */
+export interface SourceCoordInput {
+  /**
+   * CRS is the coordinate system of lat and lon: only "wgs84" (the default) for now.
+   */
+  crs?: string;
+  /**
+   * Source is "crosshair" (the default: the member placed the map's crosshair) or "search" (a place search result,
+   * not moved afterwards).
+   */
+  source?: string;
+}
+/**
+ * RecommendationInput is a recommendation as a member writes it: the body of POST [PlaceRecommendationsPath] and the
+ * recommendation of [CreatePlaceRequest]. Only the attitude and the text are required (C2).
+ */
+export interface RecommendationInput {
+  /**
+   * Attitude is must_try, good, ok or avoid.
+   */
+  attitude: string;
+  /**
+   * Text is not empty once trimmed, at most 5000 characters, may span lines.
+   */
+  text: string;
+  /**
+   * Dishes are at most 20, of at most 100 characters each.
+   */
+  dishes?: string[];
+  /**
+   * TimeSlots are values of enums.ts: timeSlots.
+   */
+  timeSlots?: string[];
+  /**
+   * Season is at most 100 characters ("winter").
+   */
+  season?: string;
+  /**
+   * Sources are at most 10: an optional http(s) link, a kind (enums.ts: sourceKinds) and an optional excerpt of at
+   * most 500 characters.
+   */
+  sources?: Source[];
+  /**
+   * VisitedOn is the date of the last visit, YYYY-MM-DD, not later than today.
+   */
+  visitedOn?: string;
+  /**
+   * DisplayAs is main (the default) or pseudonym, which needs a pseudonym ([CodeNoPseudonym]). It cannot be changed
+   * later.
+   */
+  displayAs?: string;
+  /**
+   * Visibility is circle (the default) or private; federated is reserved and refused.
+   */
+  visibility?: string;
+}
+/**
+ * CreatedPlace is the response of POST [PlacesPath]: the uuids of the new place and of its first recommendation.
+ */
+export interface CreatedPlace {
+  place: string;
+  recommendation: string;
+}
+/**
+ * CreatedRecommendation is the response of POST [PlaceRecommendationsPath]: the uuid of the new recommendation.
+ */
+export interface CreatedRecommendation {
+  recommendation: string;
+}
+/**
+ * AlreadyRecommended is the data of a [CodeAlreadyRecommended] error: the uuid of the caller's own live
+ * recommendation of the place.
+ */
+export interface AlreadyRecommended {
+  recommendation: string;
+}
+/**
+ * InvalidField is the data of an invalid_request error of these routes about one field: its name as in the request
+ * ("name", "recommendation.text", "recommendation.sources[1].url").
+ */
+export interface InvalidField {
+  field: string;
+}
+/**
+ * NearbyPlaces is the response of GET [PlacesNearbyPath]: at most 5 places, the nearest first.
+ */
+export interface NearbyPlaces {
+  places: NearbyPlace[];
+}
+/**
+ * NearbyPlace is a place offered by the duplicate hint: no coordinates, only how far it is.
+ */
+export interface NearbyPlace {
+  uuid: string;
+  name: string;
+  category: string;
+  /**
+   * Distance is in metres, rounded to 10 m (H3).
+   */
+  distance: number /* int */;
+}
+
+//////////
 // source: profile.go
 
 /**

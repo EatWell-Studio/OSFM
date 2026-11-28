@@ -11,6 +11,10 @@ import (
 	"github.com/EatWell-Studio/OSFM/internal/store"
 )
 
+// PlaceUUID is the uuid of the seeded live place with the member's pseudonym recommendation, which the seeded member
+// and maintainer may see (the place card's probes).
+const PlaceUUID = "0190a1b2-0000-7000-8000-00000000e101"
+
 // Seeded is the made-up data [Seed] writes.
 type Seeded struct {
 	// IDs holds the internal identifiers no response may contain: the PocketBase record ID of every seeded record
@@ -52,6 +56,10 @@ const (
 	MaintainerUUID = "0190a1b2-0000-7000-8000-00000000d002"
 	LeftMemberUUID = "0190a1b2-0000-7000-8000-00000000d003"
 )
+
+// UnrecommendedPlaceUUID is the uuid of a seeded live place with a single circle recommendation, by neither the seeded
+// member nor the seeded maintainer: both may add theirs (the probes of new recommendations).
+const UnrecommendedPlaceUUID = "0190a1b2-0000-7000-8000-00000000e001"
 
 // Seed writes made-up records into every OSFM collection of app, a bootstrapped app with the OSFM migrations
 // applied, including soft-deleted ones, and returns their internal IDs. It fails the test if a collection that is
@@ -139,8 +147,8 @@ func Seed(t testing.TB, app core.App) *Seeded {
 	save(store.Sessions, map[string]any{"member": maintainer.Id, "token_hash": strings.Repeat("0b", 32),
 		"expires_at": "2020-01-01 00:00:00Z"})
 
-	place := save(store.Places, map[string]any{"name": "Test Noodle Bar", "lat": 31.23, "lon": 121.47,
-		"precision": "exact", "category": "restaurant", "status": "open"})
+	place := save(store.Places, map[string]any{store.FieldUUID: PlaceUUID, "name": "Test Noodle Bar", "lat": 31.23,
+		"lon": 121.47, "precision": "exact", "category": "restaurant", "status": "open"})
 	gone := save(store.Places, map[string]any{"name": "Test Closed Cafe", "lat": 31.24, "lon": 121.48,
 		"precision": "approx", "category": "cafe", "status": "closed"})
 	deleted(gone)
@@ -163,6 +171,11 @@ func Seed(t testing.TB, app core.App) *Seeded {
 		"resolution": store.ResolutionRestored})
 	save(store.Notices, map[string]any{"member": m, "kind": "test"})
 	save(store.Notices, map[string]any{"member": m, "kind": "test", "read_at": "2026-01-06 00:00:00Z"})
+
+	unrecommended := save(store.Places, map[string]any{store.FieldUUID: UnrecommendedPlaceUUID,
+		"name": "Test Corner Bakery", "lat": 31.235, "lon": 121.475, "precision": "exact", "category": "bakery"})
+	save(store.Recommendations, map[string]any{"place": unrecommended.Id, "author": reset.Id, "display_as": "main",
+		"attitude": "must_try", "visibility": "circle", "text": "Test bakery text"})
 
 	// The single settings row exists from the migration; give it a made-up name and city.
 	settings, err := app.FindRecordById(store.InstanceSettings, store.SettingsID)
