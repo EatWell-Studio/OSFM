@@ -176,6 +176,8 @@ PocketBase 作为 Go 库嵌入（`pocketbase.New()`），版本在 `go.mod` 中�
 
 **站内提示**（`internal/api/notices.go`，T037）：提示由改动推荐的功能在同一事务里经 `domain.Notify` 写入（维护者编辑、隐藏、恢复、违规删除；举报自动隐藏），这里只读取与标记已读。`GET /api/osfm/me/notices` 返回请求者自己最新的 100 条（`MaxNoticesListed`，按 `created`、`uuid` 倒序）与全部未读数 `unread`；每条是 `uuid`、`kind`、`createdAt`、`read` 与 `target`。`target` 在读取时解析：只在请求者自己的、经 `store.VisibleRecommendations` 仍看得到的推荐中查找 `ref`（作者看得到自己被隐藏的推荐），给出推荐与地点的 `uuid` 和店名；推荐或地点已删除时为 `null`，前端显示通用文字、不带链接。`POST /api/osfm/me/notices/read`（写额度）正文是 `{"uuids": [...]}`（1–100 个）或 `{"all": true}`，二者择一，否则 400；在一个事务里只标记请求者自己的提示，任何一个 uuid 不是请求者的提示（包括别人的）就 404、什么都不改；已读的保持原来的 `read_at`；响应与 `GET` 相同。提示里没有操作人、举报人和举报人数（集合里也不存）。`ListNotices(app, viewer, 0)` 返回全部提示，供个人导出使用。
 
+**个人数据导出**（`internal/api/personal_export.go`，T040，`E6`）：`GET /api/osfm/me/export` 返回请求者本人的全部数据，作为 JSON 文件下载（`Content-Disposition: attachment`、`no-store`；格式 `osfm-personal/1`，字段见 [data-format.md](data-format.md)）；按成员单独的额度（`MemberBudget`，一次 3 个、之后每分钟 1 个）。内容由 `api.BuildPersonalExport` 逐项组装，每项只读列出的字段，不复用记录本身，以免以后新增的字段（尤其是凭据里的秘密）被带出去：账号（含登录名、化名、外部链接、邀请人的主名）、自己创建的邀请（不含使用者）、凭据概要（类型、设备名、日期）、自己的推荐（经 `store.VisibleRecommendations` 以作者身份读取，所以包括私密、被隐藏、化名的推荐，不包括已删除的；附地点的 `uuid`、店名、坐标与修改记录，修改人只有角色。唯一的例外只在导出里（M2-Q20）：作者自己未删除、但地点已被维护者删除的推荐另经一次查询取出，标 `placeDeleted: true`，地点按保存的样子给出，不含删除人与原因；其他读取不变）、自己提交的举报（被举报推荐只有 `uuid`）、站内提示。修改记录的快照格式是 `store.RevisionSnapshot`（写入用 `store.SnapshotOf`，读取用 `store.ReadSnapshot`）。集成测试在导出里查找其他成员的 `uuid`、登录名、主名、化名与各类秘密（密码哈希、TOTP 密钥、passkey 凭据 ID 与公钥、用户句柄、恢复码、会话令牌及其哈希），并做内部 ID 扫描。前端 `web/src/me/PersonalExport.tsx` 用 `fetch` 取得文件后以 blob 地址保存（CSP 不允许 `data:`）。
+
 ### 3.3 认证与会话
 
 使用的库：WebAuthn 用 `github.com/go-webauthn/webauthn`；TOTP 用 `github.com/pquerna/otp`（RFC 6238，30 秒、6 位）；密码哈希用 argon2id（`golang.org/x/crypto/argon2`）。
