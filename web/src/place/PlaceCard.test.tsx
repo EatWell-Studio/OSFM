@@ -1,7 +1,10 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
 import { zhCN } from '@/i18n/resources'
+import { createQueryClient } from '@/lib/queryClient'
+import { sessionQueryKey } from '@/session/session'
 import { recommendationElementId } from './links'
 import { PlaceCard } from './PlaceCard'
 import type { PlaceCard as Card, RecommendationView } from './placeApi'
@@ -54,7 +57,14 @@ function card(overrides: Partial<Card> = {}): Card {
 
 function renderCard(c: Card, path = `/p/${place}`) {
   const router = createMemoryRouter([{ path: '*', element: <PlaceCard place={c} /> }], { initialEntries: [path] })
-  const view = render(<RouterProvider router={router} />)
+  // The action slots read the session (T036's report and hide): signed out here, so that they render nothing.
+  const queryClient = createQueryClient()
+  queryClient.setQueryData(sessionQueryKey, null)
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
   return { ...view, router }
 }
 

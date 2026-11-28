@@ -72,6 +72,28 @@ func TestIdentities(t *testing.T) {
 			return c.Post(strings.Replace(api.MemberRolePath, "{uuid}", a.Member.GetString(store.FieldUUID), 1),
 				api.RoleRequest{Role: api.RoleMember})
 		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
+		// Reports and their review (T036). The member's and the maintainer's reports stay under the threshold of 3.
+		{"reporting the author's recommendation", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.ReportPath, "{uuid}", a.Recommendation.GetString(store.FieldUUID), 1),
+				api.ReportRequest{Reason: api.ReportReasonUnverifiedClaim})
+		}, map[testapp.Identity]int{anon: 401, member: 201, author: 400, maintainer: 201}},
+		{"hiding without a reason", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.HidePath, "{uuid}", a.Recommendation.GetString(store.FieldUUID), 1),
+				api.HideRequest{})
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 400}},
+		{"unhiding a recommendation that is shown", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.UnhidePath, "{uuid}", a.Recommendation.GetString(store.FieldUUID), 1), nil)
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 409}},
+		{"the review queue", func(c *testapp.Client) *testapp.Response { return c.Get(api.ReviewQueuePath) },
+			map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
+		{"keeping a shown recommendation hidden", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.ResolvePath, "{uuid}", a.Recommendation.GetString(store.FieldUUID), 1),
+				api.ResolveRequest{Resolution: api.ResolutionKeptHidden})
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 409}},
+		{"revealing the author of a reported recommendation", func(c *testapp.Client) *testapp.Response {
+			return c.Post(strings.Replace(api.RevealAuthorPath, "{uuid}", a.Recommendation.GetString(store.FieldUUID), 1),
+				nil)
+		}, map[testapp.Identity]int{anon: 401, member: 403, author: 403, maintainer: 200}},
 
 		{"my personal data export", func(c *testapp.Client) *testapp.Response { return c.Get(api.PersonalExportPath) },
 			map[testapp.Identity]int{anon: 401, member: 200, author: 200, maintainer: 200}},

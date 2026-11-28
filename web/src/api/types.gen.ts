@@ -1238,6 +1238,263 @@ export interface HiddenInfo {
 }
 
 //////////
+// source: reports.go
+
+/**
+ * Paths of this feature.
+ */
+export const ReportPath = "/api/osfm/recommendations/{uuid}/report";
+/**
+ * Paths of this feature.
+ */
+export const HidePath = "/api/osfm/recommendations/{uuid}/hide";
+/**
+ * Paths of this feature.
+ */
+export const UnhidePath = "/api/osfm/recommendations/{uuid}/unhide";
+/**
+ * Paths of this feature.
+ */
+export const ReviewQueuePath = "/api/osfm/reports";
+/**
+ * Paths of this feature.
+ */
+export const ResolvePath = "/api/osfm/reports/{uuid}/resolve";
+/**
+ * Paths of this feature.
+ */
+export const RevealAuthorPath = "/api/osfm/reports/{uuid}/author";
+/**
+ * Reason codes of a report ([ReportRequest].Reason): the values of reports.reason (store.ReportReasons, M2-Q8).
+ */
+export const ReportReasonAdvertising = "advertising";
+/**
+ * Reason codes of a report ([ReportRequest].Reason): the values of reports.reason (store.ReportReasons, M2-Q8).
+ */
+export const ReportReasonAbuse = "abuse";
+/**
+ * Reason codes of a report ([ReportRequest].Reason): the values of reports.reason (store.ReportReasons, M2-Q8).
+ */
+export const ReportReasonPoliticalIllegal = "political_illegal";
+/**
+ * Reason codes of a report ([ReportRequest].Reason): the values of reports.reason (store.ReportReasons, M2-Q8).
+ */
+export const ReportReasonUnverifiedClaim = "unverified_claim";
+/**
+ * Reason codes of a report ([ReportRequest].Reason): the values of reports.reason (store.ReportReasons, M2-Q8).
+ */
+export const ReportReasonFalseOrDuplicate = "false_or_duplicate";
+/**
+ * Reason codes of a report ([ReportRequest].Reason): the values of reports.reason (store.ReportReasons, M2-Q8).
+ */
+export const ReportReasonOther = "other"; // needs a note
+/**
+ * How a maintainer resolves the reports of a recommendation ([ResolveRequest].Resolution): the values of
+ * reports.resolution (store.Resolutions).
+ */
+export const ResolutionRestored = "restored";
+/**
+ * How a maintainer resolves the reports of a recommendation ([ResolveRequest].Resolution): the values of
+ * reports.resolution (store.Resolutions).
+ */
+export const ResolutionKeptHidden = "kept_hidden";
+/**
+ * How a maintainer resolves the reports of a recommendation ([ResolveRequest].Resolution): the values of
+ * reports.resolution (store.Resolutions).
+ */
+export const ResolutionDeleted = "deleted";
+/**
+ * MaxReportNoteLength is the limit of a report's note (store.MaxReportNoteLength).
+ */
+export const MaxReportNoteLength = 500;
+/**
+ * MaxModerationReasonLength is the limit of the reason of a hide, an unhide or a resolution (hidden_reason).
+ */
+export const MaxModerationReasonLength = 500;
+/**
+ * Error codes of this feature, besides invalid_request, not_found and forbidden.
+ */
+export const CodeOwnRecommendation = "own_recommendation"; // 400: nobody reports their own recommendation
+/**
+ * Error codes of this feature, besides invalid_request, not_found and forbidden.
+ */
+export const CodeAlreadyReported = "already_reported"; // 409: the member reported this recommendation before
+/**
+ * Error codes of this feature, besides invalid_request, not_found and forbidden.
+ */
+export const CodeAlreadyHidden = "already_hidden"; // 409: hide of a recommendation that is hidden
+/**
+ * Error codes of this feature, besides invalid_request, not_found and forbidden.
+ */
+export const CodeNotHidden = "not_hidden"; // 409: unhide or kept_hidden of a recommendation that is shown
+/**
+ * Error codes of this feature, besides invalid_request, not_found and forbidden.
+ */
+export const CodeNotUnderReview = "not_under_review"; // 409: no open reports and not hidden: nothing to review
+/**
+ * AuditAutoHide: the open reports reached the threshold and hid the recommendation (no actor; details: threshold).
+ */
+export const AuditAutoHide = "recommendations.auto_hide";
+/**
+ * AuditHide: a maintainer hid a recommendation (details: reason).
+ */
+export const AuditHide = "recommendations.hide";
+/**
+ * AuditUnhide: a maintainer unhid a recommendation (details: kind — the hidden kind before —, reason, reports —
+ * the open reports resolved as restored — and shown, false when it stays hidden because its author was removed).
+ */
+export const AuditUnhide = "recommendations.unhide";
+/**
+ * AuditResolve: a maintainer resolved the reports of a recommendation as restored or kept_hidden (details:
+ * resolution, reason, reports, shown).
+ */
+export const AuditResolve = "reports.resolve";
+/**
+ * AuditViolationDelete: a maintainer deleted a recommendation as a violation (details: reason, reports, kind).
+ */
+export const AuditViolationDelete = "recommendations.violation_delete";
+/**
+ * AuditRevealPseudonym: a maintainer looked up the member behind a recommendation under review (target: the
+ * member; details: recommendation, its uuid). Written for every reveal (M2-Q7).
+ */
+export const AuditRevealPseudonym = "members.reveal_pseudonym";
+/**
+ * ReportRequest is the body of POST [ReportPath].
+ */
+export interface ReportRequest {
+  /**
+   * Reason is one of the ReportReason* codes; required.
+   */
+  reason: string;
+  /**
+   * Note says more, at most MaxReportNoteLength characters; required with ReportReasonOther.
+   */
+  note?: string;
+}
+/**
+ * ReportReceipt is the response of POST [ReportPath] (201). It says nothing about other reports.
+ */
+export interface ReportReceipt {
+  recommendation: string;
+}
+/**
+ * HideRequest is the body of POST [HidePath].
+ */
+export interface HideRequest {
+  /**
+   * Reason is shown to the author and to maintainers with the hidden recommendation; required, at most
+   * MaxModerationReasonLength characters.
+   */
+  reason: string;
+}
+/**
+ * UnhideRequest is the body of POST [UnhidePath]; the body may also be empty.
+ */
+export interface UnhideRequest {
+  /**
+   * Reason is for the audit log; optional.
+   */
+  reason?: string;
+}
+/**
+ * ResolveRequest is the body of POST [ResolvePath].
+ */
+export interface ResolveRequest {
+  /**
+   * Resolution is ResolutionRestored, ResolutionKeptHidden or ResolutionDeleted; required.
+   */
+  resolution: string;
+  /**
+   * Reason is for the audit log, at most MaxModerationReasonLength characters; required with ResolutionDeleted.
+   */
+  reason?: string;
+}
+/**
+ * ResolveResult is the response of POST [ResolvePath].
+ */
+export interface ResolveResult {
+  resolution: string;
+  /**
+   * Resolved is the number of open reports resolved now.
+   */
+  resolved: number /* int */;
+  /**
+   * Recommendation is the recommendation as it is now; null after ResolutionDeleted. After ResolutionRestored it
+   * can still be hidden (as member_removed: its author was removed with their recommendations hidden).
+   */
+  recommendation: RecommendationView | null;
+}
+/**
+ * ReviewQueue is GET [ReviewQueuePath]: the recommendations under review, those with open reports first (the most
+ * recently reported first), then the hidden ones without open reports.
+ */
+export interface ReviewQueue {
+  items: ReviewItem[];
+}
+/**
+ * ReviewItem is a recommendation under review. It names no reporter.
+ */
+export interface ReviewItem {
+  /**
+   * Recommendation is the maintainer's projection, with hidden set when it is hidden.
+   */
+  recommendation: RecommendationView;
+  place: ReviewPlace;
+  /**
+   * OpenReports is the number of reports nobody resolved yet; only they count towards the threshold.
+   */
+  openReports: number /* int */;
+  /**
+   * Reasons are the number of open reports per reason, in the order of the reason codes, without zeros.
+   */
+  reasons: ReasonCount[];
+  /**
+   * Notes are the notes of the open reports, newest first.
+   */
+  notes: ReportNote[];
+  /**
+   * LastReportedAt is when the newest open report was made; null without open reports.
+   */
+  lastReportedAt: string | null;
+}
+/**
+ * ReviewPlace is the place of a recommendation under review.
+ */
+export interface ReviewPlace {
+  uuid: string;
+  name: string;
+}
+/**
+ * ReasonCount is the number of open reports with one reason.
+ */
+export interface ReasonCount {
+  reason: string;
+  count: number /* int */;
+}
+/**
+ * ReportNote is the note of an open report, with its reason and when it was made; never who wrote it.
+ */
+export interface ReportNote {
+  reason: string;
+  note: string;
+  reportedAt: string /* RFC 3339 */;
+}
+/**
+ * RevealedAuthor is the response of POST [RevealAuthorPath]: the member who wrote the recommendation.
+ */
+export interface RevealedAuthor {
+  uuid: string;
+  /**
+   * DisplayName is the member's main name.
+   */
+  displayName: string;
+  /**
+   * InCircle is false when the member left or was removed.
+   */
+  inCircle: boolean;
+}
+
+//////////
 // source: settings.go
 
 /**

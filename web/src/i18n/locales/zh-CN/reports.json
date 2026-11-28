@@ -1,3 +1,92 @@
 {
-  "title": "举报"
+  "title": "举报与隐藏",
+  "reason": {
+    "advertising": "广告或利益相关",
+    "abuse": "人身攻击或歧视",
+    "political_illegal": "政治或违法内容",
+    "unverified_claim": "未经证实的指控（如卫生问题）",
+    "false_or_duplicate": "明显不实或重复",
+    "other": "其他（请写明）"
+  },
+  "report": {
+    "action": "举报",
+    "title": "举报这条推荐",
+    "intro": "任何人都看不到是谁举报的，包括作者和维护者。多位成员举报后，这条推荐会先被隐藏，等待维护者复核。",
+    "reasonLegend": "原因",
+    "note": "说明（可选）",
+    "noteRequired": "说明（必填）",
+    "submit": "提交举报",
+    "cancel": "取消",
+    "done": "已收到你的举报，谢谢。",
+    "errors": {
+      "already": "你已经举报过这条推荐。",
+      "own": "不能举报自己的推荐。",
+      "notFound": "这条推荐已经不在了。",
+      "generic": "举报没有提交成功，请稍后再试。"
+    }
+  },
+  "author": {
+    "maintainer": "只有你和维护者能看到它，它也不计入人数。你仍然可以编辑它；有疑问可以联系维护者。",
+    "reports": "只有你和维护者能看到它，它也不计入人数。举报人和举报人数不会告诉任何人。维护者复核后你会收到提示：恢复显示、维持隐藏或作为违规删除。"
+  },
+  "moderate": {
+    "hide": "隐藏",
+    "hideTitle": "隐藏这条推荐",
+    "hideIntro": "隐藏后只有作者和维护者能看到它，作者会收到提示并看到原因。",
+    "reason": "原因（必填，作者能看到）",
+    "confirmHide": "确认隐藏",
+    "unhide": "取消隐藏",
+    "unhideTitle": "取消隐藏这条推荐",
+    "unhideIntro": "取消隐藏后成员会重新看到它，未处理的举报记为已处理。",
+    "unhideMemberRemoved": "作者已被移出圈子，移出时选择了隐藏其推荐。取消隐藏后，这条推荐会重新对成员显示。",
+    "confirmUnhide": "确认取消隐藏",
+    "cancel": "取消",
+    "hidden": "已隐藏。",
+    "unhidden": "已取消隐藏，成员能看到它了。",
+    "stillHidden": "作者已被移出圈子并选择了隐藏其推荐，这条推荐仍然隐藏（原因改为作者被移出）。如确要显示，请再取消隐藏一次。",
+    "review": "到复核页处理",
+    "errors": {
+      "alreadyHidden": "这条推荐已经被隐藏了。",
+      "notHidden": "这条推荐没有被隐藏。",
+      "notFound": "这条推荐已经不在了。",
+      "generic": "操作没有成功，请稍后再试。"
+    }
+  },
+  "queue": {
+    "intro": "这里列出有未处理举报的推荐和全部被隐藏的推荐。举报人不对任何人显示，包括维护者。",
+    "empty": "没有需要处理的推荐。",
+    "loadError": "无法加载复核列表，请检查网络后重试。",
+    "label": "需要复核的推荐",
+    "openReports_one": "{{count}} 个未处理的举报",
+    "openReports_other": "{{count}} 个未处理的举报",
+    "noOpenReports": "没有未处理的举报",
+    "reasonCount": "{{reason}}：{{count}}",
+    "notes": "举报说明",
+    "openCard": "打开地点卡片",
+    "reviewReason": "处理说明（违规删除时必填；只记在审计记录里）",
+    "restore": "恢复显示",
+    "dismiss": "驳回举报",
+    "keepHidden": "维持隐藏",
+    "delete": "违规删除",
+    "deleteConfirm": "确认违规删除",
+    "deleteWarning": "违规删除会抹去推荐的内容并删除修改记录，不能撤销。作者会收到提示，原因只记在审计记录里。",
+    "unhideRemoved": "取消隐藏（作者已被移出）",
+    "reveal": "查看作者",
+    "revealHint": "每次查看都会记入审计记录。",
+    "revealed": "作者：{{name}}",
+    "revealedLeft": "作者：{{name}}（已离开圈子）",
+    "done": {
+      "restored": "已恢复显示。",
+      "dismissed": "已驳回举报。",
+      "restoredStillHidden": "举报已处理；作者已被移出圈子，这条推荐仍然隐藏。",
+      "kept_hidden": "已维持隐藏。",
+      "deleted": "已作为违规删除。"
+    },
+    "errors": {
+      "notUnderReview": "这条推荐已经不需要处理了。",
+      "notHidden": "这条推荐没有被隐藏。",
+      "notFound": "这条推荐已经不在了。",
+      "generic": "操作没有成功，请稍后再试。"
+    }
+  }
 }
