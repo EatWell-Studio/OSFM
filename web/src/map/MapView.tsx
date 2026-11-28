@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { instanceQuery } from '@/instance/instance'
+import { useCentreOnPlace } from '@/place/useCentreOnPlace'
 import { type GeocodeResult, PlaceSearch } from '@/search/PlaceSearch'
 import { type City, citiesQueryKey, contains, fetchCities, type MapCity, mergeCities, pickCity } from './cities'
 import { basemapLanguage, buildStyle, localIdeographFontFamily } from './style'
@@ -190,6 +191,8 @@ function CityMap({
       map.fitBounds(city.bounds, { animate: false })
     }
   }, [city])
+  // The place whose card is open (A7); after the city switch above, so that it wins over fitting the city.
+  const centreOnPlace = useCentreOnPlace(mapRef, city.bounds)
 
   /** Centers on the member's position, switching to the city it lies in; false when it lies in none. */
   const showPosition = useCallback(
@@ -241,7 +244,10 @@ function CityMap({
         pitchWithRotate={false}
         touchPitch={false}
         locale={locale}
-        onLoad={updateZoomLimit}
+        onLoad={() => {
+          updateZoomLimit()
+          centreOnPlace()
+        }}
         onZoomEnd={updateZoomLimit}
         style={{ width: '100%', height: '100%' }}
       >

@@ -1,3 +1,37 @@
 {
-  "title": "Place"
+  "title": "Place",
+  "close": "Close the place card",
+  "loading": "Loading the place…",
+  "notFound": "Place not found",
+  "loadError": "The place could not be loaded. Check your connection and try again.",
+  "aliases": "Also known as: {{aliases}}",
+  "listSeparator": ", ",
+  "approximate": "Approximate location",
+  "approximateArea": "Approximate location (area)",
+  "positionNote": "How to find it",
+  "landmark": "Landmark",
+  "counts": "People per verdict",
+  "count": "{{attitude}} {{count}}",
+  "status": {
+    "open": "Open",
+    "maybe_closed": "Maybe closed",
+    "closed": "Closed"
+  },
+  "statusConfirmed": "Last confirmed {{date}}",
+  "recommendations": "Recommendations",
+  "authorLeft": "A member who left",
+  "timeSlots": "Time slots",
+  "season": "Season: {{season}}",
+  "dishes": "Dishes",
+  "sources": "Sources",
+  "newWindow": "(opens in a new window)",
+  "visitedOn": "Last visit: {{date}}",
+  "editedByMaintainer": "Edited by a maintainer on {{date}}",
+  "hidden": "Hidden",
+  "hiddenKind": {
+    "maintainer": "A maintainer hid this recommendation; other members do not see it.",
+    "reports": "This recommendation was hidden after several reports and awaits a maintainer's review; other members do not see it.",
+    "member_removed": "This recommendation was hidden when its author was removed from the circle; other members do not see it."
+  },
+  "hiddenReason": "Reason: {{reason}}"
 }

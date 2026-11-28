@@ -50,10 +50,13 @@ export const routes: RouteObject[] = [
       </RequireSession>
     ),
     children: [
-      { index: true, element: <MapPage /> },
+      // A place's card opens on the map page, which stays in place while cards open and close (T029).
+      {
+        element: <MapPage />,
+        children: [{ index: true }, { path: routePatterns.place, element: <PlacePage /> }],
+      },
       { path: routePatterns.list, element: <ListPage /> },
       { path: routePatterns.newPlace, element: <NewPlacePage /> },
-      { path: routePatterns.place, element: <PlacePage /> },
       { path: routePatterns.editPlace, element: <EditPlacePage /> },
       { path: routePatterns.recommend, element: <RecommendPage /> },
       { path: routePatterns.editRecommendation, element: <EditRecommendationPage /> },

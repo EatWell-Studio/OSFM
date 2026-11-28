@@ -1,3 +1,37 @@
 {
-  "title": "地点"
+  "title": "地点",
+  "close": "关闭地点卡片",
+  "loading": "正在加载地点…",
+  "notFound": "找不到这个地点",
+  "loadError": "无法加载这个地点，请检查网络后重试。",
+  "aliases": "又名：{{aliases}}",
+  "listSeparator": "、",
+  "approximate": "位置大致",
+  "approximateArea": "位置大致（片区）",
+  "positionNote": "位置描述",
+  "landmark": "参照物",
+  "counts": "态度人数",
+  "count": "{{attitude}} {{count}}",
+  "status": {
+    "open": "营业中",
+    "maybe_closed": "可能已停业",
+    "closed": "已停业"
+  },
+  "statusConfirmed": "最后确认于 {{date}}",
+  "recommendations": "推荐",
+  "authorLeft": "已退出成员",
+  "timeSlots": "时段",
+  "season": "季节：{{season}}",
+  "dishes": "推荐的菜",
+  "sources": "来源",
+  "newWindow": "（在新窗口打开）",
+  "visitedOn": "最近到店：{{date}}",
+  "editedByMaintainer": "维护者修改于 {{date}}",
+  "hidden": "已隐藏",
+  "hiddenKind": {
+    "maintainer": "维护者隐藏了这条推荐，其他成员看不到它。",
+    "reports": "这条推荐因多人举报被隐藏，等待维护者复核；其他成员看不到它。",
+    "member_removed": "作者被移出圈子时，这条推荐被隐藏；其他成员看不到它。"
+  },
+  "hiddenReason": "原因：{{reason}}"
 }
