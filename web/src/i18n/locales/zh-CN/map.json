@@ -1,7 +1,17 @@
 {
   "title": "地图",
   "list": {
-    "title": "列表"
+    "title": "列表",
+    "loading": "正在加载地点…",
+    "noCity": "还没有可以显示的城市。",
+    "places": "地点",
+    "empty": "当前地图视野里还没有地点。",
+    "fromMapCenter": "当前地图视野内的地点，按与地图中心的距离排列。",
+    "fromCityCenter": "{{city}} 的地点，按与城市中心的距离排列。",
+    "fromMe": "当前地图视野内的地点，按与我的位置的距离排列。我的位置只在本页使用，不会发给服务器。",
+    "useMyPosition": "按我的位置",
+    "metres": "{{value}} 米",
+    "kilometres": "{{value}} 公里"
   },
   "loading": "正在加载地图…",
   "loadError": "无法加载城市列表，请检查网络后重试。",
@@ -23,5 +33,27 @@
     "zoomOut": "缩小",
     "toggleAttribution": "显示或隐藏署名"
   },
-  "noTiles": "{{city}} 还没有底图。服务器管理员用 deploy/tiles.sh 放好这个城市的底图文件后，这里就会显示地图。"
+  "noTiles": "{{city}} 还没有底图。服务器管理员用 deploy/tiles.sh 放好这个城市的底图文件后，这里就会显示地图。",
+  "filters": {
+    "button": "筛选",
+    "buttonCount_one": "筛选（已选 {{count}} 项）",
+    "buttonCount_other": "筛选（已选 {{count}} 项）",
+    "title": "筛选",
+    "description": "地图和列表只显示符合全部条件的地点；同一项里选多个时，符合其中任意一个即可。",
+    "slots": "时段",
+    "categories": "类别",
+    "cuisines": "菜系",
+    "by": "推荐人",
+    "signaturesLoading": "正在加载推荐人…",
+    "signaturesError": "无法加载推荐人列表。",
+    "noSignatures": "这个城市还没有推荐。",
+    "attitudes": "态度",
+    "mustTry": "有人强推",
+    "noAvoid": "排除有人避雷的地点",
+    "clear": "清除全部条件"
+  },
+  "places": {
+    "loadError": "无法加载地点。",
+    "noMatch": "没有符合筛选条件的地点。"
+  }
 }

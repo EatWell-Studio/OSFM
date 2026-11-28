@@ -7,15 +7,13 @@ import { useQuery } from '@tanstack/react-query'
 import { XIcon } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useLocation, useNavigate, useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { useMapSearch } from '@/filters/useFilters'
 import { usePlaceParams } from '@/lib/paths'
-import { mapSearch } from './links'
+import { cityParam, readRememberedCity } from '@/map/rememberedCity'
 import { PlaceCard } from './PlaceCard'
 import { isPlaceNotFound, placeCardQuery } from './placeApi'
-
-/** The map's query parameter for the city shown (the same name as in src/map/MapView.tsx). */
-const cityParam = 'city'
 
 export function PlacePage() {
   const { t } = useTranslation('common')
@@ -47,7 +45,10 @@ function PlaceDrawer({ place }: { place: string }) {
       return
     }
     switched.current = place
-    if (city !== '' && searchParams.get(cityParam) !== city) {
+    // The map shows the city of the address, else the one it showed last (src/map/MapView.tsx); only another city is
+    // set, so that the address stays as it was when the map shows the place's city already.
+    const shown = searchParams.get(cityParam) ?? readRememberedCity()
+    if (city !== '' && shown !== city) {
       setSearchParams(
         (p) => {
           p.set(cityParam, city)
@@ -101,9 +102,10 @@ function PlaceDrawer({ place }: { place: string }) {
 function Drawer({ labelledBy, children }: { labelledBy?: string; children: ReactNode }) {
   const { t } = useTranslation('place')
   const navigate = useNavigate()
-  const location = useLocation()
+  // Back to the map with its city and filters, without the share link's ?r= (T028).
+  const search = useMapSearch()
   const close = () => {
-    void navigate({ pathname: '/', search: mapSearch(location.search) })
+    void navigate({ pathname: '/', search })
   }
   return (
     <aside

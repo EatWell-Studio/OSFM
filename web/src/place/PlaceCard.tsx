@@ -7,12 +7,13 @@
 
 import type { ReactNode, Ref } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useLocation } from 'react-router'
+import { Link } from 'react-router'
 import { AttitudeBadge } from '@/components/AttitudeBadge'
 import { SignatureLinks } from '@/components/SignatureLinks'
 import { SignatureName } from '@/components/SignatureName'
 import { TimeSlotChips } from '@/components/TimeSlotChips'
 import { Badge } from '@/components/ui/badge'
+import { useMapSearch } from '@/filters/useFilters'
 import type { PlaceCounts, Source } from '@/api/types.gen'
 import { type Attitude, attitudes } from '@/lib/enums'
 import { placePath, revisionsPath } from '@/lib/paths'
@@ -31,7 +32,7 @@ import {
   isSourceKind,
   sourceLink,
 } from './format'
-import { mapSearch, recommendationElementId } from './links'
+import { recommendationElementId } from './links'
 import type { PlaceCard as Card, RecommendationView } from './placeApi'
 
 const countFields: Record<Attitude, keyof PlaceCounts> = {
@@ -55,7 +56,8 @@ export function PlaceCard({
   headingRef?: Ref<HTMLHeadingElement>
 }) {
   const { t } = useTranslation(['place', 'common'])
-  const location = useLocation()
+  // The city and filters of the map, kept on the way to another card; not the share link's ?r= (T028).
+  const search = useMapSearch()
   const category = isCategory(place.category) ? place.category : null
   const cuisines = place.cuisine.filter(isCuisine)
   const approximate = place.precision === 'approx' || place.precision === 'area'
@@ -114,7 +116,7 @@ export function PlaceCard({
               <dt className="text-muted-foreground">{t('landmark')}</dt>
               <dd>
                 <Link
-                  to={{ pathname: placePath(place.landmark.place.uuid), search: mapSearch(location.search) }}
+                  to={{ pathname: placePath(place.landmark.place.uuid), search }}
                   className="break-words text-primary underline underline-offset-2"
                 >
                   {place.landmark.place.name}

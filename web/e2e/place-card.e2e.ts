@@ -1,8 +1,9 @@
 // The place card on the shared instance (T029): a shared link opened signed out leads to the card after sign-in, the
-// card switches the map to the place's city and shows the place and its recommendations as plain text, a landmark
-// place jumps to its card, a card opens over the map that stays in place, and a place the member may not see is not
-// found. Opening a card asks no other origin: the watch of support/browser.ts fails the test on any such request (the
-// source and profile links below are never fetched). Made-up data only.
+// card switches the map to the place's city, centres the place and shows it and its recommendations as plain text, a
+// landmark place jumps to its card, a tap on a pin opens its card beside the map, which stays in place and keeps its
+// filters, a link opened directly centres the place rather than the view the map last showed, and a place the member
+// may not see is not found. Opening a card asks no other origin: the watch of support/browser.ts fails the test on
+// any such request (the source and profile links below are never fetched). Made-up data only.
 
 import { expect, type Page, test } from '@playwright/test'
 import { attachScreenshots, close, type Person, takeProblems } from './support/browser.ts'
@@ -24,6 +25,8 @@ const [minLon, minLat, maxLon, maxLat] = city.archive.bbox
 // Points in the city, apart from where other specs put their places.
 const at = (x: number, y: number) => ({ lon: minLon + (maxLon - minLon) * x, lat: minLat + (maxLat - minLat) * y })
 
+const bridgeSpot = at(0.41, 0.62)
+const mainSpot = at(0.43, 0.6)
 const positionNote = 'Test second floor <b>not bold</b>\n**behind** the [market](https://example.org/x)'
 const recommendationText = 'Test must try <script>alert(1)</script>\nsecond line'
 const sourceURL = 'https://example.org/test-source/1'
@@ -47,7 +50,7 @@ test.beforeAll(async ({ browser }) => {
   bridgePlace = (
     await createPlace(bob, {
       name: 'Test Card Bridge Cafe',
-      ...at(0.41, 0.62),
+      ...bridgeSpot,
       category: 'cafe',
       recommendation: { attitude: 'good', text: 'Test bridge text' },
     })
@@ -56,7 +59,7 @@ test.beforeAll(async ({ browser }) => {
     await createPlace(alice, {
       name: 'Test Card Noodle House',
       aliases: ['Test Card Alias'],
-      ...at(0.43, 0.6),
+      ...mainSpot,
       precision: 'approx',
       positionNote,
       landmark: { type: 'place', place: bridgePlace },
@@ -86,6 +89,8 @@ test.beforeAll(async ({ browser }) => {
 
   guest = await newSharedPerson(browser, 'place-card-alice')
   bobPhone = await newSharedPerson(browser, 'place-card-bob', bob)
+  await exposeMap(guest)
+  await exposeMap(bobPhone)
   people.push(guest, bobPhone)
 })
 
@@ -110,6 +115,86 @@ function card(page: Page, name: string) {
   return page.getByRole('complementary', { name })
 }
 
+/** The map as the page exposes it to the tests (src/map/places/PlaceLayers.tsx), with what this spec uses of it. */
+interface MapLike {
+  loaded(): boolean
+  isMoving(): boolean
+  getLayer(id: string): unknown
+  jumpTo(options: { center: [number, number]; zoom: number }): void
+  getZoom(): number
+  getCenter(): { lng: number; lat: number }
+  project(lngLat: [number, number]): { x: number; y: number }
+  queryRenderedFeatures(options: { layers: string[] }): { properties: Record<string, unknown> }[]
+  once(event: string, listener: () => void): void
+}
+type HookedWindow = Window & { osfmTestHooks?: { map?: MapLike } }
+
+/** Lets the app hand its map to the test (the hook is inert unless the page defines it before the app starts). */
+async function exposeMap(person: Person) {
+  await person.context.addInitScript(() => {
+    ;(window as HookedWindow).osfmTestHooks = {}
+  })
+}
+
+async function openMap(page: Page, path: string) {
+  await page.goto(path)
+  await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible()
+  await page.waitForFunction(() => (window as HookedWindow).osfmTestHooks?.map?.loaded() === true)
+}
+
+/** Moves the map without animation and waits until it has drawn everything. */
+async function jumpTo(page: Page, center: { lon: number; lat: number }, zoom: number) {
+  await page.evaluate(
+    ({ center, zoom }) =>
+      new Promise<void>((done) => {
+        const map = (window as HookedWindow).osfmTestHooks?.map
+        if (!map) {
+          throw new Error('no map')
+        }
+        map.once('idle', done)
+        map.jumpTo({ center, zoom })
+      }),
+    { center: [center.lon, center.lat] as [number, number], zoom },
+  )
+}
+
+/** The names of the places drawn as pins (T028's layer), this spec's only. */
+function rendered(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const map = (window as HookedWindow).osfmTestHooks?.map
+    if (!map?.getLayer('osfm-place-pins')) {
+      return []
+    }
+    const names = map.queryRenderedFeatures({ layers: ['osfm-place-pins'] }).map((f) => String(f.properties.name))
+    return [...new Set(names)].filter((n) => n.startsWith('Test Card '))
+  })
+}
+
+/** The map's centre and zoom, once it has stopped moving. */
+async function view(page: Page): Promise<{ lon: number; lat: number; zoom: number }> {
+  await page.waitForFunction(() => (window as HookedWindow).osfmTestHooks?.map?.isMoving() === false)
+  return page.evaluate(() => {
+    const map = (window as HookedWindow).osfmTestHooks?.map
+    if (!map) {
+      throw new Error('no map')
+    }
+    const c = map.getCenter()
+    return { lon: c.lng, lat: c.lat, zoom: map.getZoom() }
+  })
+}
+
+/** How far, in degrees, the map's centre is from the point while the map rests (Infinity while it moves). */
+function offCentre(page: Page, point: { lon: number; lat: number }): Promise<number> {
+  return page.evaluate((p) => {
+    const map = (window as HookedWindow).osfmTestHooks?.map
+    if (!map || map.isMoving()) {
+      return Infinity
+    }
+    const c = map.getCenter()
+    return Math.hypot(c.lng - p.lon, c.lat - p.lat)
+  }, point)
+}
+
 test('a link opened signed out leads to the card after sign-in, in the place city', async () => {
   const { page } = guest
   await page.goto(`/p/${mainPlace}`)
@@ -122,12 +207,14 @@ test('a link opened signed out leads to the card after sign-in, in the place cit
   await page.getByLabel(form.totp, { exact: true }).fill(await authenticatorOf(alice).code())
   await page.getByRole('button', { name: form.signIn, exact: true }).click()
 
-  // Back at the card, and the map switched to the place's city (A7).
-  await expect(page).toHaveURL(url(`/p/${mainPlace}?city=${city.slug}`))
+  // Back at the card, and the map shows the place's city (A7; ?city= is set only when the map showed another one).
+  await expect(page).toHaveURL(new RegExp(`/p/${mainPlace}(\\?city=${city.slug})?$`))
   const shown = card(page, 'Test Card Noodle House')
   await expect(shown.getByRole('heading', { level: 2 })).toHaveText('Test Card Noodle House')
   await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible()
   await expect(page.getByRole('combobox', { name: zh.map.city })).toHaveValue(city.slug)
+  // Centred on the place (the server keeps 5 decimals of the coordinates).
+  await expect.poll(() => offCentre(page, mainSpot)).toBeLessThan(2e-5)
 })
 
 test('the card shows the place and its recommendations as plain text', async () => {
@@ -145,7 +232,7 @@ test('the card shows the place and its recommendations as plain text', async () 
   expect(await shown.getByText('Test must try').textContent()).toBe(recommendationText)
   expect(await shown.locator('b, script:not([src]), strong, em').count()).toBe(0)
   // No coordinates anywhere.
-  const { lat, lon } = at(0.43, 0.6)
+  const { lat, lon } = mainSpot
   await expect(shown).not.toContainText(lat.toFixed(4))
   await expect(shown).not.toContainText(lon.toFixed(4))
 
@@ -169,36 +256,68 @@ test('the card shows the place and its recommendations as plain text', async () 
 test('a landmark place jumps to its card', async () => {
   const { page } = guest
   await card(page, 'Test Card Noodle House').getByRole('link', { name: 'Test Card Bridge Cafe' }).click()
-  await expect(page).toHaveURL(url(`/p/${bridgePlace}?city=${city.slug}`))
+  await expect(page).toHaveURL(new RegExp(`/p/${bridgePlace}(\\?city=${city.slug})?$`))
   await expect(card(page, 'Test Card Bridge Cafe').getByRole('heading', { level: 2 })).toHaveText(
     'Test Card Bridge Cafe',
   )
+  // The map moves on to the other place.
+  await expect.poll(() => offCentre(page, bridgeSpot)).toBeLessThan(2e-5)
 })
 
-test('a card opens on the map, which stays in place, and closes back to it', async () => {
+test('a tap on a pin opens its card beside the map, centred; closing goes back without a jump', async () => {
   const { page } = bobPhone
-  await page.goto('/')
+  // The main place has an avoid: the filter leaves only the bridge cafe here, as a pin.
+  await openMap(page, `/?city=${city.slug}&noAvoid=1`)
+  await jumpTo(page, bridgeSpot, 15.5)
+  await expect.poll(() => rendered(page)).toContain('Test Card Bridge Cafe')
   const canvas = page.locator('canvas.maplibregl-canvas')
-  await expect(canvas).toBeVisible()
   await canvas.evaluate((el) => {
     el.dataset.e2eKept = 'yes'
   })
 
-  // Map features lead to placePath(uuid) with the query kept (T028); here the app navigates there the same way.
-  await page.evaluate((path) => {
-    window.history.pushState(null, '', path)
-    window.dispatchEvent(new PopStateEvent('popstate'))
-  }, `/p/${mainPlace}?city=${city.slug}`)
-  const shown = card(page, 'Test Card Noodle House')
+  // The pin stands on its point: tap its head, a little above.
+  const point = await page.evaluate((at) => (window as HookedWindow).osfmTestHooks?.map?.project(at), [
+    bridgeSpot.lon,
+    bridgeSpot.lat,
+  ] as [number, number])
+  const box = await canvas.boundingBox()
+  if (!point || !box) {
+    throw new Error('no map on the page')
+  }
+  await page.mouse.click(box.x + point.x, box.y + point.y - 15)
+
+  await expect(page).toHaveURL(new RegExp(`/p/${bridgePlace}\\?`))
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual({ city: city.slug, noAvoid: '1' })
+  const shown = card(page, 'Test Card Bridge Cafe')
   await expect(shown.getByRole('heading', { level: 2 })).toBeFocused()
+  // The same map, centred on the place, its layers still there; the card lies beside the map, not over it, so the
+  // attribution stays visible (A1).
   await expect(canvas).toHaveAttribute('data-e2e-kept', 'yes')
-  // The card lies beside the map, not over it: the attribution stays visible (A1).
+  await expect.poll(() => offCentre(page, bridgeSpot)).toBeLessThan(2e-5)
+  await expect.poll(() => rendered(page)).toContain('Test Card Bridge Cafe')
   await expect(page.locator('.maplibregl-ctrl-attrib')).toBeInViewport()
+  const before = await view(page)
 
   await shown.getByRole('button', { name: t.close }).click()
-  await expect(page).toHaveURL(url(`/?city=${city.slug}`))
+  await expect(page).toHaveURL(url(`/?city=${city.slug}&noAvoid=1`))
   await expect(page.getByRole('complementary')).toHaveCount(0)
   await expect(canvas).toHaveAttribute('data-e2e-kept', 'yes')
+  // No jump: the map grew back around the same centre and zoom.
+  await page.waitForTimeout(300)
+  const after = await view(page)
+  expect(after.zoom).toBeCloseTo(before.zoom, 5)
+  expect(Math.hypot(after.lon - before.lon, after.lat - before.lat)).toBeLessThan(2e-5)
+  await expect.poll(() => rendered(page)).toContain('Test Card Bridge Cafe')
+})
+
+test('a place link opened directly centres on the place, not on the view the map last showed', async () => {
+  const { page } = bobPhone
+  // The map remembers this view for the tab (T028); the link must win over it (A7).
+  await jumpTo(page, at(0.85, 0.15), 13)
+  await page.goto(`/p/${mainPlace}`)
+  await expect(card(page, 'Test Card Noodle House').getByRole('heading', { level: 2 })).toBeVisible()
+  await page.waitForFunction(() => (window as HookedWindow).osfmTestHooks?.map?.loaded() === true)
+  await expect.poll(() => offCentre(page, mainSpot)).toBeLessThan(2e-5)
 })
 
 test('a place the member may not see cannot be found', async () => {

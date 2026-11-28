@@ -8,36 +8,29 @@ import * as maplibregl from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { FilterSheet } from '@/filters/FilterSheet'
+import { filterCount } from '@/filters/filters'
+import { useMapSearch } from '@/filters/useFilters'
 import { instanceQuery } from '@/instance/instance'
+import { placePath } from '@/lib/paths'
 import { useCentreOnPlace } from '@/place/useCentreOnPlace'
 import { type GeocodeResult, PlaceSearch } from '@/search/PlaceSearch'
 import { type City, citiesQueryKey, contains, fetchCities, type MapCity, mergeCities, pickCity } from './cities'
+import { PlaceLayers } from './places/PlaceLayers'
+import type { Place } from './places/placesApi'
+import { useMapPlaces } from './places/useMapPlaces'
+import { lastView } from './places/view'
+import { cityParam, readRememberedCity, rememberCity } from './rememberedCity'
 import { basemapLanguage, buildStyle, localIdeographFontFamily } from './style'
 import { type Position, useLocate } from './useLocate'
 
 /** No zoom below city level (H2). */
 export const minZoom = 10
 
-const cityParam = 'city'
-const rememberedCityKey = 'osfm.map.city'
-
-function readRememberedCity(): string | null {
-  try {
-    return localStorage.getItem(rememberedCityKey)
-  } catch {
-    return null
-  }
-}
-
-function rememberCity(id: string) {
-  try {
-    localStorage.setItem(rememberedCityKey, id)
-  } catch {
-    // Remembering the city is a convenience only.
-  }
-}
+/** No places yet: the same array every time, so that the map's data source is not set again on each render. */
+const noPlaces: Place[] = []
 
 /**
  * Every request MapLibre makes goes to the page's own origin (the style holds only same-origin URLs) and carries the
@@ -227,6 +220,29 @@ function CityMap({
     }
   }, [])
 
+  // The places (T028): fetched for the area around the view, with the address's filters. A tap opens the place's card
+  // at its own address, keeping the city and the filters for the way back.
+  const places = useMapPlaces(city.id, city.bounds)
+  const navigate = useNavigate()
+  const search = useMapSearch()
+  const openPlace = useCallback(
+    (uuid: string) => {
+      void navigate(placePath(uuid) + search)
+    },
+    [navigate, search],
+  )
+  // The map opens where it was left (coming back from the list or a card), else on the whole city.
+  const [initialViewState] = useState(() => {
+    const view = lastView(city.id)
+    return view ? { longitude: view.center[0], latitude: view.center[1], zoom: view.zoom } : { bounds: city.bounds }
+  })
+  const placesShown = places.query.data ?? noPlaces
+  const noMatch =
+    places.query.isSuccess &&
+    !places.query.isPlaceholderData &&
+    placesShown.length === 0 &&
+    filterCount(places.filters) > 0
+
   return (
     <div className="relative h-full">
       <MapLibreMap
@@ -234,7 +250,7 @@ function CityMap({
         mapLib={maplibregl}
         workerUrl={workerUrl}
         mapStyle={style}
-        initialViewState={{ bounds: city.bounds }}
+        initialViewState={initialViewState}
         minZoom={minZoom}
         maxBounds={city.bounds}
         localIdeographFontFamily={localIdeographFontFamily}
@@ -244,15 +260,20 @@ function CityMap({
         pitchWithRotate={false}
         touchPitch={false}
         locale={locale}
-        onLoad={() => {
+        onLoad={(e) => {
           updateZoomLimit()
+          places.onView(e.target)
           centreOnPlace()
         }}
         onZoomEnd={updateZoomLimit}
+        onMoveEnd={(e) => {
+          places.onView(e.target)
+        }}
         style={{ width: '100%', height: '100%' }}
       >
         {/* Expanded, so the OpenStreetMap attribution is always visible (A1). */}
         <AttributionControl compact={false} position="bottom-right" />
+        <PlaceLayers places={placesShown} onOpen={openPlace} />
         {position && (
           <Marker longitude={position.lon} latitude={position.lat}>
             <span
@@ -323,6 +344,28 @@ function CityMap({
             {t(`locate.${message}`)}
           </p>
         )}
+        {!message && places.query.isError && (
+          <p className="pointer-events-auto flex items-center gap-2 rounded-md bg-foreground/85 px-3 py-1.5 text-sm text-background shadow">
+            {t('places.loadError')}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void places.query.refetch()
+              }}
+            >
+              {t('retry')}
+            </Button>
+          </p>
+        )}
+        {!message && noMatch && (
+          <p className="rounded-md bg-foreground/85 px-3 py-2 text-sm text-background shadow">{t('places.noMatch')}</p>
+        )}
+      </div>
+
+      {/* The filters, at thumb's reach, left of the attribution. */}
+      <div className="absolute bottom-2.5 left-2.5 z-[2]">
+        <FilterSheet city={places.known ? city.id : null} />
       </div>
     </div>
   )

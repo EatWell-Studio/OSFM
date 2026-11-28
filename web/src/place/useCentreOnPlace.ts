@@ -44,7 +44,9 @@ export function useCentreOnPlace(mapRef: RefObject<MapRef | null>, bounds: Bound
       return
     }
     centred.current = place
-    map.easeTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), placeZoom) })
+    // A jump, not an animation: the card opening beside the map resizes it (once more when the card's contents
+    // arrive), and a resize stops an animation halfway; it keeps the centre of a map at rest.
+    map.jumpTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), placeZoom) })
   }, [mapRef, bounds, place, lat, lon])
 
   useEffect(centre, [centre])

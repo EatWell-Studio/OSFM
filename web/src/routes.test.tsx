@@ -43,14 +43,18 @@ const pages: [string, string][] = [
   [`/p/${place}/recommend`, zhCN.create.recommend.title],
   [`/p/${place}/r/${rec}/edit`, zhCN.edit.recommendation.title],
   [`/p/${place}/r/${rec}/history`, zhCN.edit.history.title],
-  ['/list', zhCN.map.list.title],
 ]
 
-// The place card (T029) is no placeholder any more; its paths still need a session (src/place/PlacePage.test.tsx).
-const signedInOnly = [...pages.map(([path]) => path), `/p/${place}`, `/p/${place}?r=${rec}`]
+// The pages of M2 that are built already: they need a session as well. The place card is tested in
+// src/place/PlacePage.test.tsx.
+const built: [string, string][] = [
+  ['/list', zhCN.map.list.title],
+  [`/p/${place}`, zhCN.place.title],
+  [`/p/${place}?r=${rec}`, zhCN.place.title],
+]
 
 describe('the paths of M2', () => {
-  it.each(signedInOnly)('%s sends a signed-out visitor to sign-in, with the way back', async (path) => {
+  it.each([...pages, ...built])('%s sends a signed-out visitor to sign-in, with the way back', async (path) => {
     stubApi(null)
     const router = renderAt(path)
     await waitFor(() => {

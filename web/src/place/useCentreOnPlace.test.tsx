@@ -38,9 +38,9 @@ function stubCard() {
 }
 
 function fakeMap(zoom: number) {
-  const easeTo = vi.fn()
-  const ref = { current: { easeTo, getZoom: () => zoom } as unknown as MapRef }
-  return { ref, easeTo }
+  const jumpTo = vi.fn()
+  const ref = { current: { jumpTo, getZoom: () => zoom } as unknown as MapRef }
+  return { ref, jumpTo }
 }
 
 function wrapperAt(path: string) {
@@ -61,49 +61,49 @@ function wrapperAt(path: string) {
 describe('centring the map on the open place', () => {
   it('centres once per opening, at street level at least', async () => {
     stubCard()
-    const { ref, easeTo } = fakeMap(12)
+    const { ref, jumpTo } = fakeMap(12)
     const { result, rerender } = renderHook(() => useCentreOnPlace(ref, inCity), { wrapper: wrapperAt(`/p/${place}`) })
     await waitFor(() => {
-      expect(easeTo).toHaveBeenCalledTimes(1)
+      expect(jumpTo).toHaveBeenCalledTimes(1)
     })
-    expect(easeTo).toHaveBeenCalledWith({ center: [7.06, 0.34], zoom: placeZoom })
+    expect(jumpTo).toHaveBeenCalledWith({ center: [7.06, 0.34], zoom: placeZoom })
     rerender()
     result.current()
-    expect(easeTo).toHaveBeenCalledTimes(1)
+    expect(jumpTo).toHaveBeenCalledTimes(1)
   })
 
   it('keeps a closer zoom', async () => {
     stubCard()
-    const { ref, easeTo } = fakeMap(17)
+    const { ref, jumpTo } = fakeMap(17)
     renderHook(() => useCentreOnPlace(ref, inCity), { wrapper: wrapperAt(`/p/${place}`) })
     await waitFor(() => {
-      expect(easeTo).toHaveBeenCalledWith({ center: [7.06, 0.34], zoom: 17 })
+      expect(jumpTo).toHaveBeenCalledWith({ center: [7.06, 0.34], zoom: 17 })
     })
   })
 
   it('waits while the map shows another city', async () => {
     stubCard()
-    const { ref, easeTo } = fakeMap(12)
+    const { ref, jumpTo } = fakeMap(12)
     const { rerender } = renderHook(({ bounds }) => useCentreOnPlace(ref, bounds), {
       wrapper: wrapperAt(`/p/${place}`),
       initialProps: { bounds: elsewhere },
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(easeTo).not.toHaveBeenCalled()
+    expect(jumpTo).not.toHaveBeenCalled()
     // The card switched the map to the place's city.
     rerender({ bounds: inCity })
     await waitFor(() => {
-      expect(easeTo).toHaveBeenCalledTimes(1)
+      expect(jumpTo).toHaveBeenCalledTimes(1)
     })
   })
 
   it('does nothing on the map page without a card', async () => {
     const fetchMock = vi.fn<typeof fetch>()
     vi.stubGlobal('fetch', fetchMock)
-    const { ref, easeTo } = fakeMap(12)
+    const { ref, jumpTo } = fakeMap(12)
     renderHook(() => useCentreOnPlace(ref, inCity), { wrapper: wrapperAt('/') })
     await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(easeTo).not.toHaveBeenCalled()
+    expect(jumpTo).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

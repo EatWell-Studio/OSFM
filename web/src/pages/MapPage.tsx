@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Outlet } from 'react-router'
+import { useRememberMapSearch } from '@/filters/useFilters'
 
 // MapLibre is most of the map's weight; the shell loads it only when the map is shown.
 const MapView = lazy(() => import('@/map/MapView'))
@@ -13,6 +14,8 @@ const MapView = lazy(() => import('@/map/MapView'))
  */
 export function MapPage() {
   const { t } = useTranslation('map')
+  // The city and filters of the map, for the navigation's way back from other pages.
+  useRememberMapSearch()
   return (
     <div className="flex h-[calc(100dvh-6.5rem-2px-env(safe-area-inset-top)-env(safe-area-inset-bottom))] flex-col md:flex-row">
       <h1 className="sr-only">{t('title')}</h1>
