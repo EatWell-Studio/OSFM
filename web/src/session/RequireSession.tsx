@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router'
 import { loginPathFor, setupPagePath } from '@/lib/next'
+import { useCacheOwner } from '@/pwa/privateCaches'
 import { setupQuery } from '@/setup/setup'
 import { SessionPending } from './SessionGate'
 import { useSession } from './useSession'
@@ -9,13 +10,15 @@ import { useSession } from './useSession'
 /**
  * Renders children for a signed-in member; otherwise redirects to the sign-in page, which returns here afterwards (or
  * leads to the setup wizard while the instance has no maintainer). A maintainer who has not yet given the instance its
- * cities is sent back to the wizard, which resumes at that step.
+ * cities is sent back to the wizard, which resumes at that step. Before anything is fetched for the member, the
+ * service worker's private caches are made theirs (emptied when they were filled for somebody else; src/pwa).
  */
 export function RequireSession({ children }: { children: ReactNode }) {
   const session = useSession()
   const location = useLocation()
   const maintainer = session.status === 'signed-in' && session.me.role === 'maintainer'
   const setup = useQuery({ ...setupQuery(maintainer ? session.me.uuid : null), enabled: maintainer })
+  const cachesReady = useCacheOwner(session.status === 'signed-in' ? session.me.uuid : null)
   if (session.status === 'signed-out') {
     return <Navigate to={loginPathFor(location)} replace />
   }
@@ -25,7 +28,7 @@ export function RequireSession({ children }: { children: ReactNode }) {
   if (maintainer && setup.data === 'cities') {
     return <Navigate to={setupPagePath} replace />
   }
-  if (maintainer && setup.isPending) {
+  if (!cachesReady || (maintainer && setup.isPending)) {
     return <SessionPending session={{ status: 'loading' }} />
   }
   return children

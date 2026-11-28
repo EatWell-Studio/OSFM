@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter } from 'react-router'
 import { App } from './App'
 import { createQueryClient } from './lib/queryClient'
+import { UpdatePrompt } from './pwa/UpdatePrompt'
 import { routes } from './routes'
 
 const root = document.getElementById('root')
@@ -13,6 +14,8 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <App router={createBrowserRouter(routes)} queryClient={createQueryClient()} />
+    <App router={createBrowserRouter(routes)} queryClient={createQueryClient()}>
+      <UpdatePrompt />
+    </App>
   </StrictMode>,
 )

@@ -1,7 +1,11 @@
 {
   "app": {
     "instanceNamePlaceholder": "OSFM",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "update": {
+      "available": "A new version is available.",
+      "reload": "Reload"
+    }
   },
   "nav": {
     "label": "Main navigation",

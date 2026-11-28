@@ -13,10 +13,13 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      // registerSW.js, a separate file: the content security policy allows no inline script (docs/architecture.md
-      // §4.7). A new version waits until every tab of the app is closed; the "new version, refresh" prompt of §4.5
-      // comes with the offline work and activates it through the service worker's SKIP_WAITING message.
-      injectRegister: 'script',
+      // Our own service worker (src/sw/sw.ts; docs/architecture.md §4.5), into which the build injects the list of
+      // files to precache. The app registers it (src/pwa/UpdatePrompt.tsx) and offers to reload when a new version
+      // is waiting; the reload activates it through the service worker's SKIP_WAITING message.
+      strategies: 'injectManifest',
+      srcDir: 'src/sw',
+      filename: 'sw.ts',
+      injectRegister: false,
       registerType: 'prompt',
       // The icons are in public/ and so in the precache already (globPatterns).
       includeManifestIcons: false,
@@ -36,14 +39,11 @@ export default defineConfig({
           { src: '/maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
-        // Only the app shell is precached; offline data and tiles are later work (§4.5).
-        globPatterns: ['**/*.{html,js,css,png}'],
-        cleanupOutdatedCaches: true,
-        // Client-side routes are answered with the cached index.html, but never the server's own paths: the API, the
-        // tiles, PocketBase's admin UI and the instance metadata must always reach the network.
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api(\/|$)/, /^\/tiles(\/|$)/, /^\/_(\/|$)/, /^\/\.well-known(\/|$)/],
+      injectManifest: {
+        // The app shell, the MapLibre worker (.mjs), the glyphs (.pbf) and the sprites (.json, .png): the same for every
+        // member, cache first, replaced with each release. The licence texts beside the glyphs are not needed.
+        globPatterns: ['**/*.{html,js,mjs,css,png,json,pbf}'],
+        rollupFormat: 'iife',
       },
     }),
   ],

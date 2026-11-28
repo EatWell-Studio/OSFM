@@ -128,10 +128,11 @@ jobs:
           curl -fsS http://127.0.0.1:8090/ | grep -q '/assets/index-'
           # Client-side routes fall back to index.html.
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8090/some/client/route)" = 200
-          # The PWA files: the manifest, the service worker and its registration script, the icons.
+          # The PWA files: the manifest, the service worker (the app registers it) with its precache list and its
+          # private caches, the icons.
           curl -fsS http://127.0.0.1:8090/manifest.webmanifest | grep -q '"start_url":"/"'
-          curl -fsS http://127.0.0.1:8090/sw.js | grep -q 'precacheAndRoute'
-          curl -fsS http://127.0.0.1:8090/ | grep -q 'src="/registerSW.js"'
+          curl -fsS http://127.0.0.1:8090/sw.js | grep -q '"url":"index.html"'
+          curl -fsS http://127.0.0.1:8090/sw.js | grep -q 'osfm-private-'
           for icon in pwa-192x192.png pwa-512x512.png maskable-icon-512x512.png apple-touch-icon-180x180.png; do
             curl -fsS -o /dev/null "http://127.0.0.1:8090/$icon"
           done
@@ -184,7 +185,7 @@ jobs:
           test "$(ct manifest.webmanifest)" = application/manifest+json
           test "$(ct "$asset")" = 'text/javascript; charset=utf-8'
           test "$(cc "$asset")" = 'public, max-age=31536000, immutable'
-          for path in '' list index.html sw.js registerSW.js manifest.webmanifest; do
+          for path in '' list index.html sw.js manifest.webmanifest; do
             test "$(cc "$path")" = no-cache || { echo "/$path: Cache-Control $(cc "$path")" >&2; exit 1; }
           done
           # Paths that look like files get 404, not the app's index.html; client-side routes still get it.
