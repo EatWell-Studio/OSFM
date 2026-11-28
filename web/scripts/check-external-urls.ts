@@ -77,6 +77,18 @@ export const allowed: Allowance[] = [
     url: /^https:\/\/maplibre\.org\/$/,
     reason: "MapLibre's own attribution and logo controls: link targets, never fetched (the app does not show them)",
   },
+  {
+    url: /^https:\/\/uri\.amap\.com\/marker$/,
+    reason: 'the card\'s "directions" link to Amap (A5, src/geo/navigation.ts): followed only when the member taps it',
+  },
+  {
+    url: /^https:\/\/maps\.apple\.com\/$/,
+    reason: 'the card\'s "directions" link to Apple Maps (A5, src/geo/navigation.ts): followed only when tapped',
+  },
+  {
+    url: /^https:\/\/www\.google\.com\/maps\/search\/$/,
+    reason: 'the card\'s "directions" link to Google Maps (A5, src/geo/navigation.ts): followed only when tapped',
+  },
 ]
 
 // Licence texts and notices that ship with the map's glyphs and sprites: documents, never loaded by the app.

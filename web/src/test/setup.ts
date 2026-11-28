@@ -13,6 +13,12 @@ if (typeof window !== 'undefined' && typeof globalThis.ResizeObserver === 'undef
   }
 }
 
+// jsdom does not lay out, so it has no scrollIntoView (the card scrolls to a shared recommendation): an inert stand-in
+// that tests can spy on.
+if (typeof window !== 'undefined' && typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = () => undefined
+}
+
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
