@@ -33,7 +33,36 @@
     }
   },
   "tree": {
-    "title": "邀请树"
+    "title": "邀请树",
+    "intro": "谁邀请了谁（不显示登录名和化名）。一整枝是一个成员和他邀请的全部下线；对一整枝停止邀请权限或移出之前，先显示受影响的成员，维护者只列出、不处理。确认前需要重新验证你的身份。",
+    "loadError": "无法加载邀请树，请检查网络后重试。",
+    "cooldown": "冷静期中",
+    "below_one": "下线 {{count}} 人",
+    "below_other": "下线 {{count}} 人",
+    "collapse": "收起",
+    "expand_one": "展开（{{count}} 人）",
+    "expand_other": "展开（{{count}} 人）",
+    "invitedBy": "{{name}} 邀请的成员",
+    "stopInvites": "整枝停止邀请",
+    "remove": "整枝移出",
+    "stopped_one": "已停止 {{name}} 这一枝 {{count}} 人的邀请权限。",
+    "stopped_other": "已停止 {{name}} 这一枝 {{count}} 人的邀请权限。",
+    "removed_one": "已移出 {{name}} 这一枝 {{count}} 人。",
+    "removed_other": "已移出 {{name}} 这一枝 {{count}} 人。",
+    "preview": {
+      "stopTitle": "停止 {{name}} 这一枝的邀请权限",
+      "removeTitle": "移出 {{name}} 这一枝",
+      "affected_one": "将处理以下 {{count}} 人：",
+      "affected_other": "将处理以下 {{count}} 人：",
+      "affectedList": "将处理的成员",
+      "skipped_one": "以下 {{count}} 位维护者不处理：",
+      "skipped_other": "以下 {{count}} 位维护者不处理：",
+      "skippedList": "不处理的维护者",
+      "confirmStop_one": "确认停止 {{count}} 人的邀请权限",
+      "confirmStop_other": "确认停止 {{count}} 人的邀请权限",
+      "confirmRemove_one": "确认移出 {{count}} 人",
+      "confirmRemove_other": "确认移出 {{count}} 人"
+    }
   },
   "invites": {
     "permission": "可以邀请",
@@ -41,5 +70,36 @@
     "openEarly": "提前开放",
     "maintainer": "维护者随时可以邀请",
     "error": "无法修改邀请权限，请刷新后重试。"
+  },
+  "cancel": "取消",
+  "remove": {
+    "action": "移出",
+    "title": "移出 {{name}}",
+    "explanation": "被移出的成员立即退出登录、不能再登录，他还没用的邀请链接作废。",
+    "recommendations": "他的推荐",
+    "hide": "隐藏",
+    "hideHint": "主名和化名的推荐都对成员隐藏，维护者仍能看到并看到原因。",
+    "keep": "保留",
+    "keepHint": "主名推荐显示为“已退出成员”，化名推荐继续显示化名。",
+    "reason": "原因",
+    "reasonHint": "写进审计记录；选择隐藏时维护者在被隐藏的推荐上看到它。",
+    "confirm": "确认移出",
+    "done": "已移出 {{name}}。"
+  },
+  "role": {
+    "promote": "设为维护者",
+    "demote": "撤销维护者",
+    "promoted": "{{name}} 现在是维护者。",
+    "demoted": "{{name}} 不再是维护者。"
+  },
+  "errors": {
+    "notFound": "这个成员已离开或不存在，请刷新页面。",
+    "removeSelf": "不能移出自己。",
+    "removeMaintainer": "不能移出维护者，请先撤销他的维护者角色。",
+    "demoteSelf": "不能撤销自己的维护者角色。",
+    "lastMaintainer": "圈子至少要有一位维护者。",
+    "branchChanged": "预览之后邀请树有了变化，请看一下新的列表再确认。",
+    "forbidden": "只有维护者可以这样做。",
+    "generic": "操作没有完成，请刷新后重试。"
   }
 }

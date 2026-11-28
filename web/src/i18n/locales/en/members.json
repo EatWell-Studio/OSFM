@@ -33,7 +33,36 @@
     }
   },
   "tree": {
-    "title": "Invitation tree"
+    "title": "Invite tree",
+    "intro": "Who invited whom (no login names, no pseudonyms). A branch is a member and everyone invited below them. Before stopping a branch's invites or removing it you see who it applies to; maintainers are listed but left alone. You confirm it is you first.",
+    "loadError": "Could not load the invite tree. Check your connection and try again.",
+    "cooldown": "cooling-off period",
+    "below_one": "{{count}} below",
+    "below_other": "{{count}} below",
+    "collapse": "Collapse",
+    "expand_one": "Expand ({{count}})",
+    "expand_other": "Expand ({{count}})",
+    "invitedBy": "Invited by {{name}}",
+    "stopInvites": "Stop branch invites",
+    "remove": "Remove branch",
+    "stopped_one": "Stopped the invites of {{count}} member in the branch of {{name}}.",
+    "stopped_other": "Stopped the invites of {{count}} members in the branch of {{name}}.",
+    "removed_one": "Removed {{count}} member in the branch of {{name}}.",
+    "removed_other": "Removed {{count}} members in the branch of {{name}}.",
+    "preview": {
+      "stopTitle": "Stop the invites of the branch of {{name}}",
+      "removeTitle": "Remove the branch of {{name}}",
+      "affected_one": "This applies to {{count}} member:",
+      "affected_other": "This applies to {{count}} members:",
+      "affectedList": "Members it applies to",
+      "skipped_one": "{{count}} maintainer is left alone:",
+      "skipped_other": "{{count}} maintainers are left alone:",
+      "skippedList": "Maintainers left alone",
+      "confirmStop_one": "Stop invites of {{count}} member",
+      "confirmStop_other": "Stop invites of {{count}} members",
+      "confirmRemove_one": "Remove {{count}} member",
+      "confirmRemove_other": "Remove {{count}} members"
+    }
   },
   "invites": {
     "permission": "May invite",
@@ -41,5 +70,36 @@
     "openEarly": "Open early",
     "maintainer": "Maintainers can always invite",
     "error": "Could not change the invite permission. Reload and try again."
+  },
+  "cancel": "Cancel",
+  "remove": {
+    "action": "Remove",
+    "title": "Remove {{name}}",
+    "explanation": "A removed member is signed out at once and cannot sign in again; their unused invite links stop working.",
+    "recommendations": "Their recommendations",
+    "hide": "Hide",
+    "hideHint": "Recommendations under the main name and the pseudonym are hidden from members; maintainers still see them, with the reason.",
+    "keep": "Keep",
+    "keepHint": "Main-name recommendations show as by a member who left; pseudonym ones keep the pseudonym.",
+    "reason": "Reason",
+    "reasonHint": "Goes into the audit log; when hiding, maintainers see it on the hidden recommendations.",
+    "confirm": "Remove",
+    "done": "{{name}} was removed."
+  },
+  "role": {
+    "promote": "Make maintainer",
+    "demote": "Revoke maintainer",
+    "promoted": "{{name}} is now a maintainer.",
+    "demoted": "{{name}} is no longer a maintainer."
+  },
+  "errors": {
+    "notFound": "This member has left or does not exist. Reload the page.",
+    "removeSelf": "You cannot remove yourself.",
+    "removeMaintainer": "Maintainers cannot be removed. Revoke their maintainer role first.",
+    "demoteSelf": "You cannot revoke your own maintainer role.",
+    "lastMaintainer": "The circle needs at least one maintainer.",
+    "branchChanged": "The invite tree changed after the preview. Check the new list and confirm again.",
+    "forbidden": "Only maintainers may do this.",
+    "generic": "That did not work. Reload the page and try again."
   }
 }
