@@ -1,3 +1,21 @@
 {
-  "title": "导航与分享"
+  "title": "导航与分享",
+  "navigate": "导航",
+  "app": {
+    "amap": "高德地图",
+    "apple": "Apple 地图",
+    "google": "Google 地图"
+  },
+  "newWindow": "（在新窗口打开）",
+  "share": "分享到群",
+  "sharePlace": "把这个地点分享到群",
+  "shareRecommendation": "把 {{name}} 的这条推荐分享到群",
+  "copied": "已复制，可以粘贴到群里。",
+  "copyFailed": "无法自动复制，请手动复制下面的文字：",
+  "text": {
+    "placeWithCity": "{{name}}（{{city}}）",
+    "separator": " · ",
+    "recommendation": "{{attitude}} · {{name}}：{{text}}",
+    "ellipsis": "…"
+  }
 }

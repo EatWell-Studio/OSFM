@@ -1,3 +1,21 @@
 {
-  "title": "Directions and sharing"
+  "title": "Directions and sharing",
+  "navigate": "Directions",
+  "app": {
+    "amap": "Amap",
+    "apple": "Apple Maps",
+    "google": "Google Maps"
+  },
+  "newWindow": " (opens in a new window)",
+  "share": "Share with the group",
+  "sharePlace": "Share with the group: this place",
+  "shareRecommendation": "Share with the group: the recommendation by {{name}}",
+  "copied": "Copied: paste it into the group chat.",
+  "copyFailed": "Could not copy automatically; copy the text below:",
+  "text": {
+    "placeWithCity": "{{name}} ({{city}})",
+    "separator": " · ",
+    "recommendation": "{{attitude}} · {{name}}: {{text}}",
+    "ellipsis": "…"
+  }
 }

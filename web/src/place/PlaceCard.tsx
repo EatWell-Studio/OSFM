@@ -34,6 +34,7 @@ import {
 } from './format'
 import { recommendationElementId } from './links'
 import type { PlaceCard as Card, RecommendationView } from './placeApi'
+import { useSharedRecommendation } from './sharedRecommendation'
 
 const countFields: Record<Attitude, keyof PlaceCounts> = {
   must_try: 'mustTry',
@@ -61,6 +62,8 @@ export function PlaceCard({
   const category = isCategory(place.category) ? place.category : null
   const cuisines = place.cuisine.filter(isCuisine)
   const approximate = place.precision === 'approx' || place.precision === 'area'
+  // The recommendation a shared link names (?r=): scrolled to and highlighted (T032).
+  const shared = useSharedRecommendation(place)
 
   return (
     <article className="flex flex-col gap-4">
@@ -140,7 +143,7 @@ export function PlaceCard({
         <AddRecommendation place={place} />
         <ol className="flex flex-col gap-3">
           {place.recommendations.map((rec) => (
-            <Recommendation key={rec.uuid} place={place} rec={rec} />
+            <Recommendation key={rec.uuid} place={place} rec={rec} shared={rec.uuid === shared} />
           ))}
         </ol>
       </section>
@@ -177,14 +180,20 @@ function Day({
   return <>{t(label, { date })}</>
 }
 
-function Recommendation({ place, rec }: { place: Card; rec: RecommendationView }) {
+function Recommendation({ place, rec, shared }: { place: Card; rec: RecommendationView; shared: boolean }) {
   const { t } = useTranslation(['place', 'common'])
   const name = rec.authorLeft ? t('authorLeft') : rec.displayName
   return (
     <li
       id={recommendationElementId(rec.uuid)}
       data-hidden={rec.hidden ? 'true' : undefined}
-      className={'flex flex-col gap-2 rounded-lg border p-3 text-sm' + (rec.hidden ? ' border-dashed bg-muted/50' : '')}
+      data-shared={shared ? 'true' : undefined}
+      aria-current={shared ? 'true' : undefined}
+      className={
+        'flex scroll-mt-2 flex-col gap-2 rounded-lg border p-3 text-sm' +
+        (rec.hidden ? ' border-dashed bg-muted/50' : '') +
+        (shared ? ' border-primary ring-2 ring-primary/40' : '')
+      }
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <SignatureName name={name} />

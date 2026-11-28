@@ -19,6 +19,7 @@ function writeBuild(dir: string) {
       'const ns="http://www.w3.org/2000/svg";var b=new URL(`http://localhost`);const base=`https://osfm.invalid`;',
       'throw Error(`See https://reactrouter.com/en/main/routers/picking-a-router.`);fetch("/api/osfm/me")',
       'var t=`https://react.dev/errors/`+e;const a=`© <a href="https://www.openstreetmap.org/copyright">OSM</a>`',
+      'const n=[`https://uri.amap.com/marker`,`https://maps.apple.com/`,`https://www.google.com/maps/search/`]',
     ].join('\n'),
   )
   writeFileSync(

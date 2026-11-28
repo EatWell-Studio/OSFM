@@ -1,7 +1,9 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
 import { zhCN } from '@/i18n/resources'
+import { instanceQueryKey } from '@/instance/instance'
 import { recommendationElementId } from './links'
 import { PlaceCard } from './PlaceCard'
 import type { PlaceCard as Card, RecommendationView } from './placeApi'
@@ -54,8 +56,23 @@ function card(overrides: Partial<Card> = {}): Card {
 
 function renderCard(c: Card, path = `/p/${place}`) {
   const router = createMemoryRouter([{ path: '*', element: <PlaceCard place={c} /> }], { initialEntries: [path] })
-  const view = render(<RouterProvider router={router} />)
+  // The instance (for the city's name in shared texts) is in the cache already, as it is once the map has loaded.
+  const queryClient = new QueryClient()
+  queryClient.setQueryData(instanceQueryKey, { name: 'Test Circle', cities: [] })
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
   return { ...view, router }
+}
+
+function recElement(uuid: string): HTMLElement {
+  const element = document.getElementById(recommendationElementId(uuid))
+  if (!element) {
+    throw new Error(`no recommendation ${uuid}`)
+  }
+  return element
 }
 
 describe('the place card', () => {
@@ -130,7 +147,10 @@ describe('the place card', () => {
   it('shows a landmark text verbatim', () => {
     renderCard(card({ landmark: { type: 'text', text: 'Test <b>gate</b>\nnorth side' } }))
     expect(screen.getByText((_, el) => el?.tagName === 'DD' && el.textContent === 'Test <b>gate</b>\nnorth side'))
-    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    // No link but the navigation apps'.
+    expect(screen.getAllByRole('link').map((l) => l.getAttribute('href'))).not.toContainEqual(
+      expect.stringMatching(/^\//),
+    )
   })
 
   it('shows the status and its last confirmation when there is one', () => {
@@ -222,7 +242,8 @@ describe('the recommendations on the card', () => {
         ],
       }),
     )
-    const links = container.querySelectorAll('a')
+    // In the recommendation (the card's own links, to the navigation apps, are tested in actions/NavigateShare.test.tsx).
+    const links = recElement(rec().uuid).querySelectorAll('a')
     expect(links).toHaveLength(1)
     const link = links[0]
     expect(link).toHaveAttribute('href', 'https://example.org/test/post?id=1')
@@ -236,13 +257,11 @@ describe('the recommendations on the card', () => {
   it('shows HTML and Markdown in a recommendation verbatim', () => {
     const text =
       '<script>alert(1)</script> <b>bold</b> **stars** [link](https://example.org) ![img](https://example.org/x.png)'
-    const { container } = renderCard(
-      card({ recommendations: [rec({ text, displayName: '<i>Test</i> _Name_', dishes: ['<u>Test</u>'] })] }),
-    )
+    renderCard(card({ recommendations: [rec({ text, displayName: '<i>Test</i> _Name_', dishes: ['<u>Test</u>'] })] }))
     expect(screen.getByText(text)).toBeInTheDocument()
     expect(screen.getByText('<i>Test</i> _Name_')).toBeInTheDocument()
     expect(screen.getByText('<u>Test</u>')).toBeInTheDocument()
-    expect(container.querySelector('script, b, i, u, img, a')).toBeNull()
+    expect(recElement(rec().uuid).querySelector('script, b, i, u, img, a')).toBeNull()
   })
 
   it('offers external links on a main-name signature only', () => {
@@ -265,7 +284,7 @@ describe('the recommendations on the card', () => {
       throw new Error('missing recommendation')
     }
     expect(within(main).getByRole('button', { expanded: false })).toBeInTheDocument()
-    expect(within(pen).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(pen).queryByRole('button', { expanded: false })).not.toBeInTheDocument()
     expect(pen.querySelector('a')).toBeNull()
   })
 
