@@ -150,7 +150,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * Registers with password and TOTP through the API, with the entitlement (an invite, or the setup code with the
  * instance name), and returns the member with the session the registration started.
  */
-async function registerWithPassword(
+export async function registerWithPassword(
   client: ApiClient,
   paths: { start: string; confirm: string },
   entitlement: Record<string, string>,
@@ -249,14 +249,15 @@ let members = 0
 
 /**
  * Invites a new member to the shared instance and registers them with password and TOTP, all through the API: the
- * shared maintainer creates the invite. Names are unique per call unless given. Returns the member, signed in.
+ * shared maintainer creates the invite, or who.inviter (who must be allowed to invite). Names are unique per call
+ * unless given. Returns the member, signed in.
  */
 export async function inviteMember(
-  who: { loginName?: string; displayName?: string; password?: string } = {},
+  who: { loginName?: string; displayName?: string; password?: string; inviter?: TestMember } = {},
 ): Promise<TestMember> {
   members++
   const suffix = `${Date.now().toString(36)}${members.toString(36)}`
-  const invited = await apiAs(sharedInstance().maintainer).post('/invites', { days: 1 })
+  const invited = await apiAs(who.inviter ?? sharedInstance().maintainer).post('/invites', { days: 1 })
   return registerWithPassword(
     new ApiClient(sharedPort()),
     { start: '/register/password/start', confirm: '/register/password/confirm' },

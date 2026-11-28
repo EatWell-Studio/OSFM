@@ -3,7 +3,21 @@
 // structs (auth.MemberInfo). Maintainers switch a member's invite permission and open inviting early from it (D6, D12;
 // the generated api.MemberInviteRights).
 
-import type { InvitePermissionRequest, MemberInviteRights } from '@/api/types.gen'
+import type {
+  BranchMember,
+  BranchPreview,
+  BranchPreviewRequest,
+  BranchRemove,
+  BranchRequest,
+  BranchStopInvites,
+  InvitePermissionRequest,
+  MemberInviteRights,
+  MemberRole,
+  RemovedMember,
+  RemoveMemberRequest,
+  RoleRequest,
+  TreeMember,
+} from '@/api/types.gen'
 import { apiJson } from '@/lib/api'
 import { field, postAuth, unexpected } from '@/lib/authApi'
 import type { MemberRef } from '@/invites/invites'
@@ -96,4 +110,103 @@ export async function openInviteEarly(uuid: string): Promise<MemberInviteRights>
     throw unexpected(path)
   }
   return body
+}
+
+// The invite tree, removal, branch actions and roles (D6, D7, D10; the generated api.MemberTree and friends). Removing,
+// acting on a branch and changing a role need a recent re-verification: the server answers reauth_required otherwise
+// (useStepUp).
+
+export const memberTreeQueryKey = ['members', 'tree'] as const
+
+function isTreeMember(v: unknown): v is TreeMember {
+  const leftAt = field(v, 'leftAt')
+  const invited = field(v, 'invited')
+  return (
+    typeof field(v, 'uuid') === 'string' &&
+    typeof field(v, 'displayName') === 'string' &&
+    typeof field(v, 'role') === 'string' &&
+    typeof field(v, 'joinedAt') === 'string' &&
+    (leftAt === null || typeof leftAt === 'string') &&
+    typeof field(v, 'canInvite') === 'boolean' &&
+    typeof field(v, 'inviteCooldown') === 'boolean' &&
+    Array.isArray(invited) &&
+    invited.every(isTreeMember)
+  )
+}
+
+/** GET /api/osfm/members/tree: the members by who invited whom. */
+export async function fetchMemberTree(): Promise<TreeMember[]> {
+  const roots = field(await apiJson('/members/tree'), 'roots')
+  if (!Array.isArray(roots) || !roots.every(isTreeMember)) {
+    throw unexpected('/members/tree')
+  }
+  return roots
+}
+
+function isBranchMembers(v: unknown): v is BranchMember[] {
+  return (
+    Array.isArray(v) &&
+    v.every(
+      (m) =>
+        typeof field(m, 'uuid') === 'string' &&
+        typeof field(m, 'displayName') === 'string' &&
+        typeof field(m, 'role') === 'string' &&
+        typeof field(m, 'depth') === 'number',
+    )
+  )
+}
+
+function isBranchPreview(v: unknown): v is BranchPreview {
+  return (
+    typeof field(v, 'action') === 'string' &&
+    isBranchMembers(field(v, 'affected')) &&
+    isBranchMembers(field(v, 'skipped'))
+  )
+}
+
+export type BranchAction = typeof BranchStopInvites | typeof BranchRemove
+
+/** POST /api/osfm/members/{uuid}/branch/preview: who the action on the member's branch would apply to. */
+export async function previewBranch(uuid: string, action: BranchAction): Promise<BranchPreview> {
+  const path = `/members/${encodeURIComponent(uuid)}/branch/preview`
+  const request: BranchPreviewRequest = { action }
+  const body = await postAuth(path, request)
+  if (!isBranchPreview(body)) {
+    throw unexpected(path)
+  }
+  return body
+}
+
+/**
+ * POST /api/osfm/members/{uuid}/branch: acts on the branch, sending the members the preview listed as affected. The
+ * server answers branch_changed (409) when the branch is no longer what the preview showed.
+ */
+export async function executeBranch(uuid: string, request: BranchRequest): Promise<BranchPreview> {
+  const path = `/members/${encodeURIComponent(uuid)}/branch`
+  const body = await postAuth(path, request)
+  if (!isBranchPreview(body)) {
+    throw unexpected(path)
+  }
+  return body
+}
+
+/** POST /api/osfm/members/{uuid}/remove: removes the member, hiding or keeping their recommendations. */
+export async function removeMember(uuid: string, request: RemoveMemberRequest): Promise<RemovedMember> {
+  const path = `/members/${encodeURIComponent(uuid)}/remove`
+  const body = await postAuth(path, request)
+  if (typeof field(body, 'uuid') !== 'string' || typeof field(body, 'hiddenRecommendations') !== 'number') {
+    throw unexpected(path)
+  }
+  return body as RemovedMember
+}
+
+/** POST /api/osfm/members/{uuid}/role: makes the member a maintainer or a member again. */
+export async function setMemberRole(uuid: string, role: RoleRequest['role']): Promise<MemberRole> {
+  const path = `/members/${encodeURIComponent(uuid)}/role`
+  const request: RoleRequest = { role }
+  const body = await postAuth(path, request)
+  if (typeof field(body, 'uuid') !== 'string' || typeof field(body, 'role') !== 'string') {
+    throw unexpected(path)
+  }
+  return body as MemberRole
 }
