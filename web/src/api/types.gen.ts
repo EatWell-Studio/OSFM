@@ -378,6 +378,31 @@ export interface MemberRole {
 }
 
 //////////
+// source: layer_export.go
+
+/**
+ * ExportPlacesPath is the places layer (osfm-places/1, ODbL 1.0).
+ */
+export const ExportPlacesPath = "/api/osfm/exports/places";
+/**
+ * ExportRecommendationsPath is the recommendations layer (osfm-recommendations/1, CC BY-SA 4.0).
+ */
+export const ExportRecommendationsPath = "/api/osfm/exports/recommendations";
+/**
+ * ExportParamCity limits an export to the places inside the city with this slug, and their recommendations; absent
+ * or empty for the whole layer.
+ */
+export const ExportParamCity = "city";
+/**
+ * CodeExportUnknownCity: the city parameter names no city of the instance (400).
+ */
+export const CodeExportUnknownCity = "unknown_city";
+/**
+ * ExportContentType is the media type of the files (RFC 7946 §12).
+ */
+export const ExportContentType = "application/geo+json";
+
+//////////
 // source: map.go
 
 /**
