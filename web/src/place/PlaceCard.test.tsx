@@ -17,6 +17,14 @@ function before(text: string): RegExp {
   return new RegExp('^' + (text.split('{{')[0] ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 }
 
+/**
+ * The card's links other than "add my recommendation" (T030's slot), which a card without the member's own
+ * recommendation always has.
+ */
+function otherLinks(root: ParentNode): HTMLAnchorElement[] {
+  return Array.from(root.querySelectorAll('a')).filter((a) => !a.getAttribute('href')?.endsWith('/recommend'))
+}
+
 function rec(overrides: Partial<RecommendationView> = {}): RecommendationView {
   return {
     uuid: '0190a1b2-0000-7000-8000-00000000c001',
@@ -130,7 +138,7 @@ describe('the place card', () => {
   it('shows a landmark text verbatim', () => {
     renderCard(card({ landmark: { type: 'text', text: 'Test <b>gate</b>\nnorth side' } }))
     expect(screen.getByText((_, el) => el?.tagName === 'DD' && el.textContent === 'Test <b>gate</b>\nnorth side'))
-    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(otherLinks(document.body)).toHaveLength(0)
   })
 
   it('shows the status and its last confirmation when there is one', () => {
@@ -222,7 +230,7 @@ describe('the recommendations on the card', () => {
         ],
       }),
     )
-    const links = container.querySelectorAll('a')
+    const links = otherLinks(container)
     expect(links).toHaveLength(1)
     const link = links[0]
     expect(link).toHaveAttribute('href', 'https://example.org/test/post?id=1')
@@ -242,7 +250,8 @@ describe('the recommendations on the card', () => {
     expect(screen.getByText(text)).toBeInTheDocument()
     expect(screen.getByText('<i>Test</i> _Name_')).toBeInTheDocument()
     expect(screen.getByText('<u>Test</u>')).toBeInTheDocument()
-    expect(container.querySelector('script, b, i, u, img, a')).toBeNull()
+    expect(container.querySelector('script, b, i, u, img')).toBeNull()
+    expect(otherLinks(container)).toHaveLength(0)
   })
 
   it('offers external links on a main-name signature only', () => {

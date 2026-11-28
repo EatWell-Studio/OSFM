@@ -10,6 +10,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { NewPlaceButton } from '@/create/NewPlaceButton'
 import { FilterSheet } from '@/filters/FilterSheet'
 import { filterCount } from '@/filters/filters'
 import { useMapSearch } from '@/filters/useFilters'
@@ -366,6 +367,11 @@ function CityMap({
       {/* The filters, at thumb's reach, left of the attribution. */}
       <div className="absolute bottom-2.5 left-2.5 z-[2]">
         <FilterSheet city={places.known ? city.id : null} />
+      </div>
+
+      {/* A new place (T030), at thumb's reach, above the attribution. */}
+      <div className="absolute right-2.5 bottom-9 z-[2]">
+        <NewPlaceButton />
       </div>
     </div>
   )
