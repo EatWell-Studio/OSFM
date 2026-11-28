@@ -354,9 +354,8 @@ func beginSetupPasskey(app core.App, code, instanceName, loginName, displayName 
 	if loginName = NormalizeLoginName(loginName); !validLoginName(loginName) {
 		return nil, "", errLoginNameInvalid
 	}
-	var ok bool
-	if displayName, ok = normalizeDisplayName(displayName, loginName); !ok {
-		return nil, "", errDisplayNameInvalid
+	if displayName, err = normalizeDisplayName(displayName, loginName); err != nil {
+		return nil, "", err
 	}
 	return beginPasskeyEnrolment(app, p, ceremonySetup, setupBindHash(code), name, loginName, displayName)
 }

@@ -32,9 +32,13 @@ func jsonBody(t *testing.T, v any) string {
 	return string(b)
 }
 
-// registerOptions asks for registration options; it fails the test unless they come.
+// registerOptions asks for registration options; it fails the test unless they come. An empty display name stands
+// for "Test <login>".
 func (en *env) registerOptions(code, login, display string) optionsResponse {
 	en.t.Helper()
+	if display == "" {
+		display = "Test " + login
+	}
 	rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
 		jsonBody(en.t, map[string]string{"invite": code, "loginName": login, "displayName": display}))
 	if rec.Code != http.StatusOK {
@@ -442,7 +446,7 @@ func TestPasskeyRegistrationNeedsInvite(t *testing.T) {
 
 	for _, c := range []string{"", "x", strings.Repeat("A", 43)} {
 		rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
-			jsonBody(t, map[string]string{"invite": c, "loginName": "test_new"}))
+			jsonBody(t, map[string]string{"invite": c, "loginName": "test_new", "displayName": "Test New"}))
 		if rec.Code != http.StatusForbidden || errorCode(t, rec) != auth.CodeInviteInvalid {
 			t.Errorf("options with code %q: %d %s", c, rec.Code, rec.Body.String())
 		}
@@ -452,18 +456,33 @@ func TestPasskeyRegistrationNeedsInvite(t *testing.T) {
 		strings.Repeat("a", 33): auth.CodeLoginNameInvalid, "test_maintainer": auth.CodeLoginNameTaken,
 	} {
 		rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
-			jsonBody(t, map[string]string{"invite": code, "loginName": login}))
+			jsonBody(t, map[string]string{"invite": code, "loginName": login, "displayName": "Test New"}))
 		if errorCode(t, rec) != want {
 			t.Errorf("login name %q: %d %s", login, rec.Code, rec.Body.String())
 		}
 	}
-	// A taken login name is not told without a valid invite.
-	rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
-		jsonBody(t, map[string]string{"invite": "x", "loginName": "test_maintainer"}))
-	if errorCode(t, rec) != auth.CodeInviteInvalid {
-		t.Errorf("taken login name without invite: %s", rec.Body.String())
+	// A taken login name or display name is not told without a valid invite.
+	for _, body := range []map[string]string{
+		{"invite": "x", "loginName": "test_maintainer", "displayName": "Test New"},
+		{"invite": "x", "loginName": "test_new", "displayName": "Test test_maintainer"},
+	} {
+		rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "", jsonBody(t, body))
+		if errorCode(t, rec) != auth.CodeInviteInvalid {
+			t.Errorf("taken name without invite: %s", rec.Body.String())
+		}
 	}
-	rec = en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
+	// The display name is required, is not the login name and is no one else's name (M2-Q6).
+	for display, want := range map[string]string{
+		"": auth.CodeDisplayNameInvalid, " TEST_new ": auth.CodeDisplayNameIsLogin,
+		"ｔｅｓｔ TEST_maintainer": auth.CodeNameTaken,
+	} {
+		rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
+			jsonBody(t, map[string]string{"invite": code, "loginName": "test_new", "displayName": display}))
+		if errorCode(t, rec) != want {
+			t.Errorf("display name %q: %d %s", display, rec.Code, rec.Body.String())
+		}
+	}
+	rec := en.reqJSON(http.MethodPost, auth.PasskeyRegisterOptionsPath, "",
 		jsonBody(t, map[string]string{"invite": code, "loginName": "test_new", "displayName": "Test\u202eName"}))
 	if errorCode(t, rec) != auth.CodeDisplayNameInvalid {
 		t.Errorf("display name with a bidi override: %s", rec.Body.String())
@@ -492,7 +511,18 @@ func TestPasskeyRegistrationNeedsInvite(t *testing.T) {
 	if rec.Code != http.StatusConflict || errorCode(t, rec) != auth.CodeLoginNameTaken {
 		t.Errorf("finish with a login name taken meanwhile: %d %s", rec.Code, rec.Body.String())
 	}
-	if n, _ := en.app.CountRecords(store.Members); n != 2 {
+	// The display name is taken, as another member's pseudonym, between the two requests.
+	o = en.registerOptions(other, "test_race2", "Test Raced Name")
+	raced := en.member("test_race3", auth.RoleMember)
+	raced.Set("pseudonym", "test raced name")
+	if err := en.app.Save(raced); err != nil {
+		t.Fatal(err)
+	}
+	rec = en.finishRegistration(a, other, o)
+	if rec.Code != http.StatusConflict || errorCode(t, rec) != auth.CodeNameTaken {
+		t.Errorf("finish with a display name taken meanwhile: %d %s", rec.Code, rec.Body.String())
+	}
+	if n, _ := en.app.CountRecords(store.Members); n != 3 {
 		t.Errorf("%d members", n)
 	}
 	if n, _ := en.app.CountRecords(store.Credentials); n != 0 {

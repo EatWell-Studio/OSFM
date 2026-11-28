@@ -20,6 +20,7 @@ import {
   type Registered,
   startPasswordRegistration,
 } from '@/lib/passwordTotp'
+import { displayNameProblem } from '@/lib/names'
 import { RecoveryCodes } from './RecoveryCodes'
 import { TotpSecret } from './TotpSecret'
 
@@ -50,6 +51,10 @@ function startError(t: T, error: unknown): Errors {
       return { loginName: t('register.password.errors.loginNameTaken') }
     case 'display_name_invalid':
       return { displayName: t('register.password.errors.displayNameInvalid') }
+    case 'display_name_is_login_name':
+      return { displayName: t('register.password.errors.displayNameIsLoginName') }
+    case 'name_taken':
+      return { displayName: t('register.password.errors.nameTaken') }
     case 'password_too_short':
       return { password: t('register.password.errors.passwordTooShort') }
     case 'password_too_long':
@@ -157,6 +162,12 @@ function AccountForm({
     if (!isValidLoginName(login)) {
       next.loginName = t('register.password.errors.loginNameInvalid')
     }
+    const display = displayNameProblem(displayName, login)
+    if (display === 'invalid') {
+      next.displayName = t('register.password.errors.displayNameInvalid')
+    } else if (display === 'login') {
+      next.displayName = t('register.password.errors.displayNameIsLoginName')
+    }
     const length = passwordLength(password)
     if (length < minPasswordLength) {
       next.password = t('register.password.errors.passwordTooShort')
@@ -203,6 +214,7 @@ function AccountForm({
         error={errors.displayName}
         name="nickname"
         autoComplete="nickname"
+        required
         maxLength={64}
         value={displayName}
         onChange={(e) => {

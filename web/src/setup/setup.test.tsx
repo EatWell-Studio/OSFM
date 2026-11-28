@@ -109,6 +109,7 @@ describe('setup wizard', () => {
 
     const reg = zhCN.auth.register.password
     await user.type(screen.getByLabelText(reg.loginName), 'test_first')
+    await user.type(screen.getByLabelText(reg.displayName), 'Test First')
     await user.type(screen.getByLabelText(reg.password), 'test password, made up')
     await user.type(screen.getByLabelText(reg.repeat), 'test password, made up')
     await user.click(screen.getByRole('button', { name: reg.next }))
@@ -118,7 +119,7 @@ describe('setup wizard', () => {
         setupCode,
         instanceName: cjkName,
         loginName: 'test_first',
-        displayName: '',
+        displayName: 'Test First',
         password: 'test password, made up',
       },
     ])

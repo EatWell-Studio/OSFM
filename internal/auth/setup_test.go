@@ -187,7 +187,7 @@ func TestSetupWithPasskey(t *testing.T) {
 
 	options := func(setupCode string) string {
 		return jsonBody(t, auth.SetupPasskeyOptionsRequest{SetupCode: setupCode, InstanceName: "Test Circle",
-			LoginName: "test_first"})
+			LoginName: "test_first", DisplayName: "Test First"})
 	}
 	if rec := pe.reqJSON(http.MethodPost, auth.SetupPasskeyOptionsPath, "", options(otherSetupCode)); rec.Code !=
 		http.StatusForbidden || errorCode(t, rec) != auth.CodeSetupCodeInvalid {
