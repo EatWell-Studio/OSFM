@@ -89,3 +89,14 @@ func CanSeePlace(v Viewer, placeDeleted bool, recommendations []Recommendation) 
 	}
 	return false
 }
+
+// InCircleLayer reports whether r belongs to the circle's recommendations layer (F1, M2-Q3): what every member sees,
+// whoever they are, and what the per-layer exports and backups hold. It is not deleted, its place is not deleted, it
+// is shared (circle, federated) and it is not hidden. Its author's own private and hidden recommendations are not in
+// it, and neither are hidden ones for maintainers: the layer is the same for every member who looks at it.
+//
+// It is [CanSeeRecommendation] for a member who is neither its author nor a maintainer; store.InCircleLayer is the
+// same rule as a query condition.
+func InCircleLayer(r Recommendation) bool {
+	return !r.Deleted && !r.PlaceDeleted && isShared(r.Visibility) && !r.Hidden
+}
