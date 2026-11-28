@@ -60,6 +60,9 @@ const (
 	RemovableMemberUUID = "0190a1b2-0000-7000-8000-00000000d004"
 )
 
+// NoticeUUID is the uuid of the seeded member's unread notice, which the seeded maintainer may not mark read.
+const NoticeUUID = "0190a1b2-0000-7000-8000-00000000f001"
+
 // UnrecommendedPlaceUUID is the uuid of a seeded live place with a single circle recommendation, by neither the seeded
 // member nor the seeded maintainer: both may add theirs (the probes of new recommendations).
 const UnrecommendedPlaceUUID = "0190a1b2-0000-7000-8000-00000000e001"
@@ -174,7 +177,9 @@ func Seed(t testing.TB, app core.App) *Seeded {
 	save(store.Reports, map[string]any{"recommendation": rec.Id, "reporter": reset.Id, "reason": store.ReasonOther,
 		"note": "Test other note", "resolved_at": "2026-01-05 00:00:00Z", "resolved_by": maintainer.Id,
 		"resolution": store.ResolutionRestored})
-	save(store.Notices, map[string]any{"member": m, "kind": "test"})
+	// The member's notices: an unread one about their recommendation, and one read already.
+	save(store.Notices, map[string]any{store.FieldUUID: NoticeUUID, "member": m, "kind": "maintainer_edited",
+		"ref": rec.GetString(store.FieldUUID)})
 	save(store.Notices, map[string]any{"member": m, "kind": "test", "read_at": "2026-01-06 00:00:00Z"})
 
 	unrecommended := save(store.Places, map[string]any{store.FieldUUID: UnrecommendedPlaceUUID,

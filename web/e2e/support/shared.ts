@@ -150,7 +150,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * Registers with password and TOTP through the API, with the entitlement (an invite, or the setup code with the
  * instance name), and returns the member with the session the registration started.
  */
-async function registerWithPassword(
+export async function registerWithPassword(
   client: ApiClient,
   paths: { start: string; confirm: string },
   entitlement: Record<string, string>,
