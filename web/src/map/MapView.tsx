@@ -15,6 +15,7 @@ import { filterCount } from '@/filters/filters'
 import { useMapSearch } from '@/filters/useFilters'
 import { instanceQuery } from '@/instance/instance'
 import { placePath } from '@/lib/paths'
+import { useCentreOnPlace } from '@/place/useCentreOnPlace'
 import { type GeocodeResult, PlaceSearch } from '@/search/PlaceSearch'
 import { type City, citiesQueryKey, contains, fetchCities, type MapCity, mergeCities, pickCity } from './cities'
 import { PlaceLayers } from './places/PlaceLayers'
@@ -183,6 +184,8 @@ function CityMap({
       map.fitBounds(city.bounds, { animate: false })
     }
   }, [city])
+  // The place whose card is open (A7); after the city switch above, so that it wins over fitting the city.
+  const centreOnPlace = useCentreOnPlace(mapRef, city.bounds)
 
   /** Centers on the member's position, switching to the city it lies in; false when it lies in none. */
   const showPosition = useCallback(
@@ -260,6 +263,7 @@ function CityMap({
         onLoad={(e) => {
           updateZoomLimit()
           places.onView(e.target)
+          centreOnPlace()
         }}
         onZoomEnd={updateZoomLimit}
         onMoveEnd={(e) => {

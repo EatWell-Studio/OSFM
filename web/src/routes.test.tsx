@@ -39,16 +39,19 @@ function renderAt(path: string) {
 // The pages of M2 that are placeholders for now, with the heading each shows.
 const pages: [string, string][] = [
   ['/new', zhCN.create.newPlace.title],
-  [`/p/${place}`, zhCN.place.title],
-  [`/p/${place}?r=${rec}`, zhCN.place.title],
   [`/p/${place}/edit`, zhCN.edit.place.title],
   [`/p/${place}/recommend`, zhCN.create.recommend.title],
   [`/p/${place}/r/${rec}/edit`, zhCN.edit.recommendation.title],
   [`/p/${place}/r/${rec}/history`, zhCN.edit.history.title],
 ]
 
-// The pages of M2 that are built already: they need a session as well.
-const built: [string, string][] = [['/list', zhCN.map.list.title]]
+// The pages of M2 that are built already: they need a session as well. The place card is tested in
+// src/place/PlacePage.test.tsx.
+const built: [string, string][] = [
+  ['/list', zhCN.map.list.title],
+  [`/p/${place}`, zhCN.place.title],
+  [`/p/${place}?r=${rec}`, zhCN.place.title],
+]
 
 describe('the paths of M2', () => {
   it.each([...pages, ...built])('%s sends a signed-out visitor to sign-in, with the way back', async (path) => {

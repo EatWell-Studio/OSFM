@@ -49,7 +49,6 @@ function url(path: string): RegExp {
 
 const pages: [string, string][] = [
   ['/new', zh.create.newPlace.title],
-  [`/p/${place}`, zh.place.title],
   [`/p/${place}/edit`, zh.edit.place.title],
   [`/p/${place}/recommend`, zh.create.recommend.title],
   [`/p/${place}/r/${rec}/edit`, zh.edit.recommendation.title],
@@ -69,9 +68,9 @@ test('a shared link asks a signed-out phone to sign in and leads back to it', as
   await page.getByRole('button', { name: form.next, exact: true }).click()
   await page.getByLabel(form.totp, { exact: true }).fill(await authenticatorOf(member).code())
   await page.getByRole('button', { name: form.signIn, exact: true }).click()
+  // The card is there (T029); the made-up place does not exist. The card switches the map to its city only when found.
   await expect(page).toHaveURL(url(shared))
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(zh.place.title)
-  await expect(page.getByText(zh.common.comingSoon)).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: zh.place.notFound })).toBeVisible()
 })
 
 test('every new path shows its page to a member', async () => {
